@@ -67,13 +67,23 @@ function addAI(d, auto = true) {
     if (d.explanation) ex(m, 'ex', '🧠 语法解析').lastChild.textContent = d.explanation;
     scroll();
 }
-function press(node, onLong, onTap) {         // 长按 500ms 触发菜单；短按触发 onTap
+function press(node, onLong, onTap) {         // 长按 420ms 触发菜单；短按触发 onTap
     let t, x, y;
-    node.addEventListener('pointerdown', e => { x = e.clientX; y = e.clientY; t = setTimeout(() => { t = null; navigator.vibrate?.(15); onLong(); }, 500); });
-    node.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - x, e.clientY - y) > 10) { clearTimeout(t); t = null; } });
+    node.addEventListener('pointerdown', e => {
+        e.preventDefault();                   // 抢在系统"选中文字/呼出菜单"手势之前拦下，避免两个菜单打架
+        x = e.clientX; y = e.clientY;
+        t = setTimeout(() => {
+            t = null;
+            window.getSelection?.().removeAllRanges();   // 保险起见，清掉可能已经产生的系统选区
+            navigator.vibrate?.(15);
+            onLong();
+        }, 420);
+    });
+    node.addEventListener('pointermove', e => { if (t && Math.hypot(e.clientX - x, e.clientY - y) > 18) { clearTimeout(t); t = null; } });
     node.addEventListener('pointerup', () => { if (t) { clearTimeout(t); t = null; onTap && onTap(); } });
     node.addEventListener('pointercancel', () => { clearTimeout(t); t = null; });
     node.addEventListener('contextmenu', e => e.preventDefault());
+    node.addEventListener('selectstart', e => e.preventDefault());   // 双保险：某些安卓浏览器不完全听 CSS 的 user-select
 }
 
 /* ---------- 长按菜单：原文 / 翻译 / 解析 ---------- */

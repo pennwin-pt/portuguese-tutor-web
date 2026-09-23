@@ -1,0 +1,20 @@
+/* 只有语音条本身、标题栏、底部菜单、以及“按住说话”按钮
+       需要禁用系统的长按选择菜单，避免和自定义交互冲突。 */
+.bub.pill, h1, #sheet, #sheet *, #hold {
+    -webkit-touch-callout: none !important;
+    -webkit-user-select: none !important;
+    -moz-user-select: none !important;
+    user-select: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+}
+
+/* 语音气泡本身：告诉浏览器这是一个可点击/可长按的控件，减少手势误判 */
+.bub.pill, #hold { touch-action: manipulation; }
+
+/* 自定义长按菜单：加大点击热区，字号变大，间距更宽松，更容易点中 */
+#sheet button {
+    min-height: 52px;
+    font-size: 17px;
+    padding: 14px 20px;
+    touch-action: manipulation;
+}
