@@ -112,7 +112,7 @@
     const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
     function unlock() { player.src = SILENT; player.play().catch(() => {}); }  // 在用户手势内解锁 iOS 自动播放
     function audioUrl(d) {
-        if (d.audio_url) return d.audio_url;
+        if (d.audio_url) return API + d.audio_url;
         if (d.audio_base64) {
             const b = atob(d.audio_base64), u = new Uint8Array(b.length);
             for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i);
@@ -138,7 +138,7 @@
     }
     function addTyping() { const r = el('div', 'row ai'), b = el('div', 'bub dots'); b.innerHTML = '<span></span><span></span><span></span>'; r.append(el('div', 'col')); r.firstChild.append(b); chat.append(r); scroll(); return r; }
 
-    function addAI(d) {
+    function addAI(d, auto = true) {
         const url = audioUrl(d), m = { id: d.message_id, text: d.ai_text, ex: {} };
         const row = el('div', 'row ai'), col = el('div', 'col'), bub = el('div', 'bub pill');
         const dur = el('span', '', '··');
@@ -147,8 +147,10 @@
             const a = new Audio(url);
             a.onloadedmetadata = () => { const s = Math.max(1, Math.round(a.duration)); dur.textContent = s + '″'; bub.style.width = Math.min(96 + s * 9, 250) + 'px'; };
             press(bub, () => { cur = m; $('#mask').hidden = false; }, () => play(url, bub));
-            play(url, bub);
+            if (auto) play(url, bub);
         } else { dur.textContent = '无语音'; press(bub, () => { cur = m; $('#mask').hidden = false; }); }
+        if (d.translation) ex(m, 'zh', '🌐 中文翻译').lastChild.textContent = d.translation;   // 历史里缓存的内容
+        if (d.explanation) ex(m, 'ex', '🧠 语法解析').lastChild.textContent = d.explanation;
         scroll();
     }
     function press(node, onLong, onTap) {         // 长按 500ms 触发菜单；短按触发 onTap
@@ -248,6 +250,22 @@
         $('#banner').hidden = mode === 'pt'; txt.placeholder = mode === 'zh' ? '输入中文，我来翻译成葡语…' : '输入葡语…';
         toast(mode === 'zh' ? '已切换：中文将先翻译成葡语' : '已切换：葡语模式');
     };
+
+    /* ---------- 恢复历史 / 清空对话（长按标题） ---------- */
+    (async () => {
+        try {
+            const j = await (await fetch(API + '/api/history?session_id=' + sid)).json();
+            if (!j.messages?.length) return;
+            $('.tip')?.remove();
+            j.messages.forEach(x => x.role === 'user' ? fillMe(addMe(''), x) : addAI(x, false));
+            scroll();
+        } catch {}
+    })();
+    press($('h1'), async () => {
+        if (!confirm('清空本次对话和所有语音记录？')) return;
+        try { await fetch(API + '/api/session/' + sid, { method: 'DELETE' }); chat.innerHTML = ''; toast('已清空'); }
+        catch { toast('清空失败'); }
+    });
 </script>
 </body>
 </html>
