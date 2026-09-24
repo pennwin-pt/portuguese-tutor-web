@@ -1,7 +1,15 @@
 const API = '';               // 与 nginx 同域反代 /api 时留空；否则填 'https://your.domain'
 const $ = s => document.querySelector(s);
 const chat = $('#chat'), player = $('#player'), holdBtn = $('#hold');
-const sid = localStorage.sid || (localStorage.sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+const enc = encodeURIComponent;
+const TIP = chat.innerHTML;                   // 空对话时的提示文案，切换用户时复用
+
+/* ---------- 身份：username 即 session_id；没有 username 就是游客（随机 sid） ---------- */
+const NAME_RE = /^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}$/;      // 与后端校验保持一致
+const guestSid = localStorage.sid || (localStorage.sid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+let username = localStorage.getItem('username') || '';
+if (!NAME_RE.test(username)) username = '';
+let sid = username || guestSid;
 let mode = 'pt', textMode = false, cur = null, playingPill = null, holding = false;
 
 const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
@@ -9,12 +17,19 @@ const scroll = () => requestAnimationFrame(() => chat.scrollTop = chat.scrollHei
 function toast(m) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); }
 
 /* ---------- 网络 ---------- */
-async function post(path, fd) {
-    const r = await fetch(API + path, { method: 'POST', body: fd });
+const errMsg = j => typeof j.detail === 'string' ? j.detail
+    : Array.isArray(j.detail) ? j.detail.map(x => x.msg).join('；') : j.message;
+async function req(path, body, method = 'POST') {   // body: FormData 走 multipart，普通对象走 JSON
+    const opt = { method };
+    if (body instanceof FormData) opt.body = body;
+    else if (body) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
+    const r = await fetch(API + path, opt);
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(j.detail || j.message || ('请求失败 ' + r.status));
+    if (!r.ok) throw new Error(errMsg(j) || ('请求失败 ' + r.status));
     return j.data || j;                       // 兼容 {status,data:{}} 与扁平返回
 }
+const post = (path, body) => req(path, body);
+const get = path => req(path, null, 'GET');
 async function ping() {
     const s = $('#st');
     try { const r = await fetch(API + '/api/health', { cache: 'no-store' }); if (!r.ok) throw 0; s.className = 'on'; s.lastChild.textContent = '已连接'; }
@@ -175,18 +190,161 @@ $('#mode').onclick = e => {
     toast(mode === 'zh' ? '已切换：中文将先翻译成葡语' : '已切换：葡语模式');
 };
 
-/* ---------- 恢复历史 / 清空对话（长按标题） ---------- */
-(async () => {
+/* ---------- 主题（CSS 变量）与背景 ---------- */
+const DEFAULT_BLUE = '#3d9be9';
+const PRESETS = ['#3d9be9', '#34a96b', '#8b6fd6', '#f08a3c', '#e0568d', '#4b5563'];
+const VAR_KEY = /^--[\w-]{1,30}$/, VAR_VAL = /^#[0-9a-f]{3,8}$/i;        // 服务端返回的主题也要过一遍白名单
+const BG_URL = /^\/api\/background\/[A-Za-z0-9_.]+$/;
+const rootStyle = document.documentElement.style, metaTheme = $('meta[name="theme-color"]'), applied = new Set();
+
+const mix = (hex, w) => {                                                // 向白色混合 w 比例
+    const n = parseInt(hex.slice(1), 16);
+    return '#' + [n >> 16 & 255, n >> 8 & 255, n & 255].map(v => Math.round(v + (255 - v) * w).toString(16).padStart(2, '0')).join('');
+};
+const derive = hex => ({ '--blue': hex, '--me': mix(hex, .78), '--blue2': mix(hex, .9) });
+
+function clearTheme() {
+    applied.forEach(k => rootStyle.removeProperty(k)); applied.clear();
+    metaTheme.content = DEFAULT_BLUE; localStorage.removeItem('theme'); markTheme();
+}
+function applyTheme(t) {                                                 // t: 对象 / JSON 字符串 / null
+    if (typeof t === 'string') try { t = JSON.parse(t); } catch { t = null; }
+    clearTheme();
+    if (!t || typeof t !== 'object') return;
+    const ok = {};
+    for (const [k, v] of Object.entries(t)) {
+        if (VAR_KEY.test(k) && typeof v === 'string' && VAR_VAL.test(v)) { rootStyle.setProperty(k, v); ok[k] = v; applied.add(k); }
+    }
+    if (ok['--blue']) metaTheme.content = ok['--blue'];
+    localStorage.setItem('theme', JSON.stringify(ok));                   // 本地缓存：刷新时先套用，避免先闪一下默认蓝
+    markTheme();
+}
+async function saveTheme(t) {                                            // 已绑定用户才同步到服务器，游客仅存本机
+    if (!username) return;
+    try { await post(`/api/user/${enc(username)}/theme`, { theme: t }); }
+    catch (err) { toast('主题保存失败：' + err.message); }
+}
+function setBg(url) {
+    const bg = $('#bg');
+    bg.style.backgroundImage = url ? `url("${url}")` : '';
+    bg.classList.toggle('on', !!url);
+}
+function applyProfile(p) {
+    p = p || {};
+    applyTheme(p.theme);
+    setBg(BG_URL.test(p.background_url || '') ? API + p.background_url : '');
+}
+
+/* ---------- 弹层：通用开关 ---------- */
+const closeMasks = () => document.querySelectorAll('.mask').forEach(m => m.hidden = true);
+document.querySelectorAll('.mask').forEach(m => m.addEventListener('click', e => {
+    if (e.target === m || e.target.hasAttribute('data-close')) m.hidden = true;
+}));
+
+/* ---------- 主题面板 ---------- */
+const sw = $('#sw'), tc = $('#tc');
+PRESETS.forEach(h => {
+    const b = el('button'); b.style.background = h; b.dataset.c = h; b.setAttribute('aria-label', '主题色 ' + h);
+    b.onclick = () => { applyTheme(derive(h)); saveTheme(derive(h)); };
+    sw.insertBefore(b, sw.lastElementChild);
+});
+function markTheme() {
+    const c = (JSON.parse(localStorage.getItem('theme') || '{}')['--blue'] || DEFAULT_BLUE).toLowerCase();
+    sw.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.c === c));
+    tc.value = c.length === 7 ? c : DEFAULT_BLUE;
+}
+tc.oninput = () => applyTheme(derive(tc.value));                         // 拖动时乐观更新
+tc.onchange = () => saveTheme(derive(tc.value));                         // 选定后再异步保存，避免每一帧都发请求
+$('#treset').onclick = () => { const t = derive(DEFAULT_BLUE); applyTheme(t); saveTheme(t); };
+$('#theme').onclick = () => {
+    $('#bghint').textContent = username
+        ? 'JPG / PNG / WebP，不超过 5MB。背景和主题会保存到你的用户名下。'
+        : 'JPG / PNG / WebP，不超过 5MB。游客的主题色只保存在本机；上传背景需要先绑定用户名。';
+    markTheme(); $('#tmask').hidden = false;
+};
+
+/* ---------- 背景上传 ---------- */
+$('#bgpick').onclick = () => {
+    if (!username) { toast('请先绑定用户名，背景才能保存'); openUser(); return; }
+    $('#bgf').click();
+};
+$('#bgf').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+    if (!/\.(jpe?g|png|webp)$/i.test(f.name) && !/^image\/(jpeg|png|webp)$/.test(f.type)) return toast('仅支持 JPG / PNG / WebP');
+    if (f.size > 5 * 1024 * 1024) return toast('图片不能超过 5MB');
+    toast('上传中…');
+    const fd = new FormData(); fd.append('file', f);
     try {
-        const j = await (await fetch(API + '/api/history?session_id=' + sid)).json();
-        if (!j.messages?.length) return;
-        $('.tip')?.remove();
+        const d = await post(`/api/user/${enc(username)}/background`, fd);
+        if (BG_URL.test(d.background_url || '')) setBg(API + d.background_url);
+        toast('背景已更新');
+    } catch (err) { toast('上传失败：' + err.message); }
+};
+
+/* ---------- 用户名：绑定 / 恢复 / 退出 ---------- */
+const uname = $('#uname');
+function syncUserUI() {
+    $('#user').classList.toggle('on', !!username);
+    $('#user').title = username || '游客';
+    $('#ucur').textContent = username ? '当前用户：' + username : '当前：游客模式（聊天记录只跟随本机浏览器）';
+    $('#ulogout').hidden = !username;
+    uname.value = username;
+}
+function openUser() { syncUserUI(); $('#tmask').hidden = true; $('#umask').hidden = false; setTimeout(() => uname.focus(), 60); }
+$('#user').onclick = openUser;
+
+async function loadHistory() {                                           // 按当前 sid 重建聊天区
+    const mine = sid;
+    player.pause(); playingPill = null; cur = null;
+    try {
+        const j = await get('/api/history?session_id=' + enc(sid));
+        if (mine !== sid) return;                                        // 期间又切换了用户，丢弃过期结果
+        chat.innerHTML = '';
+        if (!j.messages?.length) { chat.innerHTML = TIP; return; }
         j.messages.forEach(x => x.role === 'user' ? fillMe(addMe(''), x) : addAI(x, false));
         scroll();
-    } catch {}
+    } catch { if (mine === sid) chat.innerHTML = TIP; }
+}
+async function submitBind() {
+    const name = uname.value.trim();
+    if (!NAME_RE.test(name)) return toast('用户名需为 2–20 位字母、数字、下划线或中文');
+    if (name === username) { closeMasks(); return; }
+    const btn = $('#ubind'); btn.disabled = true;
+    try {
+        const p = await post('/api/user/bind', { username: name });
+        username = name; localStorage.setItem('username', name); sid = name;
+        applyProfile(p); syncUserUI(); closeMasks();
+        await loadHistory();
+        toast('已切换到：' + name);
+    } catch (err) { toast(err.message); }
+    finally { btn.disabled = false; }
+}
+$('#ubind').onclick = submitBind;
+uname.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) submitBind(); };
+$('#ulogout').onclick = async () => {
+    if (!confirm('退出当前用户？聊天记录仍保存在服务器，之后用同一个用户名即可恢复。')) return;
+    username = ''; localStorage.removeItem('username'); sid = guestSid;
+    clearTheme(); setBg(''); syncUserUI(); closeMasks();
+    await loadHistory();
+    toast('已回到游客模式');
+};
+
+/* ---------- 启动：先套用缓存主题 -> 拉用户资料 -> 恢复历史 ---------- */
+applyTheme(localStorage.getItem('theme'));
+syncUserUI();
+(async () => {
+    if (username) {
+        try { applyProfile(await get('/api/user/' + enc(username))); }
+        catch {
+            try { applyProfile(await post('/api/user/bind', { username })); } catch {}   // 服务端没有这个用户（比如库被重建）就补建；网络故障则忽略
+        }
+    }
+    loadHistory();
 })();
+
+/* ---------- 清空对话（长按标题） ---------- */
 press($('h1'), async () => {
-    if (!confirm('清空本次对话和所有语音记录？')) return;
-    try { await fetch(API + '/api/session/' + sid, { method: 'DELETE' }); chat.innerHTML = ''; toast('已清空'); }
+    if (!confirm(username ? `清空「${username}」的对话和所有语音记录？` : '清空本次对话和所有语音记录？')) return;
+    try { await fetch(API + '/api/session/' + enc(sid), { method: 'DELETE' }); chat.innerHTML = TIP; toast('已清空'); }
     catch { toast('清空失败'); }
 });

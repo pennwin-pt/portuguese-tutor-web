@@ -2,6 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="utf-8">
+    <link rel="apple-touch-icon" href="images/logo.png">
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
     <meta name="theme-color" content="#3d9be9">
     <title>葡语陪练</title>
@@ -9,14 +10,19 @@
     <link rel="stylesheet" href="css/touch-protection.css">
 </head>
 <body>
+<div id="bg"></div>
 <div id="app">
     <header>
         <div id="st"><i></i><span>连接中</span></div>
         <h1>葡语陪练</h1>
-        <button id="mode">🇵🇹 葡语</button>
+        <div class="hr">
+            <button class="ib" id="user" aria-label="绑定或恢复用户名">👤</button>
+            <button class="ib" id="theme" aria-label="背景与主题">🎨</button>
+            <button id="mode">🇵🇹 葡语</button>
+        </div>
     </header>
     <div id="banner" hidden>中文求助模式：说中文，我会先翻译成葡语，再由教练回复</div>
-    <div id="chat"><div class="tip">按住下方按钮，用葡语和 Tuga 老师聊天。<br>不会说？右上角切换到中文求助。<br>长按老师的语音条：原文 / 翻译 / 语法解析。</div></div>
+    <div id="chat"><div class="tip">按住下方按钮，用葡语和 Tuga 老师聊天。<br>不会说？右上角切换到中文求助。<br>长按老师的语音条：原文 / 翻译 / 语法解析。<br>点 👤 绑定用户名，换设备也能找回聊天记录。</div></div>
     <footer>
         <button class="kb" id="kb" aria-label="切换输入方式">⌨️</button>
         <button id="hold">按住 说话</button>
@@ -25,12 +31,46 @@
     </footer>
 </div>
 <div id="rec" hidden><div class="wave"><i></i><i></i><i></i><i></i><i></i></div><span>正在录音… 上滑取消</span></div>
+
+<!-- 语音条长按菜单 -->
 <div id="mask" hidden><div id="sheet">
     <button data-k="pt">📝 显示原文</button>
     <button data-k="zh">🌐 翻译中文</button>
     <button data-k="ex">🧠 语法解析</button>
     <button class="c" data-k="x">取消</button>
 </div></div>
+
+<!-- 绑定 / 恢复用户名 -->
+<div class="mask" id="umask" hidden><div class="panel">
+    <h2>绑定 / 恢复用户名</h2>
+    <p class="cur" id="ucur"></p>
+    <input id="uname" type="text" maxlength="20" placeholder="2–20 位：字母、数字、下划线或中文"
+           autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+    <p class="warn">⚠️ 用户名即身份标识，重名可查看历史。请不要使用容易被猜到的名字，也不要在对话里输入敏感信息。</p>
+    <div class="acts">
+        <button class="p" id="ubind">绑定 / 恢复</button>
+        <button id="ulogout" hidden>退出用户（回到游客模式）</button>
+        <button class="c" data-close>取消</button>
+    </div>
+</div></div>
+
+<!-- 背景与主题 -->
+<div class="mask" id="tmask" hidden><div class="panel">
+    <h2>背景与主题</h2>
+    <h3>主题色</h3>
+    <div class="sw" id="sw">
+        <label class="cp"><input type="color" id="tc" value="#3d9be9"><span>自定义</span></label>
+    </div>
+    <h3>聊天背景</h3>
+    <button id="bgpick">📷 选择图片</button>
+    <input type="file" id="bgf" accept="image/jpeg,image/png,image/webp" hidden>
+    <p class="hint" id="bghint">JPG / PNG / WebP，不超过 5MB。绑定用户名后，背景和主题会保存到服务器。</p>
+    <div class="acts">
+        <button id="treset">恢复默认主题色</button>
+        <button class="c" data-close>完成</button>
+    </div>
+</div></div>
+
 <audio id="player" playsinline></audio>
 
 <script src="js/index.js"></script>
