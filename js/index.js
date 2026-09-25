@@ -12,6 +12,14 @@ if (!NAME_RE.test(username)) username = '';
 let sid = username || guestSid;
 let mode = 'pt', textMode = false, cur = null, playingPill = null, holding = false;
 
+const ttsGoogleEl = $('#ttsGoogle');
+let ttsProvider = localStorage.getItem('ttsProvider') === 'google' ? 'google' : 'piper';
+ttsGoogleEl.checked = ttsProvider === 'google';
+ttsGoogleEl.onchange = () => {
+    ttsProvider = ttsGoogleEl.checked ? 'google' : 'piper';
+    localStorage.setItem('ttsProvider', ttsProvider);
+};
+
 const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
 const scroll = () => requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
 function toast(m) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); }
@@ -125,6 +133,7 @@ $('#mask').onclick = e => { if (e.target.id === 'mask') e.target.hidden = true; 
 /* ---------- 发送 ---------- */
 async function send({ blob, ext, text }) {
     const fd = new FormData(); fd.append('session_id', sid); fd.append('mode', mode);
+    fd.append('tts_provider', ttsProvider);
     let mine;
     if (blob) { fd.append('audio', blob, 'rec.' + ext); mine = addMe('🎤 识别中…'); }
     else { fd.append('text', text); mine = addMe(text); }

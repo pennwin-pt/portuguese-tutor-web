@@ -77,3 +77,5 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(env(safe-
 .sw button.on{box-shadow:0 0 0 2.5px var(--tx)}
 .cp{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--sub)}
 .cp input{width:34px;height:34px;padding:0;border:0;border-radius:50%;background:none}
+.sw2{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--tx)}
+.sw2 input{margin-top:3px;width:18px;height:18px;accent-color:var(--blue)}
