@@ -69,7 +69,7 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(env(safe-
 #sheet button.c{color:var(--sub);text-align:center;border:0;margin-top:6px;background:var(--bg);border-radius:12px}
 #toast{position:fixed;z-index:20;left:50%;bottom:110px;transform:translateX(-50%);background:rgba(17,24,39,.9);color:#fff;padding:8px 16px;border-radius:18px;font-size:14px;max-width:80%;text-align:center}
 
-/* ---------- 用户名 / 背景与主题 面板 ---------- */
+/* ---------- 用户名 / 背景与主题 / 拆解单词 面板 ---------- */
 .panel{width:100%;max-height:88dvh;overflow-y:auto;background:#fff;border-radius:18px 18px 0 0;padding:16px 16px calc(env(safe-area-inset-bottom,0px) + 14px);animation:up .2s ease-out}
 .panel h2{margin:0 0 8px;font-size:17px;font-weight:600}
 .panel h3{margin:14px 0 8px;font-size:14px;font-weight:500;color:var(--sub)}
@@ -92,3 +92,11 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(env(safe-
 .cp input{width:34px;height:34px;padding:0;border:0;border-radius:50%;background:none}
 .sw2{display:flex;align-items:flex-start;gap:8px;font-size:13px;color:var(--tx)}
 .sw2 input{margin-top:3px;width:18px;height:18px;accent-color:var(--blue)}
+
+/* 拆解单词：可勾选的单词列表 */
+#wlist{display:flex;flex-direction:column;gap:8px;margin:2px 0 4px;max-height:50dvh;overflow-y:auto}
+.wrow{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:12px}
+.wrow input{width:18px;height:18px;flex:none;accent-color:var(--blue)}
+.wrow .wd{flex:1;min-width:0}
+.wrow .wd b{display:block;font-size:15px;font-weight:600}
+.wrow .wd span{display:block;font-size:13px;color:var(--sub);margin-top:2px}

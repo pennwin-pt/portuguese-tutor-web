@@ -109,7 +109,7 @@ function press(node, onLong, onTap) {         // 长按 420ms 触发菜单；短
     node.addEventListener('selectstart', e => e.preventDefault());   // 双保险：某些安卓浏览器不完全听 CSS 的 user-select
 }
 
-/* ---------- 长按菜单：原文 / 翻译 / 解析 ---------- */
+/* ---------- 长按菜单：原文 / 翻译 / 解析 / 拆解单词 ---------- */
 function ex(m, k, title) {                    // 已存在则切换显示/隐藏，返回 null
     let b = m.ex[k];
     if (b) { b.hidden = !b.hidden; return null; }
@@ -119,6 +119,7 @@ $('#sheet').onclick = async e => {
     const k = e.target.dataset.k; if (!k) return;
     $('#mask').hidden = true; const m = cur; if (k === 'x' || !m) return;
     if (k === 'pt') { const b = ex(m, 'pt', '📝 原文'); if (b) b.lastChild.textContent = m.text; return; }
+    if (k === 'bd') { openBreakdown(m); return; }
     const zh = k === 'zh', b = ex(m, k, zh ? '🌐 中文翻译' : '🧠 语法解析'); if (!b) return;
     b.lastChild.textContent = zh ? '翻译中…' : 'AI 正在解析…';
     const fd = new FormData(); fd.append('session_id', sid); fd.append('text', m.text); if (m.id) fd.append('message_id', m.id);
@@ -129,6 +130,46 @@ $('#sheet').onclick = async e => {
     scroll();
 };
 $('#mask').onclick = e => { if (e.target.id === 'mask') e.target.hidden = true; };
+
+/* ---------- 拆解单词：勾选加入单词库 ---------- */
+let wdata = null;      // {translation, words:[{word,meaning}], src}
+const wlist = $('#wlist');
+function renderWords() {
+    wlist.innerHTML = '';
+    if (!wdata?.words?.length) { wlist.innerHTML = '<div class="tip">没有识别出可拆解的单词</div>'; return; }
+    wdata.words.forEach((w, i) => {
+        const row = el('label', 'wrow'), cb = el('input');
+        cb.type = 'checkbox'; cb.checked = true; cb.dataset.i = i;
+        const wd = el('div', 'wd'); wd.append(el('b', '', w.word), el('span', '', w.meaning));
+        row.append(cb, wd); wlist.append(row);
+    });
+}
+async function openBreakdown(m) {
+    $('#wsrc').textContent = m.text;
+    wlist.innerHTML = '<div class="tip">拆解中…</div>';
+    $('#wmask').hidden = false;
+    const fd = new FormData(); fd.append('session_id', sid); fd.append('text', m.text); if (m.id) fd.append('message_id', m.id);
+    try {
+        const d = await post('/api/breakdown', fd);
+        wdata = { translation: d.translation || '', words: d.words || [], src: m.text };
+        renderWords();
+    } catch (err) { $('#wmask').hidden = true; toast(err.message); }
+}
+$('#wadd').onclick = async () => {
+    if (!wdata) return;
+    const checked = [...wlist.querySelectorAll('input:checked')].map(cb => wdata.words[+cb.dataset.i]).filter(Boolean);
+    if (!checked.length) return toast('请至少选一个单词');
+    const items = checked.map(w => ({
+        language: 'pt-PT', word: w.word, example_sentence: wdata.src,
+        chinese_meaning: w.meaning, example_chinese: wdata.translation,
+    }));
+    const btn = $('#wadd'); btn.disabled = true;
+    try {
+        const d = await post('/api/vocab', { session_id: sid, items });
+        toast(`已加入 ${d.added} 个单词`); $('#wmask').hidden = true;
+    } catch (err) { toast('加入失败：' + err.message); }
+    finally { btn.disabled = false; }
+};
 
 /* ---------- 发送 ---------- */
 async function send({ blob, ext, text }) {
