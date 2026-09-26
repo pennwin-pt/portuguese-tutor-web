@@ -22,6 +22,46 @@ const TTS_HINTS = {
 const ttsSeg = $('#ttsSeg'), voiceHint = $('#voiceHint');
 let ttsProvider = localStorage.getItem('ttsProvider');
 if (!TTS_PROVIDERS.includes(ttsProvider)) ttsProvider = 'piper';
+
+// 只有 edge / streamelements 有多个音色可选；key 要跟后端 tts_engine.py 里的
+// EDGE_VOICES / STREAMELEMENTS_VOICES 白名单完全一致，改一边另一边要同步改。
+const VOICE_OPTIONS = {
+    edge: {
+        'pt-PT-RaquelNeural': '女声 Raquel',
+        'pt-PT-DuarteNeural': '男声 Duarte',
+        'pt-PT-FernandaNeural': '女声 Fernanda',
+    },
+    streamelements: {
+        'Ines': '女声 Ines',
+        'Cristiano': '男声 Cristiano',
+    },
+};
+const voiceOptSeg = $('#voiceOptSeg');
+const ttsVoiceKey = p => 'ttsVoice_' + p;
+function getTtsVoice(provider) {                       // 没有多音色的 provider 返回 null，不用带 tts_voice 字段
+    const opts = VOICE_OPTIONS[provider]; if (!opts) return null;
+    const saved = localStorage.getItem(ttsVoiceKey(provider));
+    return opts[saved] ? saved : Object.keys(opts)[0];  // 存的值不合法（比如白名单改过）就回退第一个
+}
+function renderVoiceOpts() {
+    const opts = VOICE_OPTIONS[ttsProvider];
+    if (!opts) { voiceOptSeg.hidden = true; voiceOptSeg.innerHTML = ''; return; }
+    const cur = getTtsVoice(ttsProvider);
+    voiceOptSeg.innerHTML = '';
+    Object.entries(opts).forEach(([v, label]) => {
+        const b = el('button', v === cur ? 'on' : '', label);
+        b.type = 'button'; b.dataset.v = v; b.setAttribute('role', 'radio');
+        b.setAttribute('aria-checked', v === cur ? 'true' : 'false');
+        voiceOptSeg.append(b);
+    });
+    voiceOptSeg.hidden = false;
+}
+voiceOptSeg.onclick = e => {
+    const b = e.target.closest('button[data-v]'); if (!b) return;
+    localStorage.setItem(ttsVoiceKey(ttsProvider), b.dataset.v);
+    renderVoiceOpts();
+};
+
 function syncTtsSeg() {
     ttsSeg.querySelectorAll('button').forEach(b => {
         const on = b.dataset.p === ttsProvider;
@@ -29,6 +69,7 @@ function syncTtsSeg() {
         b.setAttribute('aria-checked', on ? 'true' : 'false');
     });
     voiceHint.textContent = TTS_HINTS[ttsProvider] || '';
+    renderVoiceOpts();
 }
 ttsSeg.onclick = e => {
     const b = e.target.closest('button[data-p]'); if (!b) return;
@@ -199,6 +240,7 @@ $('#wadd').onclick = async () => {
 async function send({ blob, ext, text }) {
     const fd = new FormData(); fd.append('session_id', sid); fd.append('mode', mode);
     fd.append('tts_provider', ttsProvider);
+    const v = getTtsVoice(ttsProvider); if (v) fd.append('tts_voice', v);
     let mine;
     if (blob) { fd.append('audio', blob, 'rec.' + ext); mine = addMe('🎤 识别中…'); }
     else { fd.append('text', text); mine = addMe(text); }
@@ -206,6 +248,7 @@ async function send({ blob, ext, text }) {
     try {
         const d = await post(blob ? '/api/chat/audio' : '/api/chat/text', fd);
         typing.remove(); fillMe(mine, d); addAI(d);
+        if (d.tts_fallback) toast('在线语音暂时不可用，已用本地语音代替');
     } catch (err) { typing.remove(); mine.parentNode.parentNode.remove(); toast(err.message); }
 }
 
