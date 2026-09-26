@@ -29,7 +29,6 @@ const VOICE_OPTIONS = {
     edge: {
         'pt-PT-RaquelNeural': '女声 Raquel',
         'pt-PT-DuarteNeural': '男声 Duarte',
-        'pt-PT-FernandaNeural': '女声 Fernanda',
     },
     streamelements: {
         'Ines': '女声 Ines',
