@@ -132,7 +132,10 @@ $('#sheet').onclick = async e => {
 $('#mask').onclick = e => { if (e.target.id === 'mask') e.target.hidden = true; };
 
 /* ---------- 拆解单词：勾选加入单词库 ---------- */
-let wdata = null;      // {translation, words:[{word,meaning}], src}
+// wdata.words 里每一项自带 word/meaning/sentence/sentence_zh —— sentence 是这个词
+// 所在的那一句葡语原句（如果原话是 "Correção: ..." 这种纠错句，前缀已经被后端去掉），
+// sentence_zh 是那一句的中文翻译。加入单词库时按每个词各自的句子存，不用整段消息。
+let wdata = null;      // {words:[{word,meaning,sentence,sentence_zh}], src}
 const wlist = $('#wlist');
 function renderWords() {
     wlist.innerHTML = '';
@@ -141,6 +144,7 @@ function renderWords() {
         const row = el('label', 'wrow'), cb = el('input');
         cb.type = 'checkbox'; cb.checked = true; cb.dataset.i = i;
         const wd = el('div', 'wd'); wd.append(el('b', '', w.word), el('span', '', w.meaning));
+        if (w.sentence) wd.append(el('small', '', w.sentence));
         row.append(cb, wd); wlist.append(row);
     });
 }
@@ -151,7 +155,7 @@ async function openBreakdown(m) {
     const fd = new FormData(); fd.append('session_id', sid); fd.append('text', m.text); if (m.id) fd.append('message_id', m.id);
     try {
         const d = await post('/api/breakdown', fd);
-        wdata = { translation: d.translation || '', words: d.words || [], src: m.text };
+        wdata = { words: d.words || [], src: m.text };
         renderWords();
     } catch (err) { $('#wmask').hidden = true; toast(err.message); }
 }
@@ -160,8 +164,10 @@ $('#wadd').onclick = async () => {
     const checked = [...wlist.querySelectorAll('input:checked')].map(cb => wdata.words[+cb.dataset.i]).filter(Boolean);
     if (!checked.length) return toast('请至少选一个单词');
     const items = checked.map(w => ({
-        language: 'pt-PT', word: w.word, example_sentence: wdata.src,
-        chinese_meaning: w.meaning, example_chinese: wdata.translation,
+        language: 'pt-PT', word: w.word,
+        example_sentence: w.sentence || wdata.src || '',   // 优先用词自己所在的那一句，兜底才用整段原话
+        chinese_meaning: w.meaning,
+        example_chinese: w.sentence_zh || '',
     }));
     const btn = $('#wadd'); btn.disabled = true;
     try {
