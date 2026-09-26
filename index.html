@@ -22,8 +22,13 @@
         </div>
     </header>
     <section id="voice-setting" aria-label="语音音质设置">
-        <div class="voice-copy"><span class="voice-icon" aria-hidden="true">♫</span><div><strong>语音音质</strong><small>切换为更自然的在线语音 · 每日次数有限</small></div></div>
-        <label class="voice-toggle" aria-label="使用谷歌在线语音"><input type="checkbox" id="ttsGoogle"><span></span></label>
+        <div class="voice-copy"><span class="voice-icon" aria-hidden="true">♫</span><div><strong>语音音质</strong><small id="voiceHint"></small></div></div>
+        <div class="voice-seg" id="ttsSeg" role="radiogroup" aria-label="选择语音合成音源">
+            <button type="button" data-p="piper" role="radio" aria-checked="false">本地</button>
+            <button type="button" data-p="google" role="radio" aria-checked="false">谷歌</button>
+            <button type="button" data-p="edge" role="radio" aria-checked="false">Edge</button>
+            <button type="button" data-p="streamelements" role="radio" aria-checked="false">SE</button>
+        </div>
     </section>
     <div id="banner" hidden>中文求助模式：说中文，我会先翻译成葡语，再由教练回复</div>
     <div id="chat"><div class="tip">按住下方按钮，用葡语和 Tuga 老师聊天。<br>不会说？右上角切换到中文求助。<br>长按老师的语音条：原文 / 翻译 / 语法解析 / 拆解单词。<br>点 👤 绑定用户名，换设备也能找回聊天记录。</div></div>

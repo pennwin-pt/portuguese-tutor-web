@@ -12,13 +12,31 @@ if (!NAME_RE.test(username)) username = '';
 let sid = username || guestSid;
 let mode = 'pt', textMode = false, cur = null, playingPill = null, holding = false;
 
-const ttsGoogleEl = $('#ttsGoogle');
-let ttsProvider = localStorage.getItem('ttsProvider') === 'google' ? 'google' : 'piper';
-ttsGoogleEl.checked = ttsProvider === 'google';
-ttsGoogleEl.onchange = () => {
-    ttsProvider = ttsGoogleEl.checked ? 'google' : 'piper';
-    localStorage.setItem('ttsProvider', ttsProvider);
+const TTS_PROVIDERS = ['piper', 'google', 'edge', 'streamelements'];
+const TTS_HINTS = {
+    piper: '本地离线合成，速度最快，不挑网络',
+    google: '谷歌在线语音，音质一般，每日次数有限',
+    edge: '微软 Edge 在线语音，音质最自然（推荐）',
+    streamelements: 'StreamElements 在线语音，Edge 不可用时的备选',
 };
+const ttsSeg = $('#ttsSeg'), voiceHint = $('#voiceHint');
+let ttsProvider = localStorage.getItem('ttsProvider');
+if (!TTS_PROVIDERS.includes(ttsProvider)) ttsProvider = 'piper';
+function syncTtsSeg() {
+    ttsSeg.querySelectorAll('button').forEach(b => {
+        const on = b.dataset.p === ttsProvider;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+    voiceHint.textContent = TTS_HINTS[ttsProvider] || '';
+}
+ttsSeg.onclick = e => {
+    const b = e.target.closest('button[data-p]'); if (!b) return;
+    ttsProvider = b.dataset.p;
+    localStorage.setItem('ttsProvider', ttsProvider);
+    syncTtsSeg();
+};
+syncTtsSeg();
 
 const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
 const scroll = () => requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
