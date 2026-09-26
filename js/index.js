@@ -3,6 +3,11 @@ const $ = s => document.querySelector(s);
 const chat = $('#chat'), player = $('#player'), holdBtn = $('#hold');
 const enc = encodeURIComponent;
 const TIP = chat.innerHTML;                   // 空对话时的提示文案，切换用户时复用
+const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
+// 注意：el() 要定义在最前面。下面 TTS 音色那块的 syncTtsSeg() 是立即执行的，
+// 它会调用 renderVoiceOpts() 用到 el()——如果 el 定义在文件后面（老版本是这样），
+// const 的暂时性死区会导致 "Cannot access 'el' before initialization"，页面直接白屏，
+// 刷新/重启服务器都没用，因为这是纯前端 JS 加载顺序的 bug，跟后端没关系。
 
 /* ---------- 身份：username 即 session_id；没有 username 就是游客（随机 sid） ---------- */
 const NAME_RE = /^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}$/;      // 与后端校验保持一致
@@ -78,7 +83,6 @@ ttsSeg.onclick = e => {
 };
 syncTtsSeg();
 
-const el = (t, c, x) => { const e = document.createElement(t); if (c) e.className = c; if (x != null) e.textContent = x; return e; };
 const scroll = () => requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
 function toast(m) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); }
 
