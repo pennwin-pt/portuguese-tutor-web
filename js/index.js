@@ -135,19 +135,26 @@ function fillMe(b, d) {
 function addTyping() { const r = el('div', 'row ai'), b = el('div', 'bub dots'); b.innerHTML = '<span></span><span></span><span></span>'; r.append(el('div', 'col')); r.firstChild.append(b); chat.append(r); scroll(); return r; }
 
 function addAI(d, auto = true) {
-    const url = audioUrl(d), m = { id: d.message_id, text: d.ai_text, ex: {} };
+    const m = { id: d.message_id, text: d.ai_text, ex: {}, audioUrl: null };
     const row = el('div', 'row ai'), col = el('div', 'col'), bub = el('div', 'bub pill');
     const dur = el('span', '', '··');
-    bub.append(el('span', 'ic', '🔊'), dur); col.append(bub); row.append(col); chat.append(row); m.box = col;
-    if (url) {
-        const a = new Audio(url);
-        a.onloadedmetadata = () => { const s = Math.max(1, Math.round(a.duration)); dur.textContent = s + '″'; bub.style.width = Math.min(96 + s * 9, 250) + 'px'; };
-        press(bub, () => { cur = m; $('#mask').hidden = false; }, () => play(url, bub));
-        if (auto) play(url, bub);
-    } else { dur.textContent = '无语音'; press(bub, () => { cur = m; $('#mask').hidden = false; }); }
+    bub.append(el('span', 'ic', '🔊'), dur); col.append(bub); row.append(col); chat.append(row);
+    m.box = col; m.bub = bub; m.dur = dur;
+    bindAudio(m, audioUrl(d));
+    press(bub, () => { cur = m; $('#mask').hidden = false; }, () => { if (m.audioUrl) play(m.audioUrl, bub); });
+    if (m.audioUrl && auto) play(m.audioUrl, bub);
     if (d.translation) ex(m, 'zh', '🌐 中文翻译').lastChild.textContent = d.translation;   // 历史里缓存的内容
     if (d.explanation) ex(m, 'ex', '🧠 语法解析').lastChild.textContent = d.explanation;
     scroll();
+}
+function bindAudio(m, url) {                  // 首次渲染 / 重新生成语音后，都走这里刷新时长和可播放地址
+    m.audioUrl = url;
+    if (!url) { m.dur.textContent = '无语音'; return; }
+    const a = new Audio(url);
+    a.onloadedmetadata = () => {
+        const s = Math.max(1, Math.round(a.duration));
+        m.dur.textContent = s + '″'; m.bub.style.width = Math.min(96 + s * 9, 250) + 'px';
+    };
 }
 function press(node, onLong, onTap) {         // 长按 420ms 触发菜单；短按触发 onTap
     let t, x, y;
@@ -179,6 +186,7 @@ $('#sheet').onclick = async e => {
     $('#mask').hidden = true; const m = cur; if (k === 'x' || !m) return;
     if (k === 'pt') { const b = ex(m, 'pt', '📝 原文'); if (b) b.lastChild.textContent = m.text; return; }
     if (k === 'bd') { openBreakdown(m); return; }
+    if (k === 'regen') { regenAudio(m); return; }
     const zh = k === 'zh', b = ex(m, k, zh ? '🌐 中文翻译' : '🧠 语法解析'); if (!b) return;
     b.lastChild.textContent = zh ? '翻译中…' : 'AI 正在解析…';
     const fd = new FormData(); fd.append('session_id', sid); fd.append('text', m.text); if (m.id) fd.append('message_id', m.id);
@@ -189,6 +197,22 @@ $('#sheet').onclick = async e => {
     scroll();
 };
 $('#mask').onclick = e => { if (e.target.id === 'mask') e.target.hidden = true; };
+
+/* ---------- 重新生成语音：用当前选中的音源/音色，对同一句 ai_text 重新合成 ---------- */
+async function regenAudio(m) {
+    if (!m.id) return toast('这条消息没有 message_id，无法重新生成');
+    toast('正在重新生成语音…');
+    const fd = new FormData();
+    fd.append('message_id', m.id);
+    fd.append('tts_provider', ttsProvider);
+    const v = getTtsVoice(ttsProvider); if (v) fd.append('tts_voice', v);
+    try {
+        const d = await post('/api/regenerate_audio', fd);
+        bindAudio(m, audioUrl(d));
+        if (m.audioUrl) play(m.audioUrl, m.bub);
+        toast(d.tts_fallback ? '已重新生成（在线语音不可用，改用本地语音）' : '已重新生成语音');
+    } catch (err) { toast('重新生成失败：' + err.message); }
+}
 
 /* ---------- 拆解单词：勾选加入单词库 ---------- */
 // wdata.words 里每一项自带 word/meaning/sentence/sentence_zh —— sentence 是这个词
