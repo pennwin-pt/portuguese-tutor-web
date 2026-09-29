@@ -24,9 +24,27 @@ const TTS_HINTS = {
     edge: '微软 Edge 在线语音，音质最自然（推荐）',
     streamelements: 'StreamElements 在线语音，Edge 不可用时的备选',
 };
+const TTS_SHORT = { piper: '本地', google: '谷歌', edge: 'Edge', streamelements: 'SE' };
 const ttsSeg = $('#ttsSeg'), voiceHint = $('#voiceHint');
-let ttsProvider = localStorage.getItem('ttsProvider');
-if (!TTS_PROVIDERS.includes(ttsProvider)) ttsProvider = 'piper';
+// 音色是"每个智能体各自一份"：按当前 sid（绑定的智能体名 / 游客 sid）存在 localStorage 的 tts_<sid> 里，
+// 切换智能体时重新读取。ttsVoices 形如 {edge:'pt-PT-DuarteNeural', streamelements:'Ines'}。
+let ttsProvider = 'piper', ttsVoices = {};
+const ttsKey = () => 'tts_' + sid;
+function saveTts() { localStorage.setItem(ttsKey(), JSON.stringify({ provider: ttsProvider, voices: ttsVoices })); }
+function loadTts() {
+    let cfg = null;
+    try { cfg = JSON.parse(localStorage.getItem(ttsKey())); } catch {}
+    if (!cfg) {                                     // 该智能体还没设置过：把旧版全局设置一次性迁移过来，之后就是新智能体默认本地音色
+        const old = localStorage.getItem('ttsProvider');
+        if (old) {
+            cfg = { provider: old, voices: { edge: localStorage.getItem('ttsVoice_edge'), streamelements: localStorage.getItem('ttsVoice_streamelements') } };
+            ['ttsProvider', 'ttsVoice_edge', 'ttsVoice_streamelements'].forEach(k => localStorage.removeItem(k));
+            ttsProvider = TTS_PROVIDERS.includes(cfg.provider) ? cfg.provider : 'piper'; ttsVoices = cfg.voices || {}; saveTts(); return;
+        }
+    }
+    ttsProvider = cfg && TTS_PROVIDERS.includes(cfg.provider) ? cfg.provider : 'piper';
+    ttsVoices = cfg && cfg.voices && typeof cfg.voices === 'object' ? cfg.voices : {};
+}
 
 // 只有 edge / streamelements 有多个音色可选；key 要跟后端 tts_engine.py 里的
 // EDGE_VOICES / STREAMELEMENTS_VOICES 白名单完全一致，改一边另一边要同步改。
@@ -41,10 +59,9 @@ const VOICE_OPTIONS = {
     },
 };
 const voiceOptSeg = $('#voiceOptSeg');
-const ttsVoiceKey = p => 'ttsVoice_' + p;
 function getTtsVoice(provider) {                       // 没有多音色的 provider 返回 null，不用带 tts_voice 字段
     const opts = VOICE_OPTIONS[provider]; if (!opts) return null;
-    const saved = localStorage.getItem(ttsVoiceKey(provider));
+    const saved = ttsVoices[provider];
     return opts[saved] ? saved : Object.keys(opts)[0];  // 存的值不合法（比如白名单改过）就回退第一个
 }
 function renderVoiceOpts() {
@@ -62,8 +79,8 @@ function renderVoiceOpts() {
 }
 voiceOptSeg.onclick = e => {
     const b = e.target.closest('button[data-v]'); if (!b) return;
-    localStorage.setItem(ttsVoiceKey(ttsProvider), b.dataset.v);
-    renderVoiceOpts();
+    ttsVoices[ttsProvider] = b.dataset.v; saveTts();
+    renderVoiceOpts(); updateTitle();
 };
 
 function syncTtsSeg() {
@@ -77,11 +94,18 @@ function syncTtsSeg() {
 }
 ttsSeg.onclick = e => {
     const b = e.target.closest('button[data-p]'); if (!b) return;
-    ttsProvider = b.dataset.p;
-    localStorage.setItem('ttsProvider', ttsProvider);
-    syncTtsSeg();
+    ttsProvider = b.dataset.p; saveTts();
+    syncTtsSeg(); updateTitle();
 };
-syncTtsSeg();
+// 标题栏：智能体名字（游客显示默认名）+ 当前音色
+function updateTitle() {
+    const v = getTtsVoice(ttsProvider);
+    $('#agent').textContent = username || '葡语陪练';
+    $('#agentVoice').textContent = '🔊 ' + TTS_SHORT[ttsProvider] + (v ? ' · ' + VOICE_OPTIONS[ttsProvider][v] : '');
+    document.title = username || '葡语陪练';
+}
+function syncAgentVoice() { loadTts(); syncTtsSeg(); updateTitle(); }   // 启动 / 切换智能体时调用
+syncAgentVoice();
 
 const scroll = () => requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
 function toast(m) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); }
@@ -442,14 +466,14 @@ tc.onchange = () => saveTheme(derive(tc.value));                         // 选�
 $('#treset').onclick = () => { const t = derive(DEFAULT_BLUE); applyTheme(t); saveTheme(t); };
 $('#theme').onclick = () => {
     $('#bghint').textContent = username
-        ? 'JPG / PNG / WebP，不超过 5MB。背景和主题会保存到你的用户名下。'
-        : 'JPG / PNG / WebP，不超过 5MB。游客的主题色只保存在本机；上传背景需要先绑定用户名。';
+        ? 'JPG / PNG / WebP，不超过 5MB。背景和主题会保存到当前智能体名下。'
+        : 'JPG / PNG / WebP，不超过 5MB。游客的主题色只保存在本机；上传背景需要先绑定智能体。';
     markTheme(); $('#tmask').hidden = false;
 };
 
 /* ---------- 背景上传 ---------- */
 $('#bgpick').onclick = () => {
-    if (!username) { toast('请先绑定用户名，背景才能保存'); openUser(); return; }
+    if (!username) { toast('请先绑定智能体，背景才能保存'); openUser(); return; }
     $('#bgf').click();
 };
 $('#bgf').onchange = async e => {
@@ -470,7 +494,7 @@ const uname = $('#uname');
 function syncUserUI() {
     $('#user').classList.toggle('on', !!username);
     $('#user').title = username || '游客';
-    $('#ucur').textContent = username ? '当前用户：' + username : '当前：游客模式（聊天记录只跟随本机浏览器）';
+    $('#ucur').textContent = username ? '当前智能体：' + username : '当前：未绑定智能体（游客模式，聊天记录只跟随本机浏览器）';
     $('#ulogout').hidden = !username;
     uname.value = username;
 }
@@ -491,13 +515,13 @@ async function loadHistory() {                                           // 按�
 }
 async function submitBind() {
     const name = uname.value.trim();
-    if (!NAME_RE.test(name)) return toast('用户名需为 2–20 位字母、数字、下划线或中文');
+    if (!NAME_RE.test(name)) return toast('智能体名称需为 2–20 位字母、数字、下划线或中文');
     if (name === username) { closeMasks(); return; }
     const btn = $('#ubind'); btn.disabled = true;
     try {
         const p = await post('/api/user/bind', { username: name });
         username = name; localStorage.setItem('username', name); sid = name;
-        applyProfile(p); syncUserUI(); closeMasks();
+        applyProfile(p); syncUserUI(); syncAgentVoice(); closeMasks();
         await loadHistory();
         toast('已切换到：' + name);
     } catch (err) { toast(err.message); }
@@ -506,9 +530,9 @@ async function submitBind() {
 $('#ubind').onclick = submitBind;
 uname.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) submitBind(); };
 $('#ulogout').onclick = async () => {
-    if (!confirm('退出当前用户？聊天记录仍保存在服务器，之后用同一个用户名即可恢复。')) return;
+    if (!confirm('退出当前智能体？聊天记录仍保存在服务器，之后用同一个名称即可恢复。')) return;
     username = ''; localStorage.removeItem('username'); sid = guestSid;
-    clearTheme(); setBg(''); syncUserUI(); closeMasks();
+    clearTheme(); setBg(''); syncUserUI(); syncAgentVoice(); closeMasks();
     await loadHistory();
     toast('已回到游客模式');
 };
