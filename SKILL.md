@@ -19,7 +19,7 @@ description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:in
   core/tts_engine.py   Piper + google/edge/streamelements 在线音源(synthesize_any)
   memory/session_manager.py  messages 表   memory/user_manager.py  users 表
   memory/vocab_manager.py    vocab 表
-  prompts/tutor_prompt.py(教练人设 A1 pt-PT)  prompts/helper_prompts.py(ZH2PT/PT2ZH/EXPLAIN/BREAKDOWN)
+  prompts/tutor_prompt.py(教练规则 A1 pt-PT + `build_system_prompt(persona)`)  prompts/helper_prompts.py(ZH2PT/PT2ZH/EXPLAIN/BREAKDOWN)
 ```
 
 ## 术语与身份
@@ -31,6 +31,7 @@ description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:in
 ## 前端结构(js/index.js)
 - **标题栏**:`#st` 连接状态 | `#ttl`(`h1#agent` 显示智能体名,游客显示"葡语陪练";`#agentVoice` 小字显示当前音色如"🔊 Edge · 女声 Raquel") | 👤 🎨 模式按钮。长按 h1 = 清空当前会话。`updateTitle()` 同步标题和 `document.title`。
 - **👤 面板 `#umask`(绑定智能体)**:名称输入 + **语音音色设置**(`#ttsSeg` 音源四选一、`#voiceOptSeg` 音色、`#voiceHint`)+ 绑定/退出。音色**不再常驻页面**,只在此面板里改,点击即生效。
+- **角色人设**:同一面板里音色下面,`#persona` 多行输入(≤300 字)+ 模板按钮(三年级老师 Sara/三年级女生/三年级男生/默认 Tuga)+ `#psave` 保存。**只存服务器**(`users.persona`),游客禁用;`applyServerPersona/syncPersonaUI/refreshPersona`,`syncUserUI()` 会顺带重置草稿。`PERSONA_MAX` 与后端 `user_manager.PERSONA_MAX` 必须一致,`cleanPersona` 与后端 `clean_persona` 规则一致(统一换行、去控制字符和 `<>`)。
 - **音色按智能体各存一份**:`localStorage['tts_'+sid] = {provider, voices:{edge,streamelements}}`,`loadTts/saveTts`;启动与切换/退出智能体时调 `syncAgentVoice()`(= loadTts + syncTtsSeg + updateTitle)。旧全局键 `ttsProvider/ttsVoice_*` 首次加载时一次性迁移给当前 sid 后删除。**音色只在本机,不上服务器**(换设备需重选;要同步得给后端加字段)。
 - `VOICE_OPTIONS`(edge: Raquel/Duarte;streamelements: Ines/Cristiano)的 key **必须与后端 `tts_engine` 的 EDGE_VOICES/STREAMELEMENTS_VOICES 白名单一致**,改一边同步另一边。
 - **消息渲染**:`addMe`/`fillMe`(用户)、`addAI`(教练)、`makePill`(语音条,教练/中文求助用户共用)、`press(node,onLong,onTap)`(长按 420ms)、`bindAudio`、`restoreCache`。每个消息行带 `data-rid` = 数据库行 id。
@@ -38,6 +39,12 @@ description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:in
 - **长按菜单 `#sheet`**(`openMenu(m)`):`data-k` = pt 原文 / zh 翻译 / ex 语法解析 / bd 拆词 / regen 重生成语音 / del 删除 / x 取消。`m.rowId` 缺失时隐藏 del。
 - 主题:CSS 变量 `--blue/--me/--blue2`,`applyTheme/saveTheme`;背景 `setBg`。面板通用关闭走 `.mask` + `data-close`。
 - 通用:`req(path, body, method)`(FormData→multipart,对象→JSON,返回 `j.data||j`),`post/get`;错误 `errMsg()` 读 `detail`/`message`。
+
+## 角色人设(persona)
+- 存 `users.persona`(纯文本,自动补列);`POST /api/user/{username}/persona` JSON `{persona}`,清洗后 >300 字 422(不静默截断),空串=清除;`_profile` 返回 `persona`。
+- `_run_turn` 里 `user_manager.get_persona(session_id)` 取一次,`build_system_prompt(persona)` = 原规则 + `<persona>` 段落,段落声明「只改身份/性格/语气,不得违反规则 1–8」(pt-PT、A1、简短、`Correção:`、无 Markdown)。读取失败退回默认教练。
+- **只影响聊天回复**:ZH2PT/PT2ZH/EXPLAIN/BREAKDOWN 一次性提示词不带人设;WS 骨架不带人设(有意)。
+- 中途改人设:历史里旧语气会影响几轮,属预期;智能体名**不**注入提示词(模板里自带名字如 Sara)。
 
 ## 后端主流程 `_run_turn`(/chat/audio、/chat/text)
 1. `mode=zh` 先用 `ZH2PT_PROMPT` 译成葡语(`user_pt`);`mode=pt` 时 `user_pt == raw_text`。中文模式 ASR 必须 `language="zh"`。
@@ -76,6 +83,7 @@ description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:in
 | `GET /api/audio/{name}` | 白名单 `^msg_[0-9a-f]{12}\.(wav\|mp3)$` |
 | `POST /api/user/bind` | JSON {username,pin?} → profile |
 | `GET /api/user/{username}` | 拉 profile |
+| `POST /api/user/{username}/persona` | JSON {persona:str},≤300 字(清洗后),空=清除 |
 | `POST /api/user/{username}/theme` | JSON {theme:{--var:#hex}},≤32项,双重白名单 |
 | `POST /api/user/{username}/background` | FormData: file ≤5MB,后缀+魔数双校验,存 `bg_{uuid32}.{ext}` |
 | `GET /api/background/{name}` | 白名单,`Cache-Control: immutable` |
@@ -97,7 +105,7 @@ description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:in
 
 ## 存储(SQLite,自动迁移)
 - `messages`:id,session_id,role,content,created_at + 后加列 `msg_uid/orig/audio_file/translation/explanation/breakdown`。`init_db()` 用 `PRAGMA table_info` 缺列自动 `ALTER`,**新增列照此模式,不用删库**。
-- `users`:同样自动迁移;`theme` 存 JSON 字符串,读出 `json.loads`。
+- `users`:同样自动迁移(含 `tts`、`persona` 列);`theme` 存 JSON 字符串,读出 `json.loads`。
 - `vocab`:session_id,language,word,example_sentence,chinese_meaning,example_chinese;暂无迁移机制。
 
 ## 已知简化 / 别顺手"修复"

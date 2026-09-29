@@ -457,6 +457,7 @@ function applyProfile(p) {
     applyTheme(p.theme);
     setBg(BG_URL.test(p.background_url || '') ? API + p.background_url : '');
     applyServerTts(p.tts);
+    applyServerPersona(p.persona);
 }
 
 /* ---------- 弹层：通用开关 ---------- */
@@ -505,6 +506,56 @@ $('#bgf').onchange = async e => {
     } catch (err) { toast('上传失败：' + err.message); }
 };
 
+/* ---------- 角色人设（只存服务器，游客没有；后端拼进系统提示词，只影响聊天回复） ---------- */
+const PERSONA_MAX = 300;                                  // 与后端 user_manager.PERSONA_MAX 一致
+const PERSONA_PRESETS = [
+    { label: '三年级老师 Sara', tip: '建议搭配女声音色。',
+        text: '你是葡萄牙的三年级老师 Sara。性格温柔、有耐心，喜欢鼓励学生。说话像对小学生讲话一样，尽量用简单、简短的句子，语速慢，经常夸奖对方。' },
+    { label: '三年级女生', tip: '建议搭配女声音色。',
+        text: '你是一个住在葡萄牙的三年级女生，八九岁。性格活泼、好奇，喜欢聊学校、朋友、宠物和画画。说话像小朋友，用最简单的短句，遇到不懂的事会好奇地追问。' },
+    { label: '三年级男生', tip: '建议搭配男声音色。',
+        text: '你是一个住在葡萄牙的三年级男生，八九岁。性格开朗、爱玩，喜欢聊学校、足球、动物和游戏。说话像小朋友，用最简单的短句，喜欢问“你呢？”。' },
+    { label: '默认 Tuga', tip: '', text: '' },
+];
+let persona = '';                                         // 服务器上已保存的人设，以它为准
+const personaEl = $('#persona'), personaCount = $('#personaCount'), personaHint = $('#personaHint'),
+    psave = $('#psave'), personaBox = $('#personaPresets');
+const cleanPersona = s => String(s || '').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f<>]/g, '').trim().slice(0, PERSONA_MAX);
+PERSONA_PRESETS.forEach(p => {
+    const b = el('button', '', p.label); b.type = 'button';
+    b.onclick = () => {
+        personaEl.value = p.text; refreshPersona();
+        personaHint.textContent = p.text ? ('已填入模板，可以继续修改，点“保存人设”后生效。' + p.tip) : '已清空，点“保存人设”后恢复默认 Tuga 老师。';
+    };
+    personaBox.append(b);
+});
+function refreshPersona() {                               // 字数 / 按钮状态；只在有改动且已绑定时允许保存
+    personaCount.textContent = personaEl.value.length + '/' + PERSONA_MAX;
+    psave.disabled = !username || cleanPersona(personaEl.value) === persona;
+}
+function syncPersonaUI() {
+    personaEl.value = persona;
+    personaEl.disabled = !username;
+    personaBox.querySelectorAll('button').forEach(b => b.disabled = !username);
+    personaHint.textContent = username
+        ? '人设只改变身份、性格和语气，回复仍是简单的葡语（pt-PT），纠错格式不变。新人设从下一句开始生效，之前的聊天记录可能还会影响几轮语气。'
+        : '绑定智能体后才能设置人设（游客没有服务器资料）。';
+    refreshPersona();
+}
+function applyServerPersona(p) { persona = typeof p === 'string' ? p : ''; syncPersonaUI(); }
+personaEl.oninput = refreshPersona;
+psave.onclick = async () => {
+    if (!username) return;
+    const who = username, v = cleanPersona(personaEl.value);
+    psave.disabled = true;
+    try {
+        await post(`/api/user/${enc(who)}/persona`, { persona: v });
+        if (who !== username) return;                     // 保存期间切换了智能体，别把结果套到新智能体上
+        persona = v; personaEl.value = v; refreshPersona();
+        toast(v ? '人设已保存，下一句开始生效' : '已恢复默认 Tuga 老师');
+    } catch (err) { toast('人设保存失败：' + err.message); refreshPersona(); }
+};
+
 /* ---------- 用户名：绑定 / 恢复 / 退出 ---------- */
 const uname = $('#uname');
 function syncUserUI() {
@@ -513,6 +564,8 @@ function syncUserUI() {
     $('#ucur').textContent = username ? '当前智能体：' + username : '当前：未绑定智能体（游客模式，聊天记录只跟随本机浏览器）';
     $('#ulogout').hidden = !username;
     uname.value = username;
+    if (!username) persona = '';                          // 游客没有人设
+    syncPersonaUI();                                      // 同时丢弃面板里没保存的草稿
 }
 function openUser() { syncUserUI(); $('#tmask').hidden = true; $('#umask').hidden = false; setTimeout(() => uname.focus(), 60); }
 $('#user').onclick = openUser;

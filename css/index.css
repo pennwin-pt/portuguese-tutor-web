@@ -113,3 +113,20 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(env(safe-
 .wrow .wd b{display:block;font-size:15px;font-weight:600}
 .wrow .wd span{display:block;font-size:13px;color:var(--sub);margin-top:2px}
 .wrow .wd small{display:block;font-size:12px;color:#9aa5b1;margin-top:3px}
+
+/* 角色人设：模板按钮 + 多行输入 */
+.panel h3 small{font-size:12px;font-weight:400;color:#9aa5b1;margin-left:6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.chips button{height:32px;padding:0 12px;border:1.5px solid var(--blue);border-radius:16px;background:#fff;color:var(--blue);font-size:13px}
+.chips button:disabled{opacity:.4}
+.panel textarea{display:block;width:100%;min-height:96px;border:1.5px solid #d1d5db;border-radius:12px;padding:10px 14px;font:inherit;font-size:16px;line-height:1.5;resize:none;outline:none;user-select:text;-webkit-user-select:text}
+.panel textarea:focus{border-color:var(--blue)}
+.panel textarea:disabled{background:var(--bg);color:var(--sub)}
+.panel .psave{width:100%;height:42px;margin-top:10px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-size:15px;font-weight:600}
+.panel .psave:disabled{opacity:.4}
+
+/* 智能体名称输入框 + 绑定/恢复按钮同一行 */
+.namerow{display:flex;align-items:center;gap:8px}
+.namerow input{flex:1 1 0;min-width:0;width:auto}
+.namerow button{flex:none;height:44px;padding:0 14px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-size:15px;font-weight:600;white-space:nowrap}
+.namerow button:disabled{opacity:.5}

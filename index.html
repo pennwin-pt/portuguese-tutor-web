@@ -47,8 +47,11 @@
 <div class="mask" id="umask" hidden><div class="panel">
     <h2>绑定智能体</h2>
     <p class="cur" id="ucur"></p>
-    <input id="uname" type="text" maxlength="20" placeholder="智能体名称：2–20 位字母、数字、下划线或中文"
-           autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+    <div class="namerow">
+        <input id="uname" type="text" maxlength="20" placeholder="智能体名称（2–20 位）" title="2–20 位字母、数字、下划线或中文"
+               autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="done">
+        <button class="p" id="ubind">绑定 / 恢复</button>
+    </div>
     <p class="warn">⚠️ 智能体名称即身份标识，重名可查看历史。请不要使用容易被猜到的名字，也不要在对话里输入敏感信息。</p>
     <h3>当前智能体的语音音色</h3>
     <div class="voice-seg" id="ttsSeg" role="radiogroup" aria-label="选择语音合成音源">
@@ -59,8 +62,13 @@
     </div>
     <div class="voice-seg" id="voiceOptSeg" role="radiogroup" aria-label="选择音色" hidden></div>
     <p class="hint" id="voiceHint"></p>
+    <h3>角色人设 <small id="personaCount">0/300</small></h3>
+    <div class="chips" id="personaPresets"></div>
+    <textarea id="persona" rows="4" maxlength="300" spellcheck="false"
+              placeholder="例如：请你扮演一名三年级的老师，性格温柔，说话尽量用简单并简短的句子。留空 = 默认的 Tuga 老师。"></textarea>
+    <p class="hint" id="personaHint"></p>
+    <button type="button" class="psave" id="psave" disabled>保存人设</button>
     <div class="acts">
-        <button class="p" id="ubind">绑定 / 恢复</button>
         <button id="ulogout" hidden>退出智能体（回到游客模式）</button>
         <button class="c" data-close>完成</button>
     </div>
