@@ -138,9 +138,15 @@ function fillMe(b, d) {
     // 这里的 d.message_id / d.audio_url 指的是"用户这条消息"自己的（send() 里从 user_* 字段映射过来，
     // 历史接口里用户消息本来就是这个字段名）；葡语模式下 message_id 为空，不画语音条。
     if (d.message_id) {
-        const m = { id: d.message_id, text: d.user_pt, ex: {}, audioUrl: null };
+        const m = { id: d.message_id, text: d.user_pt, ex: {}, audioUrl: null, rowId: d.row_id };
         makePill(b.parentNode, m, audioUrl(d), false);      // 用户自己的语音条不自动播放
         restoreCache(m, d);
+    }
+    // 整轮对话的删除入口：长按这条文字气泡（葡语模式下这就是"我说的话"，识别错了可以删掉重说）
+    const rowEl = b.parentNode.parentNode;
+    if (d.row_id) {
+        rowEl.dataset.rid = d.row_id;
+        press(b, () => openMenu({ rowId: d.row_id, text: pt }, true), null);
     }
 }
 function addTyping() { const r = el('div', 'row ai'), b = el('div', 'bub dots'); b.innerHTML = '<span></span><span></span><span></span>'; r.append(el('div', 'col')); r.firstChild.append(b); chat.append(r); scroll(); return r; }
@@ -150,7 +156,7 @@ function makePill(col, m, url, auto) {       // 教练 / 用户共用：画语�
     bub.append(el('span', 'ic', '🔊'), dur); col.append(bub);
     m.box = col; m.bub = bub; m.dur = dur;
     bindAudio(m, url);
-    press(bub, () => { cur = m; $('#mask').hidden = false; }, () => { if (m.audioUrl) play(m.audioUrl, bub); });
+    press(bub, () => openMenu(m, false), () => { if (m.audioUrl) play(m.audioUrl, bub); });
     if (m.audioUrl && auto) play(m.audioUrl, bub);
 }
 function restoreCache(m, d) {                 // 历史里缓存的翻译 / 解析，刷新后仍然展示
@@ -158,8 +164,9 @@ function restoreCache(m, d) {                 // 历史里缓存的翻译 / 解�
     if (d.explanation) ex(m, 'ex', '🧠 语法解析').lastChild.textContent = d.explanation;
 }
 function addAI(d, auto = true) {
-    const m = { id: d.message_id, text: d.ai_text, ex: {}, audioUrl: null };
+    const m = { id: d.message_id, text: d.ai_text, ex: {}, audioUrl: null, rowId: d.row_id ?? d.ai_row_id };
     const row = el('div', 'row ai'), col = el('div', 'col');
+    if (m.rowId) row.dataset.rid = m.rowId;
     row.append(col); chat.append(row);
     makePill(col, m, audioUrl(d), auto);
     restoreCache(m, d);
@@ -199,9 +206,19 @@ function ex(m, k, title) {                    // 已存在则切换显示/隐藏
     if (b) { b.hidden = !b.hidden; return null; }
     b = m.ex[k] = el('div', 'ex'); b.append(el('b', '', title), el('div', 'body')); m.box.append(b); scroll(); return b;
 }
+// delOnly=true：从文字气泡长按进来，只显示"删除/取消"（原文/翻译/解析这些是语音条专属）
+function openMenu(m, delOnly) {
+    cur = m;
+    $('#sheet').querySelectorAll('button').forEach(b => {
+        const k = b.dataset.k;
+        b.hidden = (delOnly && k !== 'del' && k !== 'x') || (k === 'del' && !m.rowId);
+    });
+    $('#mask').hidden = false;
+}
 $('#sheet').onclick = async e => {
     const k = e.target.dataset.k; if (!k) return;
     $('#mask').hidden = true; const m = cur; if (k === 'x' || !m) return;
+    if (k === 'del') { delTurn(m); return; }
     if (k === 'pt') { const b = ex(m, 'pt', '📝 原文'); if (b) b.lastChild.textContent = m.text; return; }
     if (k === 'bd') { openBreakdown(m); return; }
     if (k === 'regen') { regenAudio(m); return; }
@@ -215,6 +232,18 @@ $('#sheet').onclick = async e => {
     scroll();
 };
 $('#mask').onclick = e => { if (e.target.id === 'mask') e.target.hidden = true; };
+
+/* ---------- 删除一轮对话：删任意一句，配对的另一句一起删（后端同步清掉 LLM 记忆和语音文件） ---------- */
+async function delTurn(m) {
+    if (!m.rowId) return toast('这条消息没有 id，无法删除');
+    try {
+        const d = await req(`/api/message/${m.rowId}?session_id=${enc(sid)}`, null, 'DELETE');
+        (d.deleted || [m.rowId]).forEach(id => chat.querySelector(`.row[data-rid="${id}"]`)?.remove());
+        if (playingPill && !playingPill.isConnected) { player.pause(); playingPill = null; }
+        if (!chat.querySelector('.row')) chat.innerHTML = TIP;
+        cur = null; toast('已删除，可以重新说了');
+    } catch (err) { toast('删除失败：' + err.message); }
+}
 
 /* ---------- 重新生成语音：用当前选中的音源/音色，对同一句 ai_text 重新合成 ---------- */
 async function regenAudio(m) {
@@ -291,7 +320,7 @@ async function send({ blob, ext, text }) {
         const d = await post(blob ? '/api/chat/audio' : '/api/chat/text', fd);
         typing.remove();
         // d.message_id / d.audio_url 是教练的；用户译文语音条的字段带 user_ 前缀，这里映射成 fillMe 认的名字
-        fillMe(mine, { user_pt: d.user_pt, user_text: d.user_text, message_id: d.user_message_id, audio_url: d.user_audio_url });
+        fillMe(mine, { user_pt: d.user_pt, user_text: d.user_text, message_id: d.user_message_id, audio_url: d.user_audio_url, row_id: d.user_row_id });
         addAI(d);
         if (d.tts_fallback) toast('在线语音暂时不可用，已用本地语音代替');
     } catch (err) { typing.remove(); mine.parentNode.parentNode.remove(); toast(err.message); }
