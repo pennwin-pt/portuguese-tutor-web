@@ -30,7 +30,22 @@ const ttsSeg = $('#ttsSeg'), voiceHint = $('#voiceHint');
 // 切换智能体时重新读取。ttsVoices 形如 {edge:'pt-PT-DuarteNeural', streamelements:'Ines'}。
 let ttsProvider = 'piper', ttsVoices = {};
 const ttsKey = () => 'tts_' + sid;
-function saveTts() { localStorage.setItem(ttsKey(), JSON.stringify({ provider: ttsProvider, voices: ttsVoices })); }
+// 只保留合法的音色（key 必须是有多音色的音源，value 必须在 VOICE_OPTIONS 白名单里），本地和服务器都存干净的
+const cleanVoices = v => Object.fromEntries(Object.entries(v && typeof v === 'object' ? v : {}).filter(([k, x]) => VOICE_OPTIONS[k]?.[x]));
+function saveTtsLocal() { localStorage.setItem(ttsKey(), JSON.stringify({ provider: ttsProvider, voices: cleanVoices(ttsVoices) })); }
+function pushTts() {                                // 已绑定智能体才同步到服务器；失败只提示，本机仍然生效
+    if (!username) return;
+    post(`/api/user/${enc(username)}/tts`, { provider: ttsProvider, voices: cleanVoices(ttsVoices) })
+        .catch(err => toast('音色保存到服务器失败：' + err.message));
+}
+function saveTts() { saveTtsLocal(); pushTts(); }
+function applyServerTts(t) {                        // 服务器的音色为准；服务器还没有就把本机当前的传上去
+    if (!username) return;
+    if (t && TTS_PROVIDERS.includes(t.provider)) {
+        ttsProvider = t.provider; ttsVoices = cleanVoices(t.voices);
+        saveTtsLocal(); syncTtsSeg(); updateTitle();
+    } else pushTts();
+}
 function loadTts() {
     let cfg = null;
     try { cfg = JSON.parse(localStorage.getItem(ttsKey())); } catch {}
@@ -39,11 +54,11 @@ function loadTts() {
         if (old) {
             cfg = { provider: old, voices: { edge: localStorage.getItem('ttsVoice_edge'), streamelements: localStorage.getItem('ttsVoice_streamelements') } };
             ['ttsProvider', 'ttsVoice_edge', 'ttsVoice_streamelements'].forEach(k => localStorage.removeItem(k));
-            ttsProvider = TTS_PROVIDERS.includes(cfg.provider) ? cfg.provider : 'piper'; ttsVoices = cfg.voices || {}; saveTts(); return;
+            ttsProvider = TTS_PROVIDERS.includes(cfg.provider) ? cfg.provider : 'piper'; ttsVoices = cleanVoices(cfg.voices); saveTtsLocal(); return;
         }
     }
     ttsProvider = cfg && TTS_PROVIDERS.includes(cfg.provider) ? cfg.provider : 'piper';
-    ttsVoices = cfg && cfg.voices && typeof cfg.voices === 'object' ? cfg.voices : {};
+    ttsVoices = cleanVoices(cfg && cfg.voices);
 }
 
 // 只有 edge / streamelements 有多个音色可选；key 要跟后端 tts_engine.py 里的
@@ -441,6 +456,7 @@ function applyProfile(p) {
     p = p || {};
     applyTheme(p.theme);
     setBg(BG_URL.test(p.background_url || '') ? API + p.background_url : '');
+    applyServerTts(p.tts);
 }
 
 /* ---------- 弹层：通用开关 ---------- */
@@ -521,7 +537,7 @@ async function submitBind() {
     try {
         const p = await post('/api/user/bind', { username: name });
         username = name; localStorage.setItem('username', name); sid = name;
-        applyProfile(p); syncUserUI(); syncAgentVoice(); closeMasks();
+        syncAgentVoice(); applyProfile(p); syncUserUI(); closeMasks();     // 先读本机缓存，再用服务器的音色覆盖
         await loadHistory();
         toast('已切换到：' + name);
     } catch (err) { toast(err.message); }
