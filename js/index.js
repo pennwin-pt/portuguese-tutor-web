@@ -134,20 +134,35 @@ function fillMe(b, d) {
     const pt = d.user_pt || d.user_text || '（未识别）';
     b.textContent = pt;
     if (d.user_pt && d.user_text && d.user_text !== d.user_pt) b.append(el('small', '', '原话：' + d.user_text));
+    // 中文求助模式：译出来的葡语也配一条语音条，长按菜单和教练的语音条完全一样。
+    // 这里的 d.message_id / d.audio_url 指的是"用户这条消息"自己的（send() 里从 user_* 字段映射过来，
+    // 历史接口里用户消息本来就是这个字段名）；葡语模式下 message_id 为空，不画语音条。
+    if (d.message_id) {
+        const m = { id: d.message_id, text: d.user_pt, ex: {}, audioUrl: null };
+        makePill(b.parentNode, m, audioUrl(d), false);      // 用户自己的语音条不自动播放
+        restoreCache(m, d);
+    }
 }
 function addTyping() { const r = el('div', 'row ai'), b = el('div', 'bub dots'); b.innerHTML = '<span></span><span></span><span></span>'; r.append(el('div', 'col')); r.firstChild.append(b); chat.append(r); scroll(); return r; }
 
-function addAI(d, auto = true) {
-    const m = { id: d.message_id, text: d.ai_text, ex: {}, audioUrl: null };
-    const row = el('div', 'row ai'), col = el('div', 'col'), bub = el('div', 'bub pill');
-    const dur = el('span', '', '··');
-    bub.append(el('span', 'ic', '🔊'), dur); col.append(bub); row.append(col); chat.append(row);
+function makePill(col, m, url, auto) {       // 教练 / 用户共用：画语音条 + 绑定长按菜单
+    const bub = el('div', 'bub pill'), dur = el('span', '', '··');
+    bub.append(el('span', 'ic', '🔊'), dur); col.append(bub);
     m.box = col; m.bub = bub; m.dur = dur;
-    bindAudio(m, audioUrl(d));
+    bindAudio(m, url);
     press(bub, () => { cur = m; $('#mask').hidden = false; }, () => { if (m.audioUrl) play(m.audioUrl, bub); });
     if (m.audioUrl && auto) play(m.audioUrl, bub);
-    if (d.translation) ex(m, 'zh', '🌐 中文翻译').lastChild.textContent = d.translation;   // 历史里缓存的内容
+}
+function restoreCache(m, d) {                 // 历史里缓存的翻译 / 解析，刷新后仍然展示
+    if (d.translation) ex(m, 'zh', '🌐 中文翻译').lastChild.textContent = d.translation;
     if (d.explanation) ex(m, 'ex', '🧠 语法解析').lastChild.textContent = d.explanation;
+}
+function addAI(d, auto = true) {
+    const m = { id: d.message_id, text: d.ai_text, ex: {}, audioUrl: null };
+    const row = el('div', 'row ai'), col = el('div', 'col');
+    row.append(col); chat.append(row);
+    makePill(col, m, audioUrl(d), auto);
+    restoreCache(m, d);
     scroll();
 }
 function bindAudio(m, url) {                  // 首次渲染 / 重新生成语音后，都走这里刷新时长和可播放地址
@@ -274,7 +289,10 @@ async function send({ blob, ext, text }) {
     const typing = addTyping();
     try {
         const d = await post(blob ? '/api/chat/audio' : '/api/chat/text', fd);
-        typing.remove(); fillMe(mine, d); addAI(d);
+        typing.remove();
+        // d.message_id / d.audio_url 是教练的；用户译文语音条的字段带 user_ 前缀，这里映射成 fillMe 认的名字
+        fillMe(mine, { user_pt: d.user_pt, user_text: d.user_text, message_id: d.user_message_id, audio_url: d.user_audio_url });
+        addAI(d);
         if (d.tts_fallback) toast('在线语音暂时不可用，已用本地语音代替');
     } catch (err) { typing.remove(); mine.parentNode.parentNode.remove(); toast(err.message); }
 }

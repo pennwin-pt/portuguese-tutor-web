@@ -35,6 +35,8 @@ header h1{flex:none;margin:0;font-size:17px;font-weight:600;letter-spacing:.3px}
 .me .bub{background:var(--me);border-top-right-radius:4px}
 .me small{display:block;color:#2b6aa3;color:color-mix(in srgb,var(--blue) 70%,#000);font-size:12px;margin-top:2px}
 .ai .bub{background:#fff;border-top-left-radius:4px}
+/* 中文求助模式下，用户译文的语音条：靠右对齐，四个角都是圆的（顶角的小尖角留给上面的文字气泡） */
+.me .bub.pill{align-self:flex-end;border-top-right-radius:14px}
 .pill{display:flex;align-items:center;gap:8px;min-width:96px;cursor:pointer;color:var(--blue);font-weight:500}
 .pill .ic{font-size:18px}.pill.play .ic{animation:pulse .8s infinite}
 @keyframes pulse{50%{opacity:.35}}
