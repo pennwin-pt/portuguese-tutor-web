@@ -142,12 +142,9 @@ function fillMe(b, d) {
         makePill(b.parentNode, m, audioUrl(d), false);      // 用户自己的语音条不自动播放
         restoreCache(m, d);
     }
-    // 整轮对话的删除入口：长按这条文字气泡（葡语模式下这就是"我说的话"，识别错了可以删掉重说）
-    const rowEl = b.parentNode.parentNode;
-    if (d.row_id) {
-        rowEl.dataset.rid = d.row_id;
-        press(b, () => openMenu({ rowId: d.row_id, text: pt }, true), null);
-    }
+    // 只登记行 id，不绑长按：删除入口只在语音条上（老师的 / 中文求助模式下自己的）。
+    // 用户这一行也要带 data-rid，删除老师的回复时才能连带把这一行从界面上移除。
+    if (d.row_id) b.parentNode.parentNode.dataset.rid = d.row_id;
 }
 function addTyping() { const r = el('div', 'row ai'), b = el('div', 'bub dots'); b.innerHTML = '<span></span><span></span><span></span>'; r.append(el('div', 'col')); r.firstChild.append(b); chat.append(r); scroll(); return r; }
 
@@ -156,7 +153,7 @@ function makePill(col, m, url, auto) {       // 教练 / 用户共用：画语�
     bub.append(el('span', 'ic', '🔊'), dur); col.append(bub);
     m.box = col; m.bub = bub; m.dur = dur;
     bindAudio(m, url);
-    press(bub, () => openMenu(m, false), () => { if (m.audioUrl) play(m.audioUrl, bub); });
+    press(bub, () => openMenu(m), () => { if (m.audioUrl) play(m.audioUrl, bub); });
     if (m.audioUrl && auto) play(m.audioUrl, bub);
 }
 function restoreCache(m, d) {                 // 历史里缓存的翻译 / 解析，刷新后仍然展示
@@ -206,13 +203,9 @@ function ex(m, k, title) {                    // 已存在则切换显示/隐藏
     if (b) { b.hidden = !b.hidden; return null; }
     b = m.ex[k] = el('div', 'ex'); b.append(el('b', '', title), el('div', 'body')); m.box.append(b); scroll(); return b;
 }
-// delOnly=true：从文字气泡长按进来，只显示"删除/取消"（原文/翻译/解析这些是语音条专属）
-function openMenu(m, delOnly) {
+function openMenu(m) {                        // 老师的语音条 / 中文求助模式下自己的语音条共用
     cur = m;
-    $('#sheet').querySelectorAll('button').forEach(b => {
-        const k = b.dataset.k;
-        b.hidden = (delOnly && k !== 'del' && k !== 'x') || (k === 'del' && !m.rowId);
-    });
+    $('#sheet').querySelector('[data-k="del"]').hidden = !m.rowId;   // 没有行 id（旧数据）就不显示删除
     $('#mask').hidden = false;
 }
 $('#sheet').onclick = async e => {
