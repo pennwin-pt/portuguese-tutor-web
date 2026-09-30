@@ -131,7 +131,7 @@ function viewResult() {
             el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
         if (r.comment) c.append(el('div', 'cmt', '💬 ' + r.comment));
     }
-    if (canSkip()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次。如果觉得是识别不准，可以跳过（这个词下一轮还会再测）`));
+    if (canSkip()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次。如果觉得是识别不准，可以跳过（跳过后这个词算已通过，不再重测）`));
     const ans = el('div', 'ans');
     const r1 = el('div', 'arow'), t1 = el('div', 'tx'), r3 = el('div', 'arow'), t3 = el('div', 'tx');
     t1.append(el('span', 'alab', '葡语单词'), el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
@@ -231,8 +231,11 @@ function retry() {                                  // 没答对：停在同一�
     lastRes = null; state = 'test'; render();
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));
 }
-function skip() {                                   // 跳过：词已在 failedList 里（答错时就进了），直接去下一个；下一轮会翻转方向再测
+function skip() {                                   // 跳过：视为已通过——从本轮错词列表里移除并记为过关，后面的轮次不再重测
     if (!canSkip()) return;
+    const w = cur;
+    failedList = failedList.filter(x => x.id !== w.id);
+    passed.add(w.id);                               // 进度条按已过关数计算；不计入 firstPass（不是一次通过）
     next();
 }
 function markMissed(w) { if (!curMissed) { curMissed = true; failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
