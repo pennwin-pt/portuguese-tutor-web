@@ -1,0 +1,39 @@
+/* 单词任务页：在 index.css（主题变量、header、footer、#hold、#rec、#toast）基础上只补这一页独有的样式 */
+.hl{flex:1 1 0;min-width:0;display:flex;align-items:center}
+#prog{font-size:12px;white-space:nowrap}
+
+/* 总进度条：已通过的单词数 / 今日总数 */
+#bar{height:3px;background:rgba(0,0,0,.08)}
+#bar i{display:block;height:100%;width:0;background:var(--blue);transition:width .3s}
+
+#stage{flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;justify-content:center;overscroll-behavior:contain}
+.wcard{background:#fff;border-radius:20px;padding:26px 20px;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.06)}
+.wcard .tag{display:inline-block;margin-bottom:18px;padding:3px 10px;border-radius:12px;background:var(--blue2);color:var(--blue);font-size:12px;font-weight:500}
+.termrow{display:flex;align-items:center;justify-content:center;gap:12px}
+.term{font-size:34px;font-weight:700;line-height:1.25;word-break:break-word}
+.ask{margin-top:14px;font-size:14px;color:var(--sub)}
+.intro{margin:12px 0 0;font-size:14px;color:var(--sub);line-height:1.7}
+.stat{margin-top:14px;font-size:15px;line-height:1.9}
+
+/* 喇叭按钮 */
+.spk{flex:none;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid var(--blue);border-radius:50%;background:#fff;color:var(--blue);font-size:18px;line-height:1;touch-action:manipulation;-webkit-appearance:none}
+.spk.play{animation:pulse .8s infinite}
+
+/* 结果阶段 */
+.verdict{font-size:22px;font-weight:700}
+.verdict.ok{color:#16a34a}
+.verdict.bad{color:var(--red)}
+.heard{margin-top:8px;font-size:15px;color:var(--tx)}
+.cmt{margin-top:4px;font-size:13px;color:var(--sub)}
+.ans{margin-top:18px;padding-top:14px;border-top:1px solid #eef2f6;text-align:left}
+.arow{display:flex;align-items:center;gap:10px;margin:8px 0}
+.arow .tx{flex:1;min-width:0;word-break:break-word}
+.apt{font-size:22px;font-weight:700}
+.asen{font-size:17px;font-weight:500}
+.azh{font-size:14px;color:var(--sub)}
+.alab{display:block;margin-bottom:2px;font-size:11px;color:#9aa5b1}
+
+/* footer 里的“领取 / 下一个 / 完成 / 返回聊天”：外观和“按住说话”一致 */
+#act{flex:1;height:56px;border:0;border-radius:28px;background:var(--blue);color:#fff;font-size:17px;font-weight:600;touch-action:manipulation;box-shadow:0 4px 14px rgba(61,155,233,.35);box-shadow:0 4px 14px color-mix(in srgb,var(--blue) 35%,transparent)}
+#act:disabled{opacity:.5}
+#hold:disabled{opacity:.6}
