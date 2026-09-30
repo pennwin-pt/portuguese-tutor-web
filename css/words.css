@@ -43,8 +43,8 @@
 /* footer 里的“领取 / 下一个 / 完成 / 返回聊天”：外观和“按住说话”一致 */
 #act{flex:1;height:56px;border:0;border-radius:28px;background:var(--blue);color:#fff;font-size:17px;font-weight:600;touch-action:manipulation;box-shadow:0 4px 14px rgba(61,155,233,.35);box-shadow:0 4px 14px color-mix(in srgb,var(--blue) 35%,transparent)}
 #act:disabled{opacity:.5}
-/* 完成页左边的次要按钮：返回聊天 */
-#act2{flex:none;height:56px;padding:0 22px;border:1.5px solid var(--blue);border-radius:28px;background:#fff;color:var(--blue);font-size:16px;font-weight:600;touch-action:manipulation}
+/* 次要按钮：完成页的“返回聊天”、结果页连续答错两次后出现的“跳过” */
+#act2,#skip{flex:none;height:56px;padding:0 22px;border:1.5px solid var(--blue);border-radius:28px;background:#fff;color:var(--blue);font-size:16px;font-weight:600;touch-action:manipulation}
 #hold:disabled{opacity:.6}
 /* 测试中“公布答案”：在“按住说话”左边，外观同“返回聊天” */
 #reveal{flex:none;height:56px;padding:0 18px;border:1.5px solid var(--blue);border-radius:28px;background:#fff;color:var(--blue);font-size:16px;font-weight:600;white-space:nowrap;touch-action:manipulation}

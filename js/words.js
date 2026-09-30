@@ -63,7 +63,7 @@ player.onerror = () => { spkBtn?.classList.remove('play'); if (!player.currentSr
 /* ---------- 音效：答对 / 答错 ----------
    文件放在前端目录的 sounds/ 下（nginx 里是 html/portuguese-tutor-web/sounds/），想换格式只改这里的文件名。
    文件缺失或加载失败时静默不播，不影响答题。用独立的 Audio 对象，不占用朗读的 #player。 */
-const SFX_FILES = { pass: 'sounds/success.mp3', fail: 'sounds/fail.mp3' };
+const SFX_FILES = { pass: 'sounds/success.wav', fail: 'sounds/fail.wav' };
 const sfx = Object.fromEntries(Object.entries(SFX_FILES).map(([k, src]) => { const a = new Audio(src); a.preload = 'auto'; return [k, a]; }));
 let sfxPrimed = false;
 function primeSfx() {       // iOS：音效是在异步评判返回后才播的，必须先在用户手势里对每个 Audio 解锁一次（静音播放再停）
@@ -96,11 +96,14 @@ let summary = null;         // done 页展示的成绩：{rounds,total,first_pas
 let todoList = [];          // 当前轮次待测（cur 已经从里面 shift 出来）
 let failedList = [];        // 本轮里出过错的词（每词只记一次，带着出错时的 mode）；本轮测完后翻转 mode 变成下一轮的 todoList
 let cur = null, lastRes = null;
+let aiWrong = 0;            // 当前这个词在本轮里被 AI 评判为“答错”的次数（公布答案、没听清都不算）；≥ SKIP_AFTER 才允许跳过
+const SKIP_AFTER = 2;
 let curMissed = false;      // 当前这个词在本轮里是否已经答错 / 公布过答案（= 不是“一次通过”，本轮结束后要重测）
 let round = 1, roundTotal = 0, total = 0, attempts = 0, firstPass = 0;
 const passed = new Set();   // 已“过关”的单词 id：某一轮里一次就答对的词（答错后重试才对的不算，还要进下一轮）
 
 const isLast = () => !todoList.length && !failedList.length;
+const canSkip = () => state === 'result' && !!lastRes && !lastRes.passed && aiWrong >= SKIP_AFTER;   // 只在“AI 已连续判错两次”的结果页开放，不能一上来就跳
 
 function viewIdle() {
     const c = el('div', 'wcard');
@@ -128,6 +131,7 @@ function viewResult() {
             el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
         if (r.comment) c.append(el('div', 'cmt', '💬 ' + r.comment));
     }
+    if (canSkip()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次。如果觉得是识别不准，可以跳过（这个词下一轮还会再测）`));
     const ans = el('div', 'ans');
     const r1 = el('div', 'arow'), t1 = el('div', 'tx'), r3 = el('div', 'arow'), t3 = el('div', 'tx');
     t1.append(el('span', 'alab', '葡语单词'), el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
@@ -159,6 +163,7 @@ function render() {
     hold.disabled = state === 'judging';
     $('#reveal').hidden = !testing;                              // 测试中随时可以“公布答案”
     $('#reveal').disabled = state === 'judging';
+    $('#skip').hidden = !canSkip();
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
     act.hidden = testing || state === 'loading';
     $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
@@ -179,7 +184,7 @@ async function fetchToday() {
     today = d;
 }
 function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
-    todoList = words.slice(); failedList = []; passed.clear(); curMissed = false;
+    todoList = words.slice(); failedList = []; passed.clear(); curMissed = false; aiWrong = 0;
     total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
     next();
 }
@@ -218,13 +223,17 @@ function next() {                                   // 取下一个待测词；�
         todoList = failedList.map(w => ({ ...w, mode: w.mode === 1 ? 2 : 1 })); failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
-    cur = todoList.shift(); curMissed = false; lastRes = null; state = 'test'; render();
+    cur = todoList.shift(); curMissed = false; aiWrong = 0; lastRes = null; state = 'test'; render();
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));      // 模式 1：展示时自动朗读一次
 }
 function retry() {                                  // 没答对：停在同一个词、同一个方向，直到答对
     unlock();
     lastRes = null; state = 'test'; render();
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));
+}
+function skip() {                                   // 跳过：词已在 failedList 里（答错时就进了），直接去下一个；下一轮会翻转方向再测
+    if (!canSkip()) return;
+    next();
 }
 function markMissed(w) { if (!curMissed) { curMissed = true; failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
 
@@ -242,6 +251,7 @@ async function evaluate(blob, ext) {
                 if (round === 1) firstPass++;
             }
         } else {
+            aiWrong++;                              // AI 判错一次；同一个词累计到 SKIP_AFTER 次就可以跳过
             markMissed(w);                          // 进入本轮的错词列表；当前词不前进，等用户“再试一次”
             post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: d.recognized_text || '' })
                 .catch(err => toast('错题记录失败：' + err.message));
@@ -265,6 +275,7 @@ function reveal() {                                 // 不会就直接看答案�
     if (w.mode === 2) speak(w, 'word', $('#stage .spk'));   // 模式 2 用户没听过这个词，顺便读一遍（模式 1 进题时已经读过）
 }
 $('#reveal').onclick = reveal;
+$('#skip').onclick = skip;
 $('#act').onclick = () => {
     if (state === 'idle') start();
     else if (state === 'result') { if (lastRes?.passed) next(); else retry(); }

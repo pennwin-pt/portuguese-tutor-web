@@ -180,7 +180,9 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
   index.js、words.js、后端要一起改。**
 - 单词任务的单词目前是 `word_source.py` 里写死的 Mock,真实数据来自另一个独立 SQLite(TODO);
   前端进度(todoList/failedList)只在内存里,刷新页面会重新领取。
-- 单词任务页“💡 公布答案”(`#reveal`,仅测试中显示):**纯前端**,不调 evaluate;按“没通过”处理——进 `failedList` 本轮结束后重测,并调 `record_error`(`user_text` 传空串,避免污染“识别成了什么”的分析);不计入 `attempts`、不播失败音效;mode=2 公布后自动朗读单词。单词页标题栏/提示语放大的样式都写在 `words.css` 里(`#app > header` 覆盖),不要改 `index.css`(聊天页共用)。
+- 单词任务页“💡 公布答案”(`#reveal`,仅测试中显示):**纯前端**,不调 evaluate;按“答错”处理(`markMissed`:进 `failedList`、要重试、下一轮重测),并调 `record_error`(`user_text` 传空串,避免污染“识别成了什么”的分析);不计入 `attempts`、不播失败音效;mode=2 公布后自动朗读单词。单词页标题栏/提示语放大的样式都写在 `words.css` 里(`#app > header` 覆盖),不要改 `index.css`(聊天页共用)。
+- **单词任务答题流程(`words.js`,纯前端,后端 evaluate 直接用前端传的 mode,不要求等于单词原始 mode)**:逐词练——答错/公布答案后停在同一个词同一个方向,按钮变“🔁 再试一次”(`retry()`),答对才“下一个”。`curMissed` = 当前词本轮是否出过错;**只有一次就答对的词才进 `passed`(过关)**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2)** 成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以“重新学习”仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词;`record_error` 每次答错都记一行(事件流)。最后一个词答对但还有错词时按钮显示“进入下一轮”。
+- 单词页“跳过”(`#skip`,纯前端):ASR 对葡语不准,所以**同一个词本轮被 AI 判错 ≥2 次(`aiWrong`,`SKIP_AFTER`)才在结果页出现**;公布答案、没听清(422)都不计数,不能一上来就跳。跳过 = 直接 `next()`:词在第一次答错时已进 `failedList`,下一轮翻转方向还会再测,不算过关。`aiWrong` 在 `next()`/`begin()` 重置。
 - mode=2 评判刻意**不用 LLM**(要求完全一致,规则更稳);ASR 也刻意不给目标单词做 initial_prompt,
   否则识别会被带向正确答案。
 
