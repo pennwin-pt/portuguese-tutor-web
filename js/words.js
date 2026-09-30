@@ -94,17 +94,18 @@ let state = 'loading';
 let today = null;           // GET /api/words/today 的结果：{date, words, completed}
 let summary = null;         // done 页展示的成绩：{rounds,total,first_pass,attempts,times?,completed_at?, fresh}
 let todoList = [];          // 当前轮次待测（cur 已经从里面 shift 出来）
-let failedList = [];        // 本轮答错的，本轮测完后变成下一轮的 todoList
+let failedList = [];        // 本轮里出过错的词（每词只记一次，带着出错时的 mode）；本轮测完后翻转 mode 变成下一轮的 todoList
 let cur = null, lastRes = null;
+let curMissed = false;      // 当前这个词在本轮里是否已经答错 / 公布过答案（= 不是“一次通过”，本轮结束后要重测）
 let round = 1, roundTotal = 0, total = 0, attempts = 0, firstPass = 0;
-const passed = new Set();   // 已通过的单词 id
+const passed = new Set();   // 已“过关”的单词 id：某一轮里一次就答对的词（答错后重试才对的不算，还要进下一轮）
 
 const isLast = () => !todoList.length && !failedList.length;
 
 function viewIdle() {
     const c = el('div', 'wcard');
     c.append(el('div', 'term', '📚 今日单词任务'),
-        el('p', 'intro', '系统已为你安排好今天的单词。领取后逐个语音测试，答错的词会在本轮结束后重测，直到全部通过。'));
+        el('p', 'intro', '系统已为你安排好今天的单词。领取后逐个语音测试：答错会一直停在这个词，直到答对才进下一个；一次就答对的词过关，本轮结束后只重测答错过的词，并换一个方向（说中文 ⇄ 说葡语）。'));
     if (today?.words.length) c.append(el('div', 'stat', `今天共 ${today.words.length} 个单词`));
     return c;
 }
@@ -121,7 +122,7 @@ function viewTest() {
 function viewResult() {
     const w = cur, r = lastRes, c = el('div', 'wcard');
     if (r.revealed) {                                   // 主动公布答案：不是答错，也不播失败音效，但本轮结束后会重测
-        c.append(el('div', 'verdict rev', '💡 答案已公布'), el('div', 'cmt', '这个词先记为没掌握，本轮结束后会再测一次'));
+        c.append(el('div', 'verdict rev', '💡 答案已公布'), el('div', 'cmt', '先记为没掌握，点“再试一次”跟着说一遍；下一轮会换个方向再测'));
     } else {
         c.append(el('div', 'verdict ' + (r.passed ? 'ok' : 'bad'), r.passed ? '✅ 回答正确' : '❌ 回答错误'),
             el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
@@ -161,7 +162,9 @@ function render() {
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
     act.hidden = testing || state === 'loading';
     $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
-    act.textContent = { idle: '领取今日任务', result: isLast() ? '完成' : '下一个', done: '🔄 重新学习' }[state] || '';
+    const resultLabel = !lastRes ? '' : !lastRes.passed ? '🔁 再试一次'            // 没答对：停在这个词
+        : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测
+    act.textContent = { idle: '领取今日任务', result: resultLabel, done: '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
     $('#prog').textContent = testing || state === 'result' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
     $('#bar i').style.width = total ? (passed.size / total * 100) + '%' : '0';
@@ -176,7 +179,7 @@ async function fetchToday() {
     today = d;
 }
 function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
-    todoList = words.slice(); failedList = []; passed.clear();
+    todoList = words.slice(); failedList = []; passed.clear(); curMissed = false;
     total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
     next();
 }
@@ -211,12 +214,19 @@ function next() {                                   // 取下一个待测词；�
     unlock();
     if (!todoList.length) {
         if (!failedList.length) { finish(); return; }
-        todoList = failedList; failedList = []; round++; roundTotal = todoList.length;
-        toast(`第 ${round} 轮：重测 ${roundTotal} 个错词`);
+        // 下一轮只测本轮出过错的词，并把方向翻转（上轮说中文 → 这轮说葡语，反之亦然）；用拷贝，不改 today.words 里的原始 mode
+        todoList = failedList.map(w => ({ ...w, mode: w.mode === 1 ? 2 : 1 })); failedList = []; round++; roundTotal = todoList.length;
+        toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
-    cur = todoList.shift(); lastRes = null; state = 'test'; render();
+    cur = todoList.shift(); curMissed = false; lastRes = null; state = 'test'; render();
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));      // 模式 1：展示时自动朗读一次
 }
+function retry() {                                  // 没答对：停在同一个词、同一个方向，直到答对
+    unlock();
+    lastRes = null; state = 'test'; render();
+    if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));
+}
+function markMissed(w) { if (!curMissed) { curMissed = true; failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
 
 async function evaluate(blob, ext) {
     const w = cur;
@@ -227,10 +237,12 @@ async function evaluate(blob, ext) {
         const d = await post('/api/words/evaluate', fd);
         attempts++; lastRes = d;
         if (d.passed) {
-            passed.add(w.id);
-            if (round === 1) firstPass++;
+            if (!curMissed) {                       // 这一轮里一次就答对：过关，后面的轮次不再出现
+                passed.add(w.id);
+                if (round === 1) firstPass++;
+            }
         } else {
-            failedList.push(w);                     // 进入本轮的错词列表，本轮结束后重测
+            markMissed(w);                          // 进入本轮的错词列表；当前词不前进，等用户“再试一次”
             post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: d.recognized_text || '' })
                 .catch(err => toast('错题记录失败：' + err.message));
         }
@@ -241,11 +253,11 @@ async function evaluate(blob, ext) {
     }
 }
 
-function reveal() {                                 // 不会就直接看答案：按“没通过”处理，进入本轮错词列表，本轮结束后重测
+function reveal() {                                 // 不会就直接看答案：按“答错”处理（进错词列表、要重试、下一轮重测）
     if (state !== 'test' || holding) return;         // 评判中 / 正在录音时不响应
     unlock();
     const w = cur;
-    failedList.push(w);
+    markMissed(w);
     lastRes = { passed: false, revealed: true };
     post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: '' })
         .catch(err => toast('错题记录失败：' + err.message));
@@ -255,7 +267,7 @@ function reveal() {                                 // 不会就直接看答案�
 $('#reveal').onclick = reveal;
 $('#act').onclick = () => {
     if (state === 'idle') start();
-    else if (state === 'result') next();
+    else if (state === 'result') { if (lastRes?.passed) next(); else retry(); }
     else if (state === 'done') restart();
 };
 $('#act2').onclick = () => { location.href = 'index.html'; };
