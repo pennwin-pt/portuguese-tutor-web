@@ -49,3 +49,10 @@
 /* 测试中“公布答案”：在“按住说话”左边，外观同“返回聊天” */
 #reveal{flex:none;height:56px;padding:0 18px;border:1.5px solid var(--blue);border-radius:28px;background:#fff;color:var(--blue);font-size:16px;font-weight:600;white-space:nowrap;touch-action:manipulation}
 #reveal:disabled{opacity:.5}
+
+/* 动态任务：词的类型标签 / 预习列表 */
+.kind{margin-bottom:10px;font-size:14px;font-weight:500;color:var(--sub)}
+#stage.top{justify-content:flex-start}
+.plist{margin-top:14px;text-align:left}
+.pitem{padding:12px 0;border-top:1px solid #eef2f6}
+.pitem:first-child{border-top:0}

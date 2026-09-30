@@ -28,6 +28,9 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
   memory/user_manager.py     用户资料SQLite(users表,含可选PIN)
   memory/vocab_manager.py    单词库SQLite(vocab表),按session_id归属
   memory/word_source.py      单词任务数据源:WordItem模型 + 目前是Mock(TODO:接独立SQLite)
+  memory/word_planner.py     每周单词调度(纯函数):Leitner盒子+工作日间隔,算每日复习/新词/预习,apply_outcome更新进度;参数集中在文件顶部
+  memory/word_progress_manager.py  调度存储(aiosqlite,同 sessions.db):word_progress/word_week/word_daily_plan/word_outcomes 四张表(word_id按INTEGER);“今天完成没”仍归 word_task_manager
+  test_word_plan.py          项目根目录运行:真实路由+managers 端到端跑两周(临时库、ASR/LLM/TTS打桩),改调度/接口后先跑它
   memory/word_error_manager.py  错词表(word_errors),一次答错一行,给推荐算法用
   memory/word_task_manager.py   每日任务完成记录(word_task_done),一人一天一行,重学后再次完成覆盖成绩+times
   prompts/tutor_prompt.py    教练人设系统提示词(A1难度,pt-PT)
@@ -102,9 +105,9 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
 | `GET /api/background/{name}` | 白名单正则,带 `Cache-Control: immutable`(文件名带uuid,内容不会变) |
 | `POST /api/vocab` | **JSON body**(不是FormData): {session_id, items:[{language,word,example_sentence,chinese_meaning,example_chinese}]},批量加入单词库 |
 | `GET /api/vocab?session_id=&limit=500` | 拉某个 session 的单词库列表,按插入时间倒序 |
-| `GET /api/words/today?session_id=` | `{date,words:[WordItem],completed}`,completed 非空=今天已完成(`{rounds,total,first_pass,attempts,times,completed_at}`),前端据此展示“今日已完成”+“重新学习”;单词目前Mock。WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1看葡语说中文/2看中文说葡语)},前后端字段必须一致 |
+| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind],preview:[WordItem],meta:{new,review,weekly,preview},completed}`(words 顺序=复习→本周回顾→新词,kind=review/weekly/new,mode 由服务端按 choose_mode 给;preview 只展示不评分;当天第一次请求生成后固定存 word_daily_plan),completed 非空=今天已完成(`{rounds,total,first_pass,attempts,times,completed_at}`),前端据此展示“今日已完成”+“重新学习”;单词目前Mock。WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1看葡语说中文/2看中文说葡语)},前后端字段必须一致 |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode。mode1=ASR(zh)+义项快速匹配+LLM语义评判;mode2=ASR(pt)+纯规则(归一化后完全一致,含空格的短语允许相似度≥`WORD_PT_MATCH_THRESHOLD`)。返回 `{passed,recognized_text,comment}`;没听清 422(不算答错) |
-| `POST /api/words/complete` | **JSON body**: {session_id,rounds,first_pass,attempts},记今天已完成;total 取服务端单词数。“今天”=服务器本地日期 |
+| `POST /api/words/complete` | **JSON body**: {session_id,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]},outcome=good/hard/again/skipped(每词当天第一轮结果),服务端按它结算复习盒子并记今天已完成;同一词同一天只结算一次(word_outcomes 主键),“重新学习”再提交会被忽略;total 取今日计划里要测的词数。“今天”=服务器本地日期 |
 | `POST /api/words/record_error` | **JSON body**: {session_id,word_id,mode,user_text?},写 `word_errors` 表 |
 | `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=` | 朗读单词/例句。只按id取服务端文本合成,不接受任意文本(防被当TTS代理);Piper结果按文本哈希落 `data/word_audio/` |
 | `WS /ws/chat/{session_id}` | **简化骨架**:整段收/整段发,历史走 `session_manager.get_history` 但**不落库** `orig`/`msg_uid`/`audio_file`,与 `/chat/*` 的持久化不对齐。要给 WS 通道加翻译/解析/拆词缓存需要先补这部分 |
@@ -180,9 +183,9 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
   index.js、words.js、后端要一起改。**
 - 单词任务的单词目前是 `word_source.py` 里写死的 Mock,真实数据来自另一个独立 SQLite(TODO);
   前端进度(todoList/failedList)只在内存里,刷新页面会重新领取。
-- 单词任务页“💡 公布答案”(`#reveal`,仅测试中显示):**纯前端**,不调 evaluate;按“答错”处理(`markMissed`:进 `failedList`、要重试、下一轮重测),并调 `record_error`(`user_text` 传空串,避免污染“识别成了什么”的分析);不计入 `attempts`、不播失败音效;mode=2 公布后自动朗读单词。单词页标题栏/提示语放大的样式都写在 `words.css` 里(`#app > header` 覆盖),不要改 `index.css`(聊天页共用)。
+- 单词任务页“💡 公布答案”(`#reveal`,仅测试中显示):**纯前端**,不调 evaluate;按“答错”处理(`markMissed`:进 `failedList`、要重试、下一轮重测),并调 `record_error`(`user_text` 传空串,避免污染“识别成了什么”的分析);不计入 `attempts`、不播失败音效;**两种方向公布后都自动朗读单词**;置 `curRevealed`,当天结果记为 again。**答错(AI 判错)时**,失败音效播完后(`speakAfterSfx`,最多等1.5秒)自动朗读单词。单词页标题栏/提示语放大的样式都写在 `words.css` 里(`#app > header` 覆盖),不要改 `index.css`(聊天页共用)。
 - **单词任务答题流程(`words.js`,纯前端,后端 evaluate 直接用前端传的 mode,不要求等于单词原始 mode)**:逐词练——答错/公布答案后停在同一个词同一个方向,按钮变“🔁 再试一次”(`retry()`),答对才“下一个”。`curMissed` = 当前词本轮是否出过错;**只有一次就答对的词才进 `passed`(过关)**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2)** 成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以“重新学习”仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词;`record_error` 每次答错都记一行(事件流)。最后一个词答对但还有错词时按钮显示“进入下一轮”。
-- 单词页“跳过”(`#skip`,纯前端):ASR 对葡语不准,所以**同一个词本轮被 AI 判错 ≥2 次(`aiWrong`,`SKIP_AFTER`)才在结果页出现**;公布答案、没听清(422)都不计数,不能一上来就跳。跳过 = 直接 `next()`:词在第一次答错时已进 `failedList`,下一轮翻转方向还会再测,不算过关。`aiWrong` 在 `next()`/`begin()` 重置。
+- 单词页“跳过”(`#skip`,纯前端):ASR 对葡语不准,所以**同一个词本轮被 AI 判错 ≥2 次(`aiWrong`,`SKIP_AFTER`)才在结果页出现**;公布答案、没听清(422)都不计数,不能一上来就跳。跳过 = **算通过**:`noteOutcome(w,'skipped')`,从 `failedList` 移除并加入 `passed`,下一轮不再重测(不计入 `firstPass`;服务端对 skipped 不升级盒子);之前已写的 `word_errors` 不撤销。`aiWrong` 在 `next()`/`begin()` 重置。
 - mode=2 评判刻意**不用 LLM**(要求完全一致,规则更稳);ASR 也刻意不给目标单词做 initial_prompt,
   否则识别会被带向正确答案。
 
@@ -204,3 +207,13 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
 - **改完项目功能后想一下这份 skill 有没有过时**:文件地图、API 契约表、存储
   一节、已知简化一节,只要新增/删改了接口、表、文件,就顺手同步更新,不要让 skill
   和实际代码脱节。
+
+## 每周动态单词任务(间隔重复)
+- 目标:每周30个新词,工作日每天约6个,含复习+预习;答对的少复习、答错的多复习;每天数量随掌握情况动态变。算法全在 `word_planner.py`(纯函数),**调参只改文件顶部常量**(WORKLOAD/NEW_MIN/NEW_MAX/REVIEW_MAX/INTERVALS/MASTER_BOX/RATE_LOW/RATE_HIGH)。
+- 结果归类(前端 `noteOutcome` 只记第一轮):good 一次答对 box+1;hard 答错后才对 box不变;again 公布答案或AI判错≥2次 box-2、lapses+1、次日复习;skipped 算通过但不升级。间隔(工作日)box1~5=1/2/4/7/14,周末顺延周一。掌握=box≥4 且说葡语(mode2)答对过,退出日常复习;again 会撤销掌握。
+- 出题方向:新词/box<2 用 mode1;box≥2 且上次 good 用 mode2;否则退回 mode1。每天新词数以“本周正好学完”的进度为基准,昨天通过率<60%减2、>90%加1,复习多则少学(上限 WORKLOAD−复习数),夹在 3~10;周五学不完的顺延下周(`ensure_week` 先带上没学的旧词)。周五额外加“本周回顾”(本周词里 box<4 的用 mode2 再测);周末不排新词,只有≤8个可选复习;预习=明天大概要学的词(固定顺序,不评分不改进度)。
+- 前端 `words.js`:today 里 `kind` 显示类型标签,`preview` 非空且今天还没完成时,全部测完后进入 `preview` 状态(按钮“预习完成”),`finish()` 先 POST complete 再展示;“重新学习”不预习、不重复结算。
+- 已知没做:顽固词(lapses≥3)“多一次例句测试”(evaluate 只支持单词,目前只是复习时排最前);掌握的词不再进入长期复习。
+- `test_word_plan.py` 会打印两周里每天的复习/回顾/新词/预习数量,调参后先跑它。
+- 词源只需提供 `word_source.list_word_ids()`(按学习顺序的全部 id)和 `get_word(id)`;旧的 `get_today_words` 已弃用不再被路由调用。Mock 只有5个词,所以本周词表也只有5个,接真实词库后才会是30。
+- `/today` 内部:`ensure_week`→`load_plan`(没有就 `build_today_plan`+`save_plan`)→按计划展开单词;`/complete` 先 `settle`(结算失败只记日志,不影响完成记录)再 `word_task_manager.mark_done`(total=计划里要测的词数)。

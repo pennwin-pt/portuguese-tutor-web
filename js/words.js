@@ -88,7 +88,7 @@ function spk(w, kind) {
 /* ---------- 任务状态 ----------
    Word Item（与后端 memory/word_source.py 的 WordItem 一致）：
    { id, pt_word, cn_meaning, pt_sentence, cn_sentence, mode }   mode: 1=看葡语说中文, 2=看中文说葡语
-   state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示
+   state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示 | preview 预习明天的词（不评分）
           | done 今日已完成（刚通关，或打开页面时服务器记录显示今天早已完成；都可以“重新学习”） */
 let state = 'loading';
 let today = null;           // GET /api/words/today 的结果：{date, words, completed}
@@ -98,6 +98,9 @@ let failedList = [];        // 本轮里出过错的词（每词只记一次，�
 let cur = null, lastRes = null;
 let aiWrong = 0;            // 当前这个词在本轮里被 AI 评判为“答错”的次数（公布答案、没听清都不算）；≥ SKIP_AFTER 才允许跳过
 const SKIP_AFTER = 2;
+let curRevealed = false;    // 当前这个词是否点过“公布答案”（用来判定当天结果 again）
+const outcomes = {};        // 每个词当天第一轮的结果 {word_id,outcome,mode}：good 一次答对 | hard 答错后才对 | again 公布答案/判错≥2次 | skipped 跳过；完成时提交给服务器调度复习间隔
+const KIND_LABEL = { new: '🆕 新词', review: '🔁 复习', weekly: '📅 本周回顾' };
 let curMissed = false;      // 当前这个词在本轮里是否已经答错 / 公布过答案（= 不是“一次通过”，本轮结束后要重测）
 let round = 1, roundTotal = 0, total = 0, attempts = 0, firstPass = 0;
 const passed = new Set();   // 已“过关”的单词 id：某一轮里一次就答对的词（答错后重试才对的不算，还要进下一轮）
@@ -109,12 +112,20 @@ function viewIdle() {
     const c = el('div', 'wcard');
     c.append(el('div', 'term', '📚 今日单词任务'),
         el('p', 'intro', '系统已为你安排好今天的单词。领取后逐个语音测试：答错会一直停在这个词，直到答对才进下一个；一次就答对的词过关，本轮结束后只重测答错过的词，并换一个方向（说中文 ⇄ 说葡语）。'));
-    if (today?.words.length) c.append(el('div', 'stat', `今天共 ${today.words.length} 个单词`));
+    if (today?.words.length) {
+        const m = today.meta || {}, parts = [];
+        if (m.review) parts.push(`复习 ${m.review}`);
+        if (m.weekly) parts.push(`本周回顾 ${m.weekly}`);
+        if (m.new) parts.push(`新词 ${m.new}`);
+        if (today.preview?.length) parts.push(`预习 ${today.preview.length}`);
+        c.append(el('div', 'stat', `今天共 ${today.words.length} 个单词` + (parts.length ? '\n' + parts.join(' · ') : '')));
+    }
     return c;
 }
 function viewLoading() { const c = el('div', 'wcard'); c.append(el('div', 'ask', '加载今日任务…')); return c; }
 function viewTest() {
     const w = cur, c = el('div', 'wcard');
+    if (KIND_LABEL[w.kind]) c.append(el('div', 'kind', KIND_LABEL[w.kind]));
     c.append(el('div', 'tag', w.mode === 1 ? '🇵🇹 → 🇨🇳 看葡语，说中文' : '🇨🇳 → 🇵🇹 看中文，说葡语'));
     const row = el('div', 'termrow');
     row.append(el('div', 'term', w.mode === 1 ? w.pt_word : w.cn_meaning));
@@ -139,6 +150,20 @@ function viewResult() {
     t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
     r3.append(t3, spk(w, 'sentence'));
     ans.append(r1, r3); c.append(ans);
+    return c;
+}
+function viewPreview() {                            // 预习：只看、只听，不评分、不改进度
+    const c = el('div', 'wcard');
+    c.append(el('div', 'term', '👀 预习明天的词'), el('p', 'intro', '先混个脸熟：点喇叭听读音，看看例句。这里不测试。'));
+    const list = el('div', 'plist');
+    for (const w of today.preview) {
+        const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
+        tx.append(el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
+        if (w.pt_sentence) tx.append(el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
+        r1.append(tx, spk(w, 'word'));
+        row.append(r1); list.append(row);
+    }
+    c.append(list);
     return c;
 }
 function fmtTime(s) {       // 服务器存的是 UTC（'YYYY-MM-DD HH:MM:SS'），转成本地 HH:MM
@@ -169,22 +194,25 @@ function render() {
     $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
     const resultLabel = !lastRes ? '' : !lastRes.passed ? '🔁 再试一次'            // 没答对：停在这个词
         : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测
-    act.textContent = { idle: '领取今日任务', result: resultLabel, done: '🔄 重新学习' }[state] || '';
+    act.textContent = { idle: '领取今日任务', result: resultLabel, preview: '预习完成', done: '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
     $('#prog').textContent = testing || state === 'result' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
     $('#bar i').style.width = total ? (passed.size / total * 100) + '%' : '0';
+    stage.classList.toggle('top', state === 'preview');             // 预习列表可能很长，从顶部开始排，不居中
     stage.innerHTML = '';
-    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, result: viewResult, done: viewDone }[state]());
+    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, result: viewResult, preview: viewPreview, done: viewDone }[state]());
 }
 
 /* ---------- 流程 ---------- */
 async function fetchToday() {
     const d = await get(`/api/words/today?session_id=${enc(sid)}`);
     d.words = (d.words || []).filter(w => w && w.id != null && w.pt_word && (w.mode === 1 || w.mode === 2));
+    d.preview = (d.preview || []).filter(w => w && w.id != null && w.pt_word);
     today = d;
 }
 function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
-    todoList = words.slice(); failedList = []; passed.clear(); curMissed = false; aiWrong = 0;
+    todoList = words.slice(); failedList = []; passed.clear(); curMissed = false; curRevealed = false; aiWrong = 0;
+    Object.keys(outcomes).forEach(k => delete outcomes[k]);
     total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
     next();
 }
@@ -204,13 +232,15 @@ function restart() {                                // 今日已完成后选择�
     unlock(); begin(today.words);
 }
 function showDone(rec, fresh) { cur = null; summary = { ...rec, fresh }; state = 'done'; render(); }
-function finish() {                                 // 所有单词都通过：先展示成绩，再把“今日已完成”记到服务器
-    showDone({ rounds: round, total, first_pass: firstPass, attempts }, true);
-    post('/api/words/complete', { session_id: sid, rounds: round, first_pass: firstPass, attempts })
+function finish() {                                 // 所有单词都通过：先把当天结果提交给服务器（结算复习进度 + 记完成），再进预习 / 成绩页
+    cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, fresh: true };
+    if (today?.preview?.length && !today.completed) { state = 'preview'; render(); }    // 重新学习时不再预习
+    else showDone(summary, true);
+    post('/api/words/complete', { session_id: sid, rounds: round, first_pass: firstPass, attempts, outcomes: Object.values(outcomes) })
         .then(d => {
             if (!d.completed) return;
             if (today) today.completed = d.completed;
-            if (state === 'done' && summary?.fresh) { summary = { ...d.completed, fresh: true }; render(); }   // 换成服务器的记录（含完成时间、次数）
+            if (summary?.fresh) { summary = { ...d.completed, fresh: true }; if (state === 'done') render(); }   // 换成服务器的记录（含完成时间、次数）
         })
         .catch(err => toast('完成记录保存失败：' + err.message));
 }
@@ -223,7 +253,7 @@ function next() {                                   // 取下一个待测词；�
         todoList = failedList.map(w => ({ ...w, mode: w.mode === 1 ? 2 : 1 })); failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
-    cur = todoList.shift(); curMissed = false; aiWrong = 0; lastRes = null; state = 'test'; render();
+    cur = todoList.shift(); curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null; state = 'test'; render();
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));      // 模式 1：展示时自动朗读一次
 }
 function retry() {                                  // 没答对：停在同一个词、同一个方向，直到答对
@@ -234,9 +264,15 @@ function retry() {                                  // 没答对：停在同一�
 function skip() {                                   // 跳过：视为已通过——从本轮错词列表里移除并记为过关，后面的轮次不再重测
     if (!canSkip()) return;
     const w = cur;
+    noteOutcome(w, 'skipped');                      // 当天结果记为 skipped：算通过，但服务器不拿它升级复习盒子
     failedList = failedList.filter(x => x.id !== w.id);
     passed.add(w.id);                               // 进度条按已过关数计算；不计入 firstPass（不是一次通过）
     next();
+}
+function noteOutcome(w, force) {                   // 只记每个词第一轮的结果；后面轮次（翻转方向重测）不再改
+    if (round !== 1 || outcomes[w.id]) return;
+    const oc = force || (curRevealed || aiWrong >= SKIP_AFTER ? 'again' : curMissed ? 'hard' : 'good');
+    outcomes[w.id] = { word_id: w.id, outcome: oc, mode: w.mode };
 }
 function markMissed(w) { if (!curMissed) { curMissed = true; failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
 
@@ -249,6 +285,7 @@ async function evaluate(blob, ext) {
         const d = await post('/api/words/evaluate', fd);
         attempts++; lastRes = d;
         if (d.passed) {
+            noteOutcome(w);
             if (!curMissed) {                       // 这一轮里一次就答对：过关，后面的轮次不再出现
                 passed.add(w.id);
                 if (round === 1) firstPass++;
@@ -281,6 +318,7 @@ function reveal() {                                 // 不会就直接看答案�
     if (state !== 'test' || holding) return;         // 评判中 / 正在录音时不响应
     unlock();
     const w = cur;
+    curRevealed = true;
     markMissed(w);
     lastRes = { passed: false, revealed: true };
     post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: '' })
@@ -293,11 +331,12 @@ $('#skip').onclick = skip;
 $('#act').onclick = () => {
     if (state === 'idle') start();
     else if (state === 'result') { if (lastRes?.passed) next(); else retry(); }
+    else if (state === 'preview') showDone(summary, true);
     else if (state === 'done') restart();
 };
 $('#act2').onclick = () => { location.href = 'index.html'; };
 $('#back').onclick = () => {
-    if (!['loading', 'idle', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
+    if (!['loading', 'idle', 'preview', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
     location.href = 'index.html';
 };
 
