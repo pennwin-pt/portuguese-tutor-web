@@ -258,11 +258,22 @@ async function evaluate(blob, ext) {
         }
         state = 'result'; render();
         playSfx(d.passed);
+        if (!d.passed) speakAfterSfx(w);            // 答错：失败音效播完后直接朗读这个词的葡语
     } catch (err) {                                 // 没听清 / 识别或大模型故障：不算答错，留在当前题让用户重说
         toast(err.message); state = 'test'; render();
     }
 }
 
+function speakAfterSfx(w) {                        // 等失败音效播完（最多 1.5 秒）再读单词，避免两段声音叠在一起
+    const a = sfx.fail;
+    let done = false;
+    const go = () => {
+        if (done) return; done = true; a.removeEventListener('ended', go);
+        if (state === 'result' && cur === w) speak(w, 'word', $('#stage .spk'));   // 期间用户已点“再试一次”等则不再朗读
+    };
+    if (a.paused || a.ended || a.error) return go();       // 音效没放出来（文件缺失等）：直接读
+    a.addEventListener('ended', go); setTimeout(go, 1500);
+}
 function reveal() {                                 // 不会就直接看答案：按“答错”处理（进错词列表、要重试、下一轮重测）
     if (state !== 'test' || holding) return;         // 评判中 / 正在录音时不响应
     unlock();
@@ -272,7 +283,7 @@ function reveal() {                                 // 不会就直接看答案�
     post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: '' })
         .catch(err => toast('错题记录失败：' + err.message));
     state = 'result'; render();
-    if (w.mode === 2) speak(w, 'word', $('#stage .spk'));   // 模式 2 用户没听过这个词，顺便读一遍（模式 1 进题时已经读过）
+    speak(w, 'word', $('#stage .spk'));                     // 公布答案：无论哪种方向，都直接朗读这个词的葡语
 }
 $('#reveal').onclick = reveal;
 $('#skip').onclick = skip;
