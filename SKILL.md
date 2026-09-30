@@ -52,7 +52,7 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
 1. `mode=zh`(中文求助)时先用 `ZH2PT_PROMPT` 把中文译成葡语,`user_pt` 是最终进入
    教练对话历史的葡语;`mode=pt` 时 `user_pt == raw_text`。
 2. 取 `session_manager.get_history()`(最近 `LLM_HISTORY_TURNS` 轮)+ `SYSTEM_PROMPT`
-  + 当前用户输入,调用 `llm_engine.get_llm_engine().generate()`。
++ 当前用户输入,调用 `llm_engine.get_llm_engine().generate()`。
 3. TTS 合成到临时文件,`shutil.move` 到 `data/replies/` **持久化**(不是用完即删),
    文件名 `msg_{uuid12hex}.wav`,受 `_AUDIO_NAME` 正则白名单保护(防目录穿越)。
 4. 入库两条消息:`user` 角色存 `content=user_pt, orig=raw_text`;`assistant` 角色存
@@ -180,6 +180,7 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
   index.js、words.js、后端要一起改。**
 - 单词任务的单词目前是 `word_source.py` 里写死的 Mock,真实数据来自另一个独立 SQLite(TODO);
   前端进度(todoList/failedList)只在内存里,刷新页面会重新领取。
+- 单词任务页“💡 公布答案”(`#reveal`,仅测试中显示):**纯前端**,不调 evaluate;按“没通过”处理——进 `failedList` 本轮结束后重测,并调 `record_error`(`user_text` 传空串,避免污染“识别成了什么”的分析);不计入 `attempts`、不播失败音效;mode=2 公布后自动朗读单词。单词页标题栏/提示语放大的样式都写在 `words.css` 里(`#app > header` 覆盖),不要改 `index.css`(聊天页共用)。
 - mode=2 评判刻意**不用 LLM**(要求完全一致,规则更稳);ASR 也刻意不给目标单词做 initial_prompt,
   否则识别会被带向正确答案。
 

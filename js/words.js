@@ -120,9 +120,13 @@ function viewTest() {
 }
 function viewResult() {
     const w = cur, r = lastRes, c = el('div', 'wcard');
-    c.append(el('div', 'verdict ' + (r.passed ? 'ok' : 'bad'), r.passed ? '✅ 回答正确' : '❌ 回答错误'),
-        el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
-    if (r.comment) c.append(el('div', 'cmt', '💬 ' + r.comment));
+    if (r.revealed) {                                   // 主动公布答案：不是答错，也不播失败音效，但本轮结束后会重测
+        c.append(el('div', 'verdict rev', '💡 答案已公布'), el('div', 'cmt', '这个词先记为没掌握，本轮结束后会再测一次'));
+    } else {
+        c.append(el('div', 'verdict ' + (r.passed ? 'ok' : 'bad'), r.passed ? '✅ 回答正确' : '❌ 回答错误'),
+            el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
+        if (r.comment) c.append(el('div', 'cmt', '💬 ' + r.comment));
+    }
     const ans = el('div', 'ans');
     const r1 = el('div', 'arow'), t1 = el('div', 'tx'), r3 = el('div', 'arow'), t3 = el('div', 'tx');
     t1.append(el('span', 'alab', '葡语单词'), el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
@@ -152,6 +156,8 @@ function render() {
     const testing = state === 'test' || state === 'judging';
     hold.hidden = !testing;
     hold.disabled = state === 'judging';
+    $('#reveal').hidden = !testing;                              // 测试中随时可以“公布答案”
+    $('#reveal').disabled = state === 'judging';
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
     act.hidden = testing || state === 'loading';
     $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
@@ -235,6 +241,18 @@ async function evaluate(blob, ext) {
     }
 }
 
+function reveal() {                                 // 不会就直接看答案：按“没通过”处理，进入本轮错词列表，本轮结束后重测
+    if (state !== 'test' || holding) return;         // 评判中 / 正在录音时不响应
+    unlock();
+    const w = cur;
+    failedList.push(w);
+    lastRes = { passed: false, revealed: true };
+    post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: '' })
+        .catch(err => toast('错题记录失败：' + err.message));
+    state = 'result'; render();
+    if (w.mode === 2) speak(w, 'word', $('#stage .spk'));   // 模式 2 用户没听过这个词，顺便读一遍（模式 1 进题时已经读过）
+}
+$('#reveal').onclick = reveal;
 $('#act').onclick = () => {
     if (state === 'idle') start();
     else if (state === 'result') next();

@@ -1,6 +1,12 @@
 /* 单词任务页：在 index.css（主题变量、header、footer、#hold、#rec、#toast）基础上只补这一页独有的样式 */
 .hl{flex:1 1 0;min-width:0;display:flex;align-items:center}
-#prog{font-size:12px;white-space:nowrap}
+#prog{font-size:15px;font-weight:500;white-space:nowrap}
+
+/* 标题栏：比聊天页更高，字和返回按钮都更大（只作用于本页，不影响 index.css） */
+#app > header{min-height:64px;padding:calc(env(safe-area-inset-top,0px) + 14px) 14px 14px}
+#app > header #ttl{max-width:50vw}
+#app > header h1{font-size:22px}
+#app > header .ib{width:46px;height:42px;border-radius:21px;font-size:30px;padding-bottom:4px}
 
 /* 总进度条：已通过的单词数 / 今日总数 */
 #bar{height:3px;background:rgba(0,0,0,.08)}
@@ -8,11 +14,11 @@
 
 #stage{flex:1;overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;justify-content:center;overscroll-behavior:contain}
 .wcard{background:#fff;border-radius:20px;padding:26px 20px;text-align:center;box-shadow:0 6px 24px rgba(0,0,0,.06)}
-.wcard .tag{display:inline-block;margin-bottom:18px;padding:3px 10px;border-radius:12px;background:var(--blue2);color:var(--blue);font-size:12px;font-weight:500}
+.wcard .tag{display:inline-block;margin-bottom:22px;padding:6px 16px;border-radius:18px;background:var(--blue2);color:var(--blue);font-size:17px;font-weight:600}
 .termrow{display:flex;align-items:center;justify-content:center;gap:12px}
 .term{font-size:34px;font-weight:700;line-height:1.25;word-break:break-word}
-.ask{margin-top:14px;font-size:14px;color:var(--sub)}
-.intro{margin:12px 0 0;font-size:14px;color:var(--sub);line-height:1.7}
+.ask{margin-top:18px;font-size:19px;color:var(--sub)}
+.intro{margin:12px 0 0;font-size:16px;color:var(--sub);line-height:1.7}
 .stat{margin-top:14px;font-size:15px;line-height:1.9;white-space:pre-line}
 
 /* 喇叭按钮 */
@@ -23,6 +29,7 @@
 .verdict{font-size:22px;font-weight:700}
 .verdict.ok{color:#16a34a}
 .verdict.bad{color:var(--red)}
+.verdict.rev{color:var(--blue)}
 .heard{margin-top:8px;font-size:15px;color:var(--tx)}
 .cmt{margin-top:4px;font-size:13px;color:var(--sub)}
 .ans{margin-top:18px;padding-top:14px;border-top:1px solid #eef2f6;text-align:left}
@@ -39,3 +46,6 @@
 /* 完成页左边的次要按钮：返回聊天 */
 #act2{flex:none;height:56px;padding:0 22px;border:1.5px solid var(--blue);border-radius:28px;background:#fff;color:var(--blue);font-size:16px;font-weight:600;touch-action:manipulation}
 #hold:disabled{opacity:.6}
+/* 测试中“公布答案”：在“按住说话”左边，外观同“返回聊天” */
+#reveal{flex:none;height:56px;padding:0 18px;border:1.5px solid var(--blue);border-radius:28px;background:#fff;color:var(--blue);font-size:16px;font-weight:600;white-space:nowrap;touch-action:manipulation}
+#reveal:disabled{opacity:.5}
