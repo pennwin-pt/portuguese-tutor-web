@@ -63,7 +63,7 @@ player.onerror = () => { spkBtn?.classList.remove('play'); if (!player.currentSr
 /* ---------- 音效：答对 / 答错 ----------
    文件放在前端目录的 sounds/ 下（nginx 里是 html/portuguese-tutor-web/sounds/），想换格式只改这里的文件名。
    文件缺失或加载失败时静默不播，不影响答题。用独立的 Audio 对象，不占用朗读的 #player。 */
-const SFX_FILES = { pass: 'sounds/success.wav', fail: 'sounds/fail.wav' };
+const SFX_FILES = { pass: 'sounds/success.mp3', fail: 'sounds/fail.mp3' };
 const sfx = Object.fromEntries(Object.entries(SFX_FILES).map(([k, src]) => { const a = new Audio(src); a.preload = 'auto'; return [k, a]; }));
 let sfxPrimed = false;
 function primeSfx() {       // iOS：音效是在异步评判返回后才播的，必须先在用户手势里对每个 Audio 解锁一次（静音播放再停）
@@ -88,8 +88,11 @@ function spk(w, kind) {
 /* ---------- 任务状态 ----------
    Word Item（与后端 memory/word_source.py 的 WordItem 一致）：
    { id, pt_word, cn_meaning, pt_sentence, cn_sentence, mode }   mode: 1=看葡语说中文, 2=看中文说葡语
-   state: idle 未领取 | test 测试中 | judging 评判中 | result 结果展示 | done 全部通过 */
-let state = 'idle';
+   state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示
+          | done 今日已完成（刚通关，或打开页面时服务器记录显示今天早已完成；都可以“重新学习”） */
+let state = 'loading';
+let today = null;           // GET /api/words/today 的结果：{date, words, completed}
+let summary = null;         // done 页展示的成绩：{rounds,total,first_pass,attempts,times?,completed_at?, fresh}
 let todoList = [];          // 当前轮次待测（cur 已经从里面 shift 出来）
 let failedList = [];        // 本轮答错的，本轮测完后变成下一轮的 todoList
 let cur = null, lastRes = null;
@@ -102,8 +105,10 @@ function viewIdle() {
     const c = el('div', 'wcard');
     c.append(el('div', 'term', '📚 今日单词任务'),
         el('p', 'intro', '系统已为你安排好今天的单词。领取后逐个语音测试，答错的词会在本轮结束后重测，直到全部通过。'));
+    if (today?.words.length) c.append(el('div', 'stat', `今天共 ${today.words.length} 个单词`));
     return c;
 }
+function viewLoading() { const c = el('div', 'wcard'); c.append(el('div', 'ask', '加载今日任务…')); return c; }
 function viewTest() {
     const w = cur, c = el('div', 'wcard');
     c.append(el('div', 'tag', w.mode === 1 ? '🇵🇹 → 🇨🇳 看葡语，说中文' : '🇨🇳 → 🇵🇹 看中文，说葡语'));
@@ -127,47 +132,79 @@ function viewResult() {
     ans.append(r1, r3); c.append(ans);
     return c;
 }
+function fmtTime(s) {       // 服务器存的是 UTC（'YYYY-MM-DD HH:MM:SS'），转成本地 HH:MM
+    const d = s ? new Date(s.replace(' ', 'T') + 'Z') : null;
+    return d && !isNaN(d) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+}
 function viewDone() {
-    const c = el('div', 'wcard');
-    c.append(el('div', 'term', '🎉 今日任务完成'),
-        el('div', 'stat', `共 ${total} 个单词，用了 ${round} 轮\n一次通过 ${firstPass} 个 · 共评判 ${attempts} 次`));
-    c.lastChild.style.whiteSpace = 'pre-line';
+    const s = summary, c = el('div', 'wcard');
+    const lines = [`共 ${s.total} 个单词，用了 ${s.rounds} 轮`, `一次通过 ${s.first_pass} 个 · 共评判 ${s.attempts} 次`];
+    const at = fmtTime(s.completed_at);
+    if (at) lines.push(`完成于 ${at}` + (s.times > 1 ? ` · 今天第 ${s.times} 次完成` : ''));
+    c.append(el('div', 'term', s.fresh ? '🎉 今日任务完成' : '✅ 今日任务已完成'),
+        el('div', 'stat', lines.join('\n')),
+        el('p', 'intro', '想再巩固一遍？点下面的“重新学习”。'));
     return c;
 }
 
 function render() {
     const hold = $('#hold'), act = $('#act'), stage = $('#stage');
-    hold.hidden = !(state === 'test' || state === 'judging');
+    const testing = state === 'test' || state === 'judging';
+    hold.hidden = !testing;
     hold.disabled = state === 'judging';
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
-    act.hidden = !hold.hidden;
-    act.textContent = { idle: '领取今日任务', result: isLast() ? '完成' : '下一个', done: '返回聊天' }[state] || '';
+    act.hidden = testing || state === 'loading';
+    $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
+    act.textContent = { idle: '领取今日任务', result: isLast() ? '完成' : '下一个', done: '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
-    $('#prog').textContent = state === 'idle' || state === 'done' ? '' : `第 ${round} 轮 · ${idx}/${roundTotal}`;
+    $('#prog').textContent = testing || state === 'result' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
     $('#bar i').style.width = total ? (passed.size / total * 100) + '%' : '0';
     stage.innerHTML = '';
-    stage.append({ idle: viewIdle, test: viewTest, judging: viewTest, result: viewResult, done: viewDone }[state]());
+    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, result: viewResult, done: viewDone }[state]());
 }
 
 /* ---------- 流程 ---------- */
+async function fetchToday() {
+    const d = await get(`/api/words/today?session_id=${enc(sid)}`);
+    d.words = (d.words || []).filter(w => w && w.id != null && w.pt_word && (w.mode === 1 || w.mode === 2));
+    today = d;
+}
+function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
+    todoList = words.slice(); failedList = []; passed.clear();
+    total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
+    next();
+}
 async function start() {
     unlock();
     const btn = $('#act'); btn.disabled = true;
     try {
-        const d = await get(`/api/words/today?session_id=${enc(sid)}`);
-        const words = (d.words || []).filter(w => w && w.id != null && w.pt_word && (w.mode === 1 || w.mode === 2));
-        if (!words.length) return toast('今天没有单词任务');
-        todoList = words; failedList = []; passed.clear();
-        total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0;
-        next();
+        if (!today) await fetchToday();             // 页面打开时加载失败的话，这里重试
+        if (!today.words.length) return toast('今天没有单词任务');
+        if (today.completed) showDone(today.completed, false);     // 重试时发现今天其实已经完成了
+        else begin(today.words);
     } catch (err) { toast('领取失败：' + err.message); }
     finally { btn.disabled = false; }
+}
+function restart() {                                // 今日已完成后选择“重新学习”：同一批单词从头再测，不需要再请求
+    if (!today?.words.length) return;
+    unlock(); begin(today.words);
+}
+function showDone(rec, fresh) { cur = null; summary = { ...rec, fresh }; state = 'done'; render(); }
+function finish() {                                 // 所有单词都通过：先展示成绩，再把“今日已完成”记到服务器
+    showDone({ rounds: round, total, first_pass: firstPass, attempts }, true);
+    post('/api/words/complete', { session_id: sid, rounds: round, first_pass: firstPass, attempts })
+        .then(d => {
+            if (!d.completed) return;
+            if (today) today.completed = d.completed;
+            if (state === 'done' && summary?.fresh) { summary = { ...d.completed, fresh: true }; render(); }   // 换成服务器的记录（含完成时间、次数）
+        })
+        .catch(err => toast('完成记录保存失败：' + err.message));
 }
 
 function next() {                                   // 取下一个待测词；本轮测完则用 failedList 开下一轮；都通过了就结束
     unlock();
     if (!todoList.length) {
-        if (!failedList.length) { cur = null; state = 'done'; render(); return; }
+        if (!failedList.length) { finish(); return; }
         todoList = failedList; failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词`);
     }
@@ -201,10 +238,11 @@ async function evaluate(blob, ext) {
 $('#act').onclick = () => {
     if (state === 'idle') start();
     else if (state === 'result') next();
-    else if (state === 'done') location.href = 'index.html';
+    else if (state === 'done') restart();
 };
+$('#act2').onclick = () => { location.href = 'index.html'; };
 $('#back').onclick = () => {
-    if (state !== 'idle' && state !== 'done' && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
+    if (!['loading', 'idle', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
     location.href = 'index.html';
 };
 
@@ -246,4 +284,10 @@ holdBtn.addEventListener('pointerup', endRec);
 holdBtn.addEventListener('pointercancel', () => { cancel = true; endRec(); });
 holdBtn.addEventListener('contextmenu', e => e.preventDefault());
 
+/* ---------- 启动：先看今天是不是已经完成了 ---------- */
 render();
+(async () => {
+    try { await fetchToday(); } catch (err) { toast('加载今日任务失败：' + err.message); }
+    if (today?.completed && today.words.length) showDone(today.completed, false);
+    else { state = 'idle'; render(); }                      // 没完成 / 加载失败（点“领取”会重试）
+})();

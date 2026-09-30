@@ -29,6 +29,7 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
   memory/vocab_manager.py    单词库SQLite(vocab表),按session_id归属
   memory/word_source.py      单词任务数据源:WordItem模型 + 目前是Mock(TODO:接独立SQLite)
   memory/word_error_manager.py  错词表(word_errors),一次答错一行,给推荐算法用
+  memory/word_task_manager.py   每日任务完成记录(word_task_done),一人一天一行,重学后再次完成覆盖成绩+times
   prompts/tutor_prompt.py    教练人设系统提示词(A1难度,pt-PT)
   prompts/helper_prompts.py  中文求助翻译/语法解析/单词拆解的一次性提示词
   prompts/word_prompts.py    单词任务 mode=1 的语义评判提示词(纯JSON输出)
@@ -101,8 +102,9 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
 | `GET /api/background/{name}` | 白名单正则,带 `Cache-Control: immutable`(文件名带uuid,内容不会变) |
 | `POST /api/vocab` | **JSON body**(不是FormData): {session_id, items:[{language,word,example_sentence,chinese_meaning,example_chinese}]},批量加入单词库 |
 | `GET /api/vocab?session_id=&limit=500` | 拉某个 session 的单词库列表,按插入时间倒序 |
-| `GET /api/words/today?session_id=` | 今日单词 `{words:[WordItem]}`,目前Mock。WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1看葡语说中文/2看中文说葡语)},前后端字段必须一致 |
+| `GET /api/words/today?session_id=` | `{date,words:[WordItem],completed}`,completed 非空=今天已完成(`{rounds,total,first_pass,attempts,times,completed_at}`),前端据此展示“今日已完成”+“重新学习”;单词目前Mock。WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1看葡语说中文/2看中文说葡语)},前后端字段必须一致 |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode。mode1=ASR(zh)+义项快速匹配+LLM语义评判;mode2=ASR(pt)+纯规则(归一化后完全一致,含空格的短语允许相似度≥`WORD_PT_MATCH_THRESHOLD`)。返回 `{passed,recognized_text,comment}`;没听清 422(不算答错) |
+| `POST /api/words/complete` | **JSON body**: {session_id,rounds,first_pass,attempts},记今天已完成;total 取服务端单词数。“今天”=服务器本地日期 |
 | `POST /api/words/record_error` | **JSON body**: {session_id,word_id,mode,user_text?},写 `word_errors` 表 |
 | `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=` | 朗读单词/例句。只按id取服务端文本合成,不接受任意文本(防被当TTS代理);Piper结果按文本哈希落 `data/word_audio/` |
 | `WS /ws/chat/{session_id}` | **简化骨架**:整段收/整段发,历史走 `session_manager.get_history` 但**不落库** `orig`/`msg_uid`/`audio_file`,与 `/chat/*` 的持久化不对齐。要给 WS 通道加翻译/解析/拆词缓存需要先补这部分 |
@@ -157,6 +159,8 @@ Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件�
   没用自动迁移那套,以后加列可以照 messages/users 的模式补上。
 - `word_errors` 表(word_error_manager):错题事件流,字段 `session_id`/`word_id`/`mode`/`pt_word`/
   `cn_meaning`/`user_text`/`created_at`,pt_word 和 cn_meaning 是答错时的快照。
+- `word_task_done` 表(word_task_manager):UNIQUE(session_id,task_date),`times` 是当天累计完成次数,
+  `completed_at` 存 UTC,前端转本地时间显示。
 - 这些表目前**没有外键关联**,纯靠 `session_id`(等于 `username` 或游客的
   `guestSid`)这个约定串起来。
 
