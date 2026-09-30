@@ -49,7 +49,7 @@ const get = path => req(path, null, 'GET');
 /* ---------- 音频：朗读单词 / 例句 ---------- */
 const player = $('#player');
 const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-function unlock() { player.src = SILENT; player.play().catch(() => {}); }   // 在用户手势内解锁 iOS 自动播放
+function unlock() { player.src = SILENT; player.play().catch(() => {}); primeSfx(); }   // 在用户手势内解锁 iOS 自动播放（朗读 + 音效）
 let spkBtn = null;
 function speak(w, kind, btn) {                     // kind: 'word' | 'sentence'；后端按 word_id 取文本合成，前端不传文本
     spkBtn?.classList.remove('play'); spkBtn = btn || null;
@@ -60,6 +60,25 @@ function speak(w, kind, btn) {                     // kind: 'word' | 'sentence'�
 }
 player.onended = player.onpause = () => spkBtn?.classList.remove('play');
 player.onerror = () => { spkBtn?.classList.remove('play'); if (!player.currentSrc.startsWith('data:')) toast('朗读失败，点喇叭重试'); };
+/* ---------- 音效：答对 / 答错 ----------
+   文件放在前端目录的 sounds/ 下（nginx 里是 html/portuguese-tutor-web/sounds/），想换格式只改这里的文件名。
+   文件缺失或加载失败时静默不播，不影响答题。用独立的 Audio 对象，不占用朗读的 #player。 */
+const SFX_FILES = { pass: 'sounds/success.wav', fail: 'sounds/fail.wav' };
+const sfx = Object.fromEntries(Object.entries(SFX_FILES).map(([k, src]) => { const a = new Audio(src); a.preload = 'auto'; return [k, a]; }));
+let sfxPrimed = false;
+function primeSfx() {       // iOS：音效是在异步评判返回后才播的，必须先在用户手势里对每个 Audio 解锁一次（静音播放再停）
+    if (sfxPrimed) return; sfxPrimed = true;
+    Object.values(sfx).forEach(a => {
+        a.muted = true;
+        a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; })
+            .catch(() => { a.muted = false; sfxPrimed = false; });      // 文件还没放 / 暂时加载失败：下次手势再试
+    });
+}
+function playSfx(ok) {
+    const a = sfx[ok ? 'pass' : 'fail'];
+    try { a.currentTime = 0; } catch {}
+    a.play().catch(() => {});
+}
 function spk(w, kind) {
     const b = el('button', 'spk', '🔊'); b.type = 'button'; b.setAttribute('aria-label', kind === 'word' ? '朗读单词' : '朗读例句');
     b.onclick = () => speak(w, kind, b);
@@ -173,6 +192,7 @@ async function evaluate(blob, ext) {
                 .catch(err => toast('错题记录失败：' + err.message));
         }
         state = 'result'; render();
+        playSfx(d.passed);
     } catch (err) {                                 // 没听清 / 识别或大模型故障：不算答错，留在当前题让用户重说
         toast(err.message); state = 'test'; render();
     }
