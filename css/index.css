@@ -130,3 +130,7 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(env(safe-
 .namerow input{flex:1 1 0;min-width:0;width:auto}
 .namerow button{flex:none;height:44px;padding:0 14px;border:0;border-radius:12px;background:var(--blue);color:#fff;font-size:15px;font-weight:600;white-space:nowrap}
 .namerow button:disabled{opacity:.5}
+
+
+/* 历史记录分页：聊天区顶部的“上滑查看更早的消息”提示条 */
+.more{text-align:center;color:var(--sub);font-size:13px;padding:6px 0 2px;cursor:pointer}

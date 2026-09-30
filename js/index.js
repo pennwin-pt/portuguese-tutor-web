@@ -122,7 +122,8 @@ function updateTitle() {
 function syncAgentVoice() { loadTts(); syncTtsSeg(); updateTitle(); }   // 启动 / 切换智能体时调用
 syncAgentVoice();
 
-const scroll = () => requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight);
+let histLock = false;                          // 上翻加载更早消息时置 true，避免渲染过程把视图拉回底部
+const scroll = () => { if (!histLock) requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight); };
 function toast(m) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); }
 
 /* ---------- 网络 ---------- */
@@ -272,7 +273,7 @@ async function delTurn(m) {
         const d = await req(`/api/message/${m.rowId}?session_id=${enc(sid)}`, null, 'DELETE');
         (d.deleted || [m.rowId]).forEach(id => chat.querySelector(`.row[data-rid="${id}"]`)?.remove());
         if (playingPill && !playingPill.isConnected) { player.pause(); playingPill = null; }
-        if (!chat.querySelector('.row')) chat.innerHTML = TIP;
+        if (!chat.querySelector('.row')) { if (hasMore) loadMore(); else { resetHist(); chat.innerHTML = TIP; } }
         cur = null; toast('已删除，可以重新说了');
     } catch (err) { toast('删除失败：' + err.message); }
 }
@@ -570,18 +571,61 @@ function syncUserUI() {
 function openUser() { syncUserUI(); $('#tmask').hidden = true; $('#umask').hidden = false; setTimeout(() => uname.focus(), 60); }
 $('#user').onclick = openUser;
 
-async function loadHistory() {                                           // 按当前 sid 重建聊天区
+/* ---------- 历史记录分页：先取最近 HIST_PAGE 条，上滑到顶再按 row_id 游标加载更早的 ---------- */
+const HIST_PAGE = 30;                                                    // 每页条数（用户 + 教练各算一条，30 条 ≈ 15 轮）
+let oldestId = null, hasMore = false, loadingMore = false;
+const moreEl = el('div', 'more', '↑ 上滑查看更早的消息');
+const renderMsg = x => x.role === 'user' ? fillMe(addMe(''), x) : addAI(x, false);
+const syncMore = () => {                                                 // 还有更早的就保留顶部提示条，没有了就移除
+    if (hasMore) { moreEl.textContent = '↑ 上滑查看更早的消息'; if (!moreEl.isConnected) chat.prepend(moreEl); }
+    else moreEl.remove();
+};
+function resetHist() { oldestId = null; hasMore = false; loadingMore = false; moreEl.remove(); }
+const fillScreen = () => requestAnimationFrame(() => {                   // 内容还没撑满一屏就没法上滑，自动再补一页
+    if (hasMore && !loadingMore && chat.scrollHeight <= chat.clientHeight + 40) loadMore();
+});
+
+async function loadHistory() {                                           // 按当前 sid 重建聊天区（只取最近一页）
     const mine = sid;
-    player.pause(); playingPill = null; cur = null;
+    player.pause(); playingPill = null; cur = null; resetHist();
     try {
-        const j = await get('/api/history?session_id=' + enc(sid));
+        const j = await get(`/api/history?session_id=${enc(sid)}&limit=${HIST_PAGE}`);
         if (mine !== sid) return;                                        // 期间又切换了用户，丢弃过期结果
         chat.innerHTML = '';
         if (!j.messages?.length) { chat.innerHTML = TIP; return; }
-        j.messages.forEach(x => x.role === 'user' ? fillMe(addMe(''), x) : addAI(x, false));
-        scroll();
+        oldestId = j.messages[0].row_id ?? null;
+        hasMore = !!j.has_more && oldestId != null;
+        syncMore();
+        j.messages.forEach(renderMsg);
+        scroll(); fillScreen();
     } catch { if (mine === sid) chat.innerHTML = TIP; }
 }
+async function loadMore() {                                              // 加载更早的一页，插到最上面并保持当前阅读位置不跳
+    if (loadingMore || !hasMore || oldestId == null) return;
+    const mine = sid; loadingMore = true; moreEl.textContent = '加载中…';
+    try {
+        const j = await get(`/api/history?session_id=${enc(sid)}&limit=${HIST_PAGE}&before_id=${oldestId}`);
+        if (mine !== sid) return;                                        // 期间切换了用户，丢弃
+        const msgs = j.messages || [];
+        hasMore = !!j.has_more && msgs.length > 0;
+        if (msgs.length) {
+            const prevH = chat.scrollHeight, prevTop = chat.scrollTop;
+            const anchor = moreEl.isConnected ? moreEl.nextElementSibling : chat.firstElementChild;   // 原来最上面那一行
+            const tail = chat.lastElementChild;
+            histLock = true;
+            try { msgs.forEach(renderMsg); } finally { histLock = false; }   // 现有渲染函数都是 append 到末尾
+            const added = []; for (let n = tail.nextElementSibling; n; n = n.nextElementSibling) added.push(n);
+            added.forEach(n => chat.insertBefore(n, anchor));                // 再整批搬到旧消息前面
+            oldestId = msgs[0].row_id ?? oldestId;
+            chat.scrollTop = prevTop + (chat.scrollHeight - prevH);          // 补回新增内容的高度，视图位置不变
+        }
+        syncMore();
+    } catch (err) { if (mine === sid) { moreEl.textContent = '加载失败，点此重试'; toast(err.message); } }
+    finally { loadingMore = false; }
+    fillScreen();
+}
+chat.addEventListener('scroll', () => { if (chat.scrollTop < 80) loadMore(); }, { passive: true });
+moreEl.onclick = loadMore;
 async function submitBind() {
     const name = uname.value.trim();
     if (!NAME_RE.test(name)) return toast('智能体名称需为 2–20 位字母、数字、下划线或中文');
@@ -622,6 +666,6 @@ syncUserUI();
 /* ---------- 清空对话（长按标题） ---------- */
 press($('h1'), async () => {
     if (!confirm(username ? `清空「${username}」的对话和所有语音记录？` : '清空本次对话和所有语音记录？')) return;
-    try { await fetch(API + '/api/session/' + enc(sid), { method: 'DELETE' }); chat.innerHTML = TIP; toast('已清空'); }
+    try { await fetch(API + '/api/session/' + enc(sid), { method: 'DELETE' }); resetHist(); chat.innerHTML = TIP; toast('已清空'); }
     catch { toast('清空失败'); }
 });
