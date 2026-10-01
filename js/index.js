@@ -360,36 +360,67 @@ async function send({ blob, ext, text }) {
 }
 
 /* ---------- 按住说话 ---------- */
-const MIME = window.MediaRecorder && ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'].find(t => MediaRecorder.isTypeSupported(t));
-let mr, chunks, t0, startY, cancel, stream;
+// iOS Safari 的 webm/opus 录音是较新的实现，偶尔会录出残缺文件；iOS 上优先用最成熟的 audio/mp4（AAC）
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const MIME_LIST = IS_IOS ? ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'] : ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'];
+const MIME = window.MediaRecorder && MIME_LIST.find(t => MediaRecorder.isTypeSupported(t));
+const MIN_MS = 500, MIN_BYTES = 1200;      // 太短 / 太小的录音直接丢弃，不发给服务器
+const TAIL_MS = 250, MIC_WAIT_MS = 1500;   // 松手后多录一小会儿防止句尾被切；等麦克风真正出声的最长时间
+let mr, chunks, t0, startY, cancel, stream, stopTimer, preparing = false;
+const waitMicLive = s => new Promise(res => {    // iOS 的麦克风轨道刚拿到时可能还是 muted（没有数据），等它 unmute 再开始录
+    const t = s.getAudioTracks()[0];
+    if (!t || !t.muted) return res();
+    const done = () => { t.removeEventListener('unmute', done); clearTimeout(timer); res(); };
+    const timer = setTimeout(done, MIC_WAIT_MS);
+    t.addEventListener('unmute', done);
+});
+const holdIdle = () => { holdBtn.className = ''; holdBtn.textContent = '按住 说话'; $('#rec').hidden = true; $('#rec').classList.remove('cancel'); };
 holdBtn.addEventListener('pointerdown', async e => {
+    if (preparing || (mr && mr.state === 'recording')) return;          // 上一次还在准备 / 收尾
     e.preventDefault(); holding = true; startY = e.clientY; cancel = false; unlock();
     holdBtn.setPointerCapture(e.pointerId);
     if (!MIME) { toast('浏览器不支持录音（需 HTTPS）'); holding = false; return; }
-    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-    catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); holding = false; return; }
-    if (!holding) { stream.getTracks().forEach(t => t.stop()); return; }   // 权限弹窗期间已松手
-    chunks = []; mr = new MediaRecorder(stream, { mimeType: MIME });
-    mr.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
-    mr.onstop = () => {
-        stream.getTracks().forEach(t => t.stop());
-        if (cancel) return;
-        if (Date.now() - t0 < 600) return toast('说话时间太短');
-        send({ blob: new Blob(chunks, { type: MIME }), ext: MIME.includes('mp4') ? 'm4a' : 'webm' });
+    preparing = true; holdBtn.textContent = '准备中…';                      // 麦克风真正就绪前不显示“录音中”，避免一开口就丢字
+    let s;
+    try { s = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); holding = false; preparing = false; holdIdle(); return; }
+    stream = s;
+    await waitMicLive(s);
+    if (!holding) { s.getTracks().forEach(t => t.stop()); preparing = false; return; }   // 准备期间已松手
+    chunks = [];
+    const rec = new MediaRecorder(s, { mimeType: MIME, audioBitsPerSecond: 64000 });
+    mr = rec;
+    rec.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
+    rec.onstart = () => {
+        preparing = false;
+        if (!holding) { cancel = true; rec.stop(); return; }              // 刚开始录就松手了：丢弃
+        t0 = Date.now(); navigator.vibrate?.(10);
+        holdBtn.classList.add('rec'); holdBtn.textContent = '松开 发送'; $('#rec').hidden = false;
     };
-    mr.start(); t0 = Date.now(); navigator.vibrate?.(10);
-    holdBtn.classList.add('rec'); holdBtn.textContent = '松开 发送'; $('#rec').hidden = false;
+    rec.onstop = () => {
+        s.getTracks().forEach(t => t.stop());
+        preparing = false;
+        if (cancel) return;
+        if (Date.now() - t0 < MIN_MS) return toast('说话时间太短');
+        const blob = new Blob(chunks, { type: MIME });
+        if (blob.size < MIN_BYTES) return toast('没录上，请再说一次');         // 空录音 / 只有文件头
+        send({ blob, ext: MIME.includes('mp4') ? 'm4a' : 'webm' });
+    };
+    rec.start();
 });
 holdBtn.addEventListener('pointermove', e => {
-    if (!holding) return;
+    if (!holding || preparing) return;
     cancel = e.clientY < startY - 80;
     holdBtn.classList.toggle('cancel', cancel); $('#rec').classList.toggle('cancel', cancel);
     $('#rec span').textContent = cancel ? '松开手指，取消发送' : '正在录音… 上滑取消';
     holdBtn.textContent = cancel ? '松开 取消' : '松开 发送';
 });
 const endRec = () => {
-    holding = false; holdBtn.className = ''; holdBtn.textContent = '按住 说话'; $('#rec').hidden = true; $('#rec').classList.remove('cancel');
-    if (mr && mr.state === 'recording') mr.stop();
+    holding = false; holdIdle();
+    if (mr && mr.state === 'recording') {
+        if (cancel) mr.stop();
+        else { clearTimeout(stopTimer); stopTimer = setTimeout(() => { if (mr.state === 'recording') mr.stop(); }, TAIL_MS); }   // 多录 250ms，句尾不被切
+    }
 };
 holdBtn.addEventListener('pointerup', endRec);
 holdBtn.addEventListener('pointercancel', () => { cancel = true; endRec(); });
