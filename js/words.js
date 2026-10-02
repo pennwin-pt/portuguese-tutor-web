@@ -150,6 +150,9 @@ function viewResult() {
     t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
     r3.append(t3, spk(w, 'sentence'));
     ans.append(r1, r3); c.append(ans);
+    const mb = el('button', 'mbtn', '✅ 我已掌握，以后不再复习'); mb.type = 'button';
+    mb.onclick = () => markMastered(mb);
+    c.append(mb);
     return c;
 }
 function viewPreview() {                            // 预习：只看、只听，不评分、不改进度
@@ -267,6 +270,20 @@ function skip() {                                   // 跳过：视为已通过�
     noteOutcome(w, 'skipped');                      // 当天结果记为 skipped：算通过，但服务器不拿它升级复习盒子
     failedList = failedList.filter(x => x.id !== w.id);
     passed.add(w.id);                               // 进度条按已过关数计算；不计入 firstPass（不是一次通过）
+    next();
+}
+async function markMastered(btn) {               // 用户确认自己已经掌握：服务器把这个词标成掌握（退出复习），本地当作已过关，不再重测
+    if (state !== 'result' || !cur) return;
+    const w = cur;
+    if (!confirm(`确定已经完全掌握「${w.pt_word}」吗？\n以后不会再安排这个词的复习。`)) return;
+    btn.disabled = true;
+    try { await post('/api/words/mark_mastered', { session_id: sid, word_id: w.id }); }
+    catch (err) { btn.disabled = false; return toast('保存失败：' + err.message); }
+    if (state !== 'result' || cur !== w) return;     // 请求期间已经切走了（比如点了“下一个”）：服务器已记录，本地不再处理
+    delete outcomes[w.id];                           // 不再提交这个词当天的结果，后端也会跳过已掌握的词
+    failedList = failedList.filter(x => x.id !== w.id);
+    passed.add(w.id);                                // 进度条按已过关数计算；不计入 firstPass
+    toast('已标记为掌握，以后不再复习');
     next();
 }
 function noteOutcome(w, force) {                   // 只记每个词第一轮的结果；后面轮次（翻转方向重测）不再改
