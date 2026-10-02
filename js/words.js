@@ -100,7 +100,7 @@ let aiWrong = 0;            // 当前这个词在本轮里被 AI 评判为“答
 const SKIP_AFTER = 2;
 let curRevealed = false;    // 当前这个词是否点过“公布答案”（用来判定当天结果 again）
 const outcomes = {};        // 每个词当天第一轮的结果 {word_id,outcome,mode}：good 一次答对 | hard 答错后才对 | again 公布答案/判错≥2次 | skipped 跳过；完成时提交给服务器调度复习间隔
-const KIND_LABEL = { new: '🆕 新词', review: '🔁 复习', weekly: '📅 本周回顾' };
+const KIND_LABEL = { new: '🆕 新词', review: '🔁 复习', weekly: '📅 本周回顾', extra: '💪 周六加练' };
 let curMissed = false;      // 当前这个词在本轮里是否已经答错 / 公布过答案（= 不是“一次通过”，本轮结束后要重测）
 let round = 1, roundTotal = 0, total = 0, attempts = 0, firstPass = 0;
 const passed = new Set();   // 已“过关”的单词 id：某一轮里一次就答对的词（答错后重试才对的不算，还要进下一轮）
@@ -108,7 +108,19 @@ const passed = new Set();   // 已“过关”的单词 id：某一轮里一次�
 const isLast = () => !todoList.length && !failedList.length;
 const canSkip = () => state === 'result' && !!lastRes && !lastRes.passed && aiWrong >= SKIP_AFTER;   // 只在“AI 已连续判错两次”的结果页开放，不能一上来就跳
 
+const isSunday = () => !!today?.date && new Date(today.date + 'T00:00:00').getDay() === 0;   // 周日：只浏览本周全部单词，周一才开始记
+const previewOnly = () => !!today && !today.words.length && !!today.preview?.length;           // 没有测试任务、只有可浏览的词（周日常见）
+
 function viewIdle() {
+    if (previewOnly()) {
+        const c = el('div', 'wcard');
+        c.append(el('div', 'term', '📚 本周单词'),
+            el('p', 'intro', isSunday()
+                ? '新的一周从明天（周一）开始记。今天可以先把这些词浏览一遍、听听读音，不用背，也不会测试。'
+                : '现在没有要测试的单词，可以先浏览一下接下来要学的词。'),
+            el('div', 'stat', `共 ${today.preview.length} 个单词`));
+        return c;
+    }
     const c = el('div', 'wcard');
     c.append(el('div', 'term', '📚 今日单词任务'),
         el('p', 'intro', '系统已为你安排好今天的单词。领取后逐个语音测试：答错会一直停在这个词，直到答对才进下一个；一次就答对的词过关，本轮结束后只重测答错过的词，并换一个方向（说中文 ⇄ 说葡语）。'));
@@ -116,8 +128,9 @@ function viewIdle() {
         const m = today.meta || {}, parts = [];
         if (m.review) parts.push(`复习 ${m.review}`);
         if (m.weekly) parts.push(`本周回顾 ${m.weekly}`);
+        if (m.extra) parts.push(`周六加练 ${m.extra}`);
         if (m.new) parts.push(`新词 ${m.new}`);
-        if (today.preview?.length) parts.push(`预习 ${today.preview.length}`);
+        if (today.preview?.length) parts.push(`${isSunday() ? '本周单词（只看不测）' : '预习'} ${today.preview.length}`);
         c.append(el('div', 'stat', `今天共 ${today.words.length} 个单词` + (parts.length ? '\n' + parts.join(' · ') : '')));
     }
     return c;
@@ -157,7 +170,9 @@ function viewResult() {
 }
 function viewPreview() {                            // 预习：只看、只听，不评分、不改进度
     const c = el('div', 'wcard');
-    c.append(el('div', 'term', '👀 预习明天的词'), el('p', 'intro', '先混个脸熟：点喇叭听读音，看看例句。这里不测试。'));
+    const wk = isSunday();
+    c.append(el('div', 'term', wk ? `👀 本周单词（共 ${today.preview.length} 个）` : '👀 预习明天的词'),
+        el('p', 'intro', wk ? '周一开始记。先混个脸熟：点喇叭听读音，看看例句。这里不测试。' : '先混个脸熟：点喇叭听读音，看看例句。这里不测试。'));
     const list = el('div', 'plist');
     for (const w of today.preview) {
         const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
@@ -197,7 +212,8 @@ function render() {
     $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
     const resultLabel = !lastRes ? '' : !lastRes.passed ? '🔁 再试一次'            // 没答对：停在这个词
         : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测
-    act.textContent = { idle: '领取今日任务', result: resultLabel, preview: '预习完成', done: '🔄 重新学习' }[state] || '';
+    act.textContent = { idle: previewOnly() ? '👀 查看本周单词' : '领取今日任务', result: resultLabel,
+        preview: summary ? '预习完成' : '看完了', done: '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
     $('#prog').textContent = testing || state === 'result' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
     $('#bar i').style.width = total ? (passed.size / total * 100) + '%' : '0';
@@ -224,6 +240,7 @@ async function start() {
     const btn = $('#act'); btn.disabled = true;
     try {
         if (!today) await fetchToday();             // 页面打开时加载失败的话，这里重试
+        if (previewOnly()) { state = 'preview'; render(); return; }      // 只有可浏览的词（周日）：直接进浏览页，不领取任务
         if (!today.words.length) return toast('今天没有单词任务');
         if (today.completed) showDone(today.completed, false);     // 重试时发现今天其实已经完成了
         else begin(today.words);
@@ -348,7 +365,7 @@ $('#skip').onclick = skip;
 $('#act').onclick = () => {
     if (state === 'idle') start();
     else if (state === 'result') { if (lastRes?.passed) next(); else retry(); }
-    else if (state === 'preview') showDone(summary, true);
+    else if (state === 'preview') { if (summary) showDone(summary, true); else { state = 'idle'; render(); } }   // 纯浏览：看完回到首页
     else if (state === 'done') restart();
 };
 $('#act2').onclick = () => { location.href = 'index.html'; };
