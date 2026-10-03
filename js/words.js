@@ -230,6 +230,7 @@ async function fetchToday() {
     today = d;
 }
 function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
+    getMic().catch(() => {});                       // 预热麦克风：失败不提示，真正按住说话时会再试并提示
     todoList = words.slice(); failedList = []; passed.clear(); curMissed = false; curRevealed = false; aiWrong = 0;
     Object.keys(outcomes).forEach(k => delete outcomes[k]);
     total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
@@ -253,6 +254,7 @@ function restart() {                                // 今日已完成后选择�
 }
 function showDone(rec, fresh) { cur = null; summary = { ...rec, fresh }; state = 'done'; render(); }
 function finish() {                                 // 所有单词都通过：先把当天结果提交给服务器（结算复习进度 + 记完成），再进预习 / 成绩页
+    releaseMic();
     cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, fresh: true };
     if (today?.preview?.length && !today.completed) { state = 'preview'; render(); }    // 重新学习时不再预习
     else showDone(summary, true);
@@ -390,6 +392,21 @@ const waitMicLive = s => new Promise(res => {    // iOS 的麦克风轨道刚拿
     const timer = setTimeout(done, MIC_WAIT_MS);
     t.addEventListener('unmute', done);
 });
+// 麦克风流整个测试期间复用：每次按下都重新 getUserMedia 在安卓（小米平板等）上要 1~3 秒，
+// 复用后只有第一次要等。测试结束 / 页面切到后台时释放，不让系统一直亮着麦克风图标。
+let micStream = null;
+async function getMic() {
+    if (micStream && micStream.getAudioTracks().some(t => t.readyState === 'live')) return micStream;
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    s.getAudioTracks().forEach(t => { t.onended = () => { if (micStream === s) micStream = null; }; });   // 被系统 / 其他 App 抢走后，下次按下会重新申请
+    return micStream = s;
+}
+function releaseMic() {
+    if (micStream) micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && !holding && !preparing) releaseMic(); });
+window.addEventListener('pagehide', releaseMic);
 const holdIdle = () => { holdBtn.className = ''; holdBtn.textContent = '按住 说话'; $('#rec').hidden = true; $('#rec').classList.remove('cancel'); };
 holdBtn.addEventListener('pointerdown', async e => {
     if (state !== 'test') return;
@@ -400,11 +417,11 @@ holdBtn.addEventListener('pointerdown', async e => {
     if (!MIME) { toast('浏览器不支持录音（需 HTTPS）'); holding = false; return; }
     preparing = true; holdBtn.textContent = '准备中…';                      // 麦克风真正就绪前不显示“录音中”，避免一开口就丢字
     let s;
-    try { s = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+    try { s = await getMic(); }
     catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); holding = false; preparing = false; holdIdle(); return; }
     stream = s;
-    await waitMicLive(s);
-    if (!holding) { s.getTracks().forEach(t => t.stop()); preparing = false; return; }   // 准备期间已松手
+    await waitMicLive(s);                                                        // 复用的流已经出声，这里立即返回
+    if (!holding) { preparing = false; return; }                                 // 准备期间已松手（流留着，下次直接用）
     chunks = [];
     const rec = new MediaRecorder(s, { mimeType: MIME, audioBitsPerSecond: 64000 });
     mr = rec;
@@ -416,8 +433,7 @@ holdBtn.addEventListener('pointerdown', async e => {
         holdBtn.classList.add('rec'); holdBtn.textContent = '松开 发送'; $('#rec').hidden = false;
     };
     rec.onstop = () => {
-        s.getTracks().forEach(t => t.stop());
-        preparing = false;
+        preparing = false;                           // 不再 stop 轨道：流由 releaseMic() 统一释放
         if (cancel) return;
         if (Date.now() - t0 < MIN_MS) return toast('说话时间太短');
         const blob = new Blob(chunks, { type: MIME });

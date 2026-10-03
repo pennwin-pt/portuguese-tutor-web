@@ -1,219 +1,221 @@
 ---
 name: "pt-tutor-app"
-description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:index.html/index.css/touch-protection.css/index.js,原生JS无构建;后端:FastAPI+SQLite+Faster-Whisper+Piper+Gemini/Grok/Ollama)时必须使用此skill。只要用户提到"葡语陪练"、粘贴这个项目任意一端的代码,或要求修改语音对话/ASR/TTS/LLM切换/用户绑定/主题背景/历史记录/单词拆解/单词库等任何功能,先读本skill再动手,不要让用户重新粘贴源文件或重新解释项目背景与接口约定。前后端经常一起改,改动涉及接口字段时两端都要检查。
+description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:index.html/index.css/touch-protection.css/index.js + 单词任务页 words.html/words.css/words.js,原生JS无构建;后端:FastAPI+SQLite+Faster-Whisper+Piper/Google/Edge/StreamElements TTS+Gemini/Groq/Ollama)时必须使用此skill。只要用户提到"葡语陪练"、粘贴这个项目任意一端的代码,或要求修改语音对话/ASR/TTS音色/LLM切换/智能体绑定/角色人设/主题背景/历史记录/单词拆解/单词库/单词任务/复习调度/周六加练/掌握规则等任何功能,先读本skill再动手,不要让用户重新粘贴源文件或重新解释项目背景与接口约定。前后端经常一起改,改动涉及接口字段时两端都要检查。
 ---
 
 # 葡语陪练 · 全栈项目协作规则
 
-语音进-语音出的葡萄牙语陪练 APP。**前端**纯静态原生 JS(无构建工具/无框架);
-**后端** FastAPI,流水线是 ASR(Faster-Whisper)→ 记忆(SQLite)→ LLM(Gemini/
-Grok/Ollama,可切换+自动降级)→ TTS(Piper)。改动直接编辑源文件即可上线,
-**不要给前端引入构建链/框架,不要给后端引入 ORM/新数据库,除非用户明确要求。**
+语音进-语音出的欧洲葡萄牙语(pt-PT)陪练 APP,另带一个「单词任务」页(间隔重复复习)。**前端**纯静态原生 JS(无构建工具/无框架);
+**后端** FastAPI,聊天流水线是 ASR(Faster-Whisper)→ 记忆(SQLite)→ LLM(Gemini/Groq/Ollama,可切换+自动降级)→ TTS(Piper/谷歌/Edge/StreamElements)。
+改动直接编辑源文件即可上线,**不要给前端引入构建链/框架,不要给后端引入 ORM/新数据库,除非用户明确要求。**
+UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户名),代码里变量仍叫 `username`。
 
 ## 文件地图
 ```
-前端: index.html / css/index.css / css/touch-protection.css / js/index.js
-  单词任务页: words.html / css/words.css / js/words.js (复用 index.css;聊天页 header 的 📚 进入)
+前端(部署后在 portuguese-tutor-web/ 下):
+  index.html / css/index.css / css/touch-protection.css / js/index.js      聊天页
+  words.html / css/words.css / js/words.js                                单词任务页(复用 index.css;聊天页 header 的 📚 进入)
+  sounds/success.wav, sounds/fail.wav                                      单词页答对/答错音效(缺文件静默不播)
 后端:
-  main.py              FastAPI入口,挂路由 + startup预加载模型/初始化DB(含vocab表) + WS骨架
-  run.py                PyCharm调试入口(reload=False)
-  config.py             全局配置,读.env
-  api/routes.py          /api/chat,/history,/translate,/explain,/breakdown,/audio,/session,/vocab 核心业务
-  api/user_routes.py      /api/user/*,/api/background/* 用户名+主题+背景
-  api/word_routes.py      /api/words/* 单词任务测试:今日单词/语音评判/记错题/单词朗读
-  core/asr_engine.py      Faster-Whisper单例懒加载
-  core/llm_engine.py      Gemini/Grok/Ollama抽象工厂 + 自动降级
-  core/tts_engine.py      Piper子进程封装
-  memory/session_manager.py  对话历史SQLite(messages表,含breakdown缓存列)
-  memory/user_manager.py     用户资料SQLite(users表,含可选PIN)
-  memory/vocab_manager.py    单词库SQLite(vocab表),按session_id归属
-  memory/word_source.py      单词任务数据源:WordItem模型 + 目前是Mock(TODO:接独立SQLite)
-  memory/word_planner.py     每周单词调度(纯函数):Leitner盒子+工作日间隔,算每日复习/新词/预习,apply_outcome更新进度;参数集中在文件顶部
-  memory/word_progress_manager.py  调度存储(aiosqlite,同 sessions.db):word_progress/word_week/word_daily_plan/word_outcomes 四张表(word_id按INTEGER);“今天完成没”仍归 word_task_manager
-  test_word_plan.py          项目根目录运行:真实路由+managers 端到端跑两周(临时库、ASR/LLM/TTS打桩),改调度/接口后先跑它
-  memory/word_error_manager.py  错词表(word_errors),一次答错一行,给推荐算法用
-  memory/word_task_manager.py   每日任务完成记录(word_task_done),一人一天一行,重学后再次完成覆盖成绩+times
-  prompts/tutor_prompt.py    教练人设系统提示词(A1难度,pt-PT)
-  prompts/helper_prompts.py  中文求助翻译/语法解析/单词拆解的一次性提示词
-  prompts/word_prompts.py    单词任务 mode=1 的语义评判提示词(纯JSON输出)
+  main.py                  FastAPI入口,挂 /api 下三个路由 + startup 依次 init_db(session/user/vocab/word_error/word_task/word_progress)+ WS骨架
+  run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
+  config.py                全局配置,读.env(ASR/LLM/TTS/WORD_*/SQLITE_PATH/CORS)
+  api/routes.py            聊天核心:/chat/*,/history,/translate,/explain,/breakdown,/regenerate_audio,/audio,/session,/message,/vocab
+  api/user_routes.py       /user/* 绑定、主题、背景、音色(tts)、角色人设(persona),/background/{name}
+  api/word_routes.py       /words/* 今日任务(动态调度)/语音评判/完成结算/记错题/标记已掌握/单词朗读
+  core/asr_engine.py       Faster-Whisper单例懒加载
+  core/llm_engine.py       Gemini/Groq/Ollama工厂 + FallbackEngine自动降级
+  core/tts_engine.py       Piper子进程 + 谷歌/Edge/StreamElements在线音源(带缓存) + synthesize_any 统一入口
+  memory/session_manager.py       对话历史(messages表)
+  memory/user_manager.py          智能体资料(users表:PIN/背景/主题/tts/persona)
+  memory/vocab_manager.py         单词库(vocab表,聊天里"拆解单词→加入单词库")
+  memory/word_source.py           单词任务数据源:只读 WordMemorizer 的独立 SQLite(WORD_DB_PATH)
+  memory/word_planner.py          ★调度算法(纯函数,不碰数据库):Leitner盒子+工作日间隔+周六加练
+  memory/word_progress_manager.py ★进度存储:word_progress/word_week/word_daily_plan/word_outcomes 四张表
+  memory/word_task_manager.py     每日"是否完成"记录(word_task_done)
+  memory/word_error_manager.py    错词事件流(word_errors)
+  prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona)
+  prompts/helper_prompts.py 中文求助翻译/语法解析/单词拆解提示词
+  prompts/word_prompts.py   单词评判提示词(mode1 义项语义 / mode2 葡语是否说对目标词),纯JSON输出
 ```
 
 ## 身份 & 会话模型(前后端共用,改动前必读)
-- **方案A:`username` 就是 `session_id`**,没绑定用户名时前端用本机随机 `guestSid`
-  (`localStorage.sid`)。聊天记录表、单词库表都按 `session_id` 存,不需要额外关联
-  用户表。
-- 用户名校验正则 **前后端必须完全一致**:`/^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}$/`
-  (前端 `NAME_RE`,后端 `user_manager.USERNAME_RE`,注意后端用 `fullmatch`)。改这个
-  正则必须两端同改,否则会出现前端放行、后端拒绝的情况。
-- `users` 表支持可选 PIN(pbkdf2 加盐哈希),但**前端当前完全没有 PIN 相关 UI**——
-  `bind_user` 接口签名里有 `pin` 字段,如果用户要加 PIN 功能,前端 `/api/user/bind`
-  调用和绑定弹窗都要补。
-- 用户不存在且未设 PIN 时,`get_or_create_user` 会静默创建;已设 PIN 时必须传对,
-  否则 401。
+- **方案A:`username` 就是 `session_id`**,没绑定智能体时前端用本机随机 `guestSid`(`localStorage.sid`)。聊天记录、单词库、单词进度全部按 `session_id` 存,不需要额外关联用户表。
+- 名称校验正则 **前后端必须完全一致**:`/^[A-Za-z0-9_\u4e00-\u9fa5]{2,20}$/`(前端 `NAME_RE` 在 index.js **和 words.js 各有一份**,后端 `user_manager.USERNAME_RE`,后端用 `fullmatch`)。改正则必须三处同改。
+- `users` 表支持可选 PIN(pbkdf2 加盐哈希),但**前端没有 PIN 的 UI**;`/user/bind` 签名里有 `pin`,要做 PIN 功能时绑定弹窗和调用都要补。用户不存在且未设 PIN 时静默创建;已设 PIN 必须传对,否则 401。
+- 前端 localStorage 键:`sid`、`username`、`theme`、`tts_<sid>`(每个智能体各自的音源+音色)。index.js 与 words.js 读同一份,**改键名两个 JS 和后端要一起改**。绑定后,主题/音色/人设/背景都会同步到服务器,换设备绑定同名智能体即可恢复。
 
-## 请求流水线(`/api/chat/audio`、`/api/chat/text` → `_run_turn`)
-1. `mode=zh`(中文求助)时先用 `ZH2PT_PROMPT` 把中文译成葡语,`user_pt` 是最终进入
-   教练对话历史的葡语;`mode=pt` 时 `user_pt == raw_text`。
-2. 取 `session_manager.get_history()`(最近 `LLM_HISTORY_TURNS` 轮)+ `SYSTEM_PROMPT`
-+ 当前用户输入,调用 `llm_engine.get_llm_engine().generate()`。
-3. TTS 合成到临时文件,`shutil.move` 到 `data/replies/` **持久化**(不是用完即删),
-   文件名 `msg_{uuid12hex}.wav`,受 `_AUDIO_NAME` 正则白名单保护(防目录穿越)。
-4. 入库两条消息:`user` 角色存 `content=user_pt, orig=raw_text`;`assistant` 角色存
-   `content=ai_text, msg_uid=uid, audio_file=final.name`。
-5. 返回体**不含** `audio_base64`(那是 WebSocket 骨架专用的),HTTP 接口固定用
-   `audio_url`。**改动响应体字段时,前端 `audioUrl()`/`fillMe()`/`addAI()` 要同步检查。**
+## 聊天流水线(`/api/chat/audio`、`/api/chat/text` → `_run_turn`)
+1. `mode=zh`(中文求助)先用 `ZH2PT_PROMPT` 译成葡语,`user_pt` 才是进入教练历史的葡语;`mode=pt` 时 `user_pt == raw_text`。中文求助模式 ASR 必须显式传 `language="zh"`。
+2. 取最近 `LLM_HISTORY_TURNS` 轮历史;**系统提示词 = `build_system_prompt(persona)`**,persona 来自 `user_manager.get_persona(session_id)`(游客/没设 = 空串 = 默认 Tuga 老师;读取失败退回默认,不影响聊天)。
+3. 中文求助模式下,译出的葡语也并行合成一条语音(用户语音条);教练回复再合成。TTS 走 `synthesize_any(text, provider, voice)`,在线音源失败会兜底回 Piper,响应里 `tts_provider_used`/`tts_fallback` 告知实际用了谁。
+4. 语音落盘到 `data/replies/`,文件名 `msg_{uuid12hex}.(wav|mp3)`;缓存型在线音源(google/edge/streamelements)只能 **copy**,Piper 临时文件 **move**。
+5. `session_manager.add_turn` 原子写入用户+教练两行并返回 `user_row_id`/`ai_row_id`(前端删除一轮靠它)。教练行存 `msg_uid`/`audio_file`;用户行存 `content=user_pt, orig=raw_text`,中文求助模式下还有自己的 `msg_uid`/`audio_file`。
+6. 响应体固定用 `audio_url`(不含 base64)。**改响应字段时前端 `audioUrl()`/`fillMe()`/`addAI()` 要同步检查。**
+
+## 聊天页功能要点
+- **长按语音条菜单**:原文 / 翻译中文 / 语法解析 / 拆解单词 / 🔁 重新生成语音 / 🗑 删除这一轮 / 取消。
+- **重新生成语音**(`POST /regenerate_audio`,FormData: message_id,tts_provider,tts_voice):`force=True` 跳过在线音源缓存;**新文件名必须每次随机**,不能复用 message_id,否则 URL 不变,浏览器 `<audio>` 会播旧缓存。旧文件合成成功后再删。教练回复和用户译文语音条都走这里,不限 role。
+- **删除一轮**(`DELETE /message/{row_id}?session_id=`):连同配对的另一句一起删,清对应音频文件(先过 `_AUDIO_NAME` 白名单)。LLM 记忆读自 messages 表,所以记忆同步去掉。session_id 必须与消息归属一致。
+- **历史分页**:`GET /history?session_id=&limit=30&before_id=` 返回 `{messages, has_more}`,用 `row_id` 做游标(不用 OFFSET)。前端先取最近 `HIST_PAGE=30` 条,上滑到顶再按最早一条的 `row_id` 加载更早的。limit 服务端夹在 1–100。
+- **绑定智能体弹窗**含:绑定/恢复、音源四选一(本地 Piper/谷歌/Edge/SE)、音色(只有 edge 和 streamelements 有多音色)、角色人设(模板按钮 + ≤300 字文本框,游客禁用)。
+- **音色白名单**:前端 `VOICE_OPTIONS` 与后端 `tts_engine.EDGE_VOICES`/`STREAMELEMENTS_VOICES` 必须一致,改一边另一边同步;`/user/{u}/tts` 对非法音源/音色直接 422,不静默丢弃。
+- **角色人设**:`PERSONA_MAX=300`,前端 `PERSONA_MAX` 与后端 `user_manager.PERSONA_MAX` 一致;`clean_persona` 去控制字符和 `<>`(人设包在 `<persona>` 标签里拼进系统提示词,防标签注入);超长直接 422 不静默截断;空串=清除。每轮对话都会带上人设,所以要限长省 token。
 
 ## 单词拆解 & 单词库(长按教练语音条 → 🧩 拆解单词)
-- 入口:前端 `press()` 长按语音气泡弹出 `#mask` 菜单,`data-k="bd"` 触发
-  `openBreakdown(m)` → `POST /api/breakdown`(FormData: text,message_id?,session_id)。
-- **教练的一条回复可能是好几句拼在一起**,典型情况是纠错句 `"Correção: ...\n\n..."`。
-  `BREAKDOWN_PROMPT`(`prompts/helper_prompts.py`)要求 LLM 先按自然边界拆句、去掉
-  `Correção:`/`Correcão:` 前缀,再逐句给出单词。返回的每个单词自带 `sentence`/
-  `sentence_zh`(这个词所在的那一句原文+中文翻译),**不要退回成"整段话当一个例句"**
-  的旧设计,不然纠错句和后面的问句会被错误地拼在一起当例句。
-- 后端 `_parse_breakdown_json`(`api/routes.py`)有兜底清洗:正则去掉残留的
-  `Correção:` 前缀,并过滤掉 `word` 本身就是 "correção"(不管大小写/有无重音)的
-  情况——这是纠错标记,不是要学的葡语单词。**新增/修改拆词逻辑时这条兜底不要删**,
-  它是防 LLM 不听 prompt 话的最后一道保险。
-- 拆词结果按 `message_id` 缓存在 `messages.breakdown` 列(JSON 字符串,复用
-  `translation`/`explanation` 的缓存写法,同一句话第二次点不会重复调 LLM)。
-- 前端拆词面板(`#wmask`/`#wlist`)列出可勾选的单词,点"加入单词库"→
-  `POST /api/vocab`,body 是 `{session_id, items:[...]}`,**这一个接口是 JSON body
-  不是 FormData**(因为要传数组),前端 `post()` 本身两种都支持,不用改。
-- 单词库表结构(`memory/vocab_manager.py` 的 `vocab` 表,字段名和用户要求的
-  Language/Word/ExampleSentence/ChineseMeaning/ExampleChinese 一一对应):
-  `language`(默认 `"pt-PT"`,以后加英语等其他语言时前端传别的值,后端不用改)、
-  `word`、`example_sentence`、`chinese_meaning`、`example_chinese`。
-- `GET /api/vocab?session_id=` 后端已实现,**前端目前没有"浏览/管理单词库"的界面**,
-  只有"加入"的入口。用户要看单词库列表/删词的话,这块 UI 还没做,需要新加。
+- `POST /api/breakdown`(FormData: text,message_id?,session_id)。**教练一条回复可能是好几句拼在一起**(典型:`"Correção: ...\n\n..."`),`BREAKDOWN_PROMPT` 要求先按自然边界拆句、去掉 `Correção:` 前缀,再逐句给词;每个词自带 `sentence`/`sentence_zh`(所在那一句原文+中文),**不要退回"整段话当一个例句"**。
+- 后端 `_parse_breakdown_json` 有兜底:正则去 `Correção:` 前缀,过滤 `word` 本身就是 correção(不论大小写/重音)的项。**这条兜底不要删**,是防 LLM 不听 prompt 的最后一道保险。
+- 结果按 `message_id` 缓存在 `messages.breakdown` 列(同 `translation`/`explanation`)。
+- 前端拆词面板列出可勾选单词 → `POST /api/vocab`(**JSON body**,不是 FormData):`{session_id, items:[{language,word,example_sentence,chinese_meaning,example_chinese}]}`;`language` 默认 `pt-PT`。
+- `GET /api/vocab?session_id=&limit=500` 已实现,**前端没有浏览/删除单词库的界面,也没有去重**。
 
-## API 契约(全部接口,新增功能优先复用而非重新设计)
+# 单词任务(每周动态调度 · 间隔重复)
+
+## 数据来源
+`word_source.py` 只读 **WordMemorizer** 的独立 SQLite(`WORD_DB_PATH`,`PRAGMA query_only`):`WeeklyPlans`(StartDate 周日 ~ EndDate 周六,每周日录入 30 个新词)→ `WeeklyPlanWords.WordId` → `Words`。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。**不再是 Mock**。库文件不存在时返回空列表并记日志。
+`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1/2)}`,**前后端字段必须一致**;今日接口会额外带 `kind`。
+
+## 一周节奏(周日~周六)
+- **周日**:新一周词表已生成,全部放进 `preview` 只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。
+- **周一~周五**:复习(到期词,≤15)→ 周五加"本周回顾"→ 新词;最后还有 `preview`(预习明天的词,只看不评分)。
+- **周六**:没有新词;到期复习(≤8,`WEEKEND_REVIEW_MAX`)+ **周六加练**(`kind=extra`),总数 ≤10(`SATURDAY_MAX`)。没有任何弱词时周六就是休息日(`/words/complete` 对空计划返回 422)。
+- 周末不安排普通复习,间隔按**工作日**计算。"今天"= 服务器本地日期(`word_task_manager.today_str()`)。
+- 本周词表(`word_week`)首次请求时固定;上周没学完的顺延到下周,再从词源按顺序补没用过的词,凑满 `WEEK_SIZE=30`。当天计划(`word_daily_plan`)首次请求时生成并固定,刷新页面/重新学习都不变(**计划为空时不落库,每次请求会重算**)。
+
+## 调度参数(全部集中在 `word_planner.py` 顶部,调参只改这里)
+| 参数 | 值 | 含义 |
+|---|---|---|
+| `WEEK_SIZE` | 30 | 每周新词数 |
+| `WORKLOAD` / `NEW_MIN` / `NEW_MAX` | 20 / 3 / 10 | 一天总量上限 / 每天新词数上下限 |
+| `REVIEW_MAX` / `WEEKEND_REVIEW_MAX` | 15 / 8 | 工作日 / 周末复习上限 |
+| `PREVIEW_MAX` | 8 | 预习词上限 |
+| `INTERVALS` | {1:1,2:2,3:4,4:7,5:14} | box → 下次复习间隔(工作日数) |
+| `MASTER_BOX` | 4 | box ≥ 此值且说葡语答对过 ⇒ 掌握 |
+| `RATE_LOW`/`RATE_HIGH` | 0.6 / 0.9 | 昨日一次通过率阈值(低则少学 2 个新词,高则多学 1 个) |
+| `STUBBORN_LAPSES` | 3 | 忘记次数 ≥ 此值 ⇒ 顽固词,复习排最前,且固定用 mode1(较容易) |
+| `WEAK_LAPSES` | 2 | 周六加练:忘记次数 ≥ 此值 |
+| `WEAK_HARD_STREAK` | 2 | 周六加练:连续 hard ≥ 此次数 |
+| `LAPSE_DECAY_STREAK` | 2 | 每连续答对(good)这么多次,lapses −1(最低 0) |
+| `SATURDAY_MAX` | 10 | 周六任务总上限 |
+
+## 每个词当天结果(只看第一轮,每词每天只结算一次)
+前端 `noteOutcome` 判定,点"完成"时随 `/words/complete` 提交 `outcomes`:
+| outcome | 触发 | box | lapses | hard_streak | streak | 下次复习 |
+|---|---|---|---|---|---|---|
+| good | 一次答对 | +1(≤5) | 满足衰减条件时 −1 | 清零 | +1 | 按 box 间隔 |
+| hard | 答错后重试才对 | 不降,至少 1 | 不变 | **+1** | 清零 | 按 box 间隔 |
+| again | 点了"公布答案"或被 AI 判错 ≥2 次 | −2,至少 1 | **+1** | 清零 | 清零 | **下一个工作日** |
+| skipped | 点"跳过" | 不变,至少 1 | 不变 | 不变 | 不变 | 按 box 间隔 |
+- good 衰减:`streak % LAPSE_DECAY_STREAK == 0 and lapses > 0` 时 lapses −1(streak 本身不清零,所以是每 2 次一减)。
+- mode=2(说葡语)good ⇒ `mode2_ok=1`;mode=2 的 again ⇒ `mode2_ok=0`(之前"会说"的证明作废)。
+- `mastered = box ≥ MASTER_BOX 且 mode2_ok`。**已掌握的词后端 `settle` 直接跳过,不会被自动改回未掌握**(也没有定期抽查机制,是已知简化)。
+- 用户在结果页点"✅ 我已掌握"(`POST /words/mark_mastered`):`master_row` 直接 box=5、`mode2_ok=1`、`mastered=1`、`hard_streak=0`,以后不再复习,也不会再当新词;前端同时从本轮 `outcomes`/`failedList` 里移除该词。
+- 没听清/ASR 空结果(422)、公布答案都**不算 AI 判错**,不计入 `aiWrong`。
+
+## 周六加练的选词规则(`build_today_plan`,`today.weekday()==5`)
+候选 = 未掌握、且不在今天到期复习里的词,满足**任一**:`lapses ≥ 2` | `last_outcome == "again"` | `hard_streak ≥ 2`。
+排序:顽固词(lapses≥3)优先 → 上次 again 的优先 → lapses 多的优先 → hard_streak 多的优先 → box 低的优先 → word_id。取前 `SATURDAY_MAX − 已有条数` 个。
+注意:周五结算后的词 due 基本都在周一以后,所以**周六的 review 通常是空的,加练才是主体**;进度只在点"完成"时结算,周五中途退出的结果周六看不到。
+
+## word_progress 表与迁移
+`word_progress(session_id, word_id, box, due_date, streak, lapses, hard_streak, introduced_on, last_mode, last_outcome, mode2_ok, mastered)`,主键 (session_id, word_id)。
+`hard_streak` 是后加的列:`word_progress_manager.init_db()` 用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE ... DEFAULT 0`(幂等,旧库不用删)。`apply_outcome` 对没有该键的旧 row 用 `setdefault` 兼容。**以后给这张表加列照这个模式。**
+其余三张:`word_week`(每周 30 词及顺序)、`word_daily_plan`(当天计划,kind 含 `preview`)、`word_outcomes`(主键 (session_id,task_date,word_id),保证"一天只结算一次";`yesterday_rate` 取最近一个学习日的 good 占比)。`word_task_done` 由 `word_task_manager` 管,`word_errors` 由 `word_error_manager` 管(每次答错一行,`pt_word`/`cn_meaning` 是快照,目前只记录不参与调度)。
+`settle` 只认今天计划里的词(不信前端传的 id),且 `outcome`/`mode` 过枚举校验。
+
+## 评判规则(`/words/evaluate`,FormData: audio,word_id,mode)
+- **mode=1**(看葡语说中文):ASR 用 zh → 先做义项精确匹配快速通道(`cn_meaning` 按 `;；,，、/|` 拆义项,括号备注不参与)→ 不中再交给 LLM 语义评判(`WORD_MEANING_JUDGE_PROMPT`)。
+- **mode=2**(看中文说葡语):ASR 用 pt。先走规则:`_norm_pt` 归一化(NFC+小写+连字符当空格+去标点,**保留重音**)后完全一致;含空格短语相似度 ≥ `WORD_PT_MATCH_THRESHOLD`(0.85);单个 ≥7 字母的长词允许"同词干近似"(`_near_single_word`:相似度 ≥ `WORD_PT_SINGLE_THRESHOLD` 0.80 且共享前缀 ≥ max(5,len−3))。规则没放行的再交给 LLM(`WORD_PT_JUDGE_PROMPT`);LLM 调用失败退回规则结果;`WORD_PT_USE_LLM=0` 可关闭 LLM。LLM 返回解析失败 → 502(不算答错,前端让用户再说)。
+- ASR **刻意不给目标单词做 initial_prompt**(否则识别被带向正确答案);mode=2 只用 `ASR_PROMPT_WORD`(风格提示,不含具体单词)。
+- 录音大小限制 `WORD_MAX_AUDIO_SIZE`(10MB),超限 413;422 = 没录上/没听清(不算答错)。
+- 单词朗读 `GET /words/{id}/audio?kind=word|sentence&tts_provider=&tts_voice=`:**只按 id 取服务端文本合成,不接受任意文本**(防被当 TTS 代理);Piper 结果按文本哈希落 `data/word_audio/`。
+
+## 单词页前端流程(`words.js`,纯前端状态机)
+- state:`loading → idle → test ⇄ judging → result → …`,另有 `preview`(只看不评分)、`done`(今日已完成,可"重新学习")。
+- **逐词练**:答错/公布答案后停在同一个词同一个方向,按钮变"🔁 再试一次"(`retry()`),答对才"下一个"。`curMissed` 标记当前词本轮是否出过错;**只有一次就答对的词才进 `passed`**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2)**成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以"重新学习"仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词。
+- **公布答案**(`#reveal`,仅测试中):纯前端,不调 evaluate;按"答错"处理(`markMissed`,进 `failedList`),并调 `record_error`(`user_text` 传空串);不计入 `attempts`、不播失败音效;自动朗读单词;结果记 `again`。
+- **跳过**(`#skip`):同一个词本轮被 AI 判错 ≥ `SKIP_AFTER=2` 次才在结果页出现(ASR 对葡语不准);跳过 = 记 `skipped` + 从 `failedList` 移除 + 算过关,不计入 `firstPass`。
+- `outcomes` 只记第 1 轮(`round===1`)的结果,后续翻转重测不改;`finish()` 时 `POST /words/complete`(JSON: session_id,rounds,first_pass,attempts,outcomes),**服务器 `total` 取计划里的词数,不信前端**;重新学习后再完成:成绩覆盖、`times+1`,但进度不会重复结算。
+- `KIND_LABEL`:🆕新词 / 🔁复习 / 📅本周回顾 / 💪周六加练。进度只在内存,中途退出会弹确认且**不保留**。
+- **麦克风流复用**:`getMic()` 整个测试期间复用同一个 MediaStream(每次按下重新 `getUserMedia` 在安卓/小米平板上要 1~3 秒,iPhone 较快),`begin()` 时预热;`finish()`、页面切到后台(`visibilitychange`)、`pagehide` 时 `releaseMic()` 释放,`onstop` 里**不要再 stop 轨道**。轨道被系统抢走(`readyState!=='live'`)会自动重新申请。若某设备出现"录音后朗读音量变小/走听筒",是安卓开着麦克风时的音频通道副作用,可回退为每次申请,或给 getUserMedia 关掉 echoCancellation/noiseSuppression 再试。聊天页 index.js 仍是每次申请(未改)。
+- 声音:进页面和每次手势里 `unlock()`/`primeSfx()` 解锁 iOS 自动播放;答错先播失败音效,播完(≤1.5s)再朗读单词。录音手势与聊天页一致(按住录、松开发、上滑取消,iOS 优先 audio/mp4)。
+- 单词页标题栏放大等样式写在 `words.css`(`#app > header` 覆盖),**不要改 `index.css`**(聊天页共用)。
+- words.js 里有一小段从 index.js 精简拷贝的 `NAME_RE`/guestSid/主题/`ttsCfg()`,改这些时 index.js、words.js、后端一起改。
+
+# API 契约(新增功能优先复用,不要重新设计)
 | 接口 | 说明 |
 |---|---|
 | `GET /api/health` | 健康检查 |
-| `POST /api/chat/audio` | FormData: audio,session_id,mode(pt/zh) |
-| `POST /api/chat/text` | FormData: session_id,text,mode |
-| `GET /api/history?session_id=&limit=100` | 恢复历史,含缓存的 translation/explanation |
-| `POST /api/translate` `POST /api/explain` | FormData: text,message_id?,session_id(未用,占位)。有 message_id 且已有缓存则直接命中,不再调 LLM |
-| `POST /api/breakdown` | FormData: text,message_id?,session_id。返回 `{words:[{word,meaning,sentence,sentence_zh}]}`,message_id 缓存命中不再调 LLM |
-| `GET /api/audio/{name}` | 白名单正则 `^msg_[0-9a-f]{12}\.wav$` |
-| `DELETE /api/session/{session_id}` | 清空历史 + 删除关联的回复音频文件 |
-| `POST /api/user/bind` | body: {username, pin?} 绑定/恢复,返回 profile |
+| `POST /api/chat/audio` | FormData: audio,session_id,mode(pt/zh),tts_provider,tts_voice? |
+| `POST /api/chat/text` | FormData: session_id,text,mode,tts_provider,tts_voice? |
+| `GET /api/history?session_id=&limit=30&before_id=` | `{messages,has_more}`,含缓存的 translation/explanation;游标分页 |
+| `POST /api/translate` `POST /api/explain` | FormData: text,message_id?,session_id(占位)。有 message_id 且有缓存则不再调 LLM |
+| `POST /api/breakdown` | FormData: text,message_id?,session_id → `{words:[{word,meaning,sentence,sentence_zh}]}` |
+| `POST /api/regenerate_audio` | FormData: message_id,tts_provider,tts_voice? → 新 audio_url(文件名每次随机) |
+| `GET /api/audio/{name}` | 白名单 `^msg_[0-9a-f]{12}\.(wav\|mp3)$` |
+| `DELETE /api/session/{session_id}` | 清空历史 + 删关联音频 |
+| `DELETE /api/message/{row_id}?session_id=` | 删一轮(配对的两条)+ 音频文件 |
+| `POST /api/user/bind` | body {username,pin?} 绑定/恢复,返回 profile `{username,background_url,theme,tts,persona,has_pin}` |
 | `GET /api/user/{username}` | 拉 profile |
-| `POST /api/user/{username}/theme` | body: {theme: {--var: #hex}},≤32项,双重正则白名单 |
-| `POST /api/user/{username}/background` | FormData: file,≤5MB,后缀+文件头魔数双重校验,服务端生成 `bg_{uuid32}.{ext}` 文件名 |
-| `GET /api/background/{name}` | 白名单正则,带 `Cache-Control: immutable`(文件名带uuid,内容不会变) |
-| `POST /api/vocab` | **JSON body**(不是FormData): {session_id, items:[{language,word,example_sentence,chinese_meaning,example_chinese}]},批量加入单词库 |
-| `GET /api/vocab?session_id=&limit=500` | 拉某个 session 的单词库列表,按插入时间倒序 |
-| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind],preview:[WordItem],meta:{new,review,weekly,preview},completed}`(words 顺序=复习→本周回顾→新词,kind=review/weekly/new,mode 由服务端按 choose_mode 给;preview 只展示不评分;当天第一次请求生成后固定存 word_daily_plan),completed 非空=今天已完成(`{rounds,total,first_pass,attempts,times,completed_at}`),前端据此展示“今日已完成”+“重新学习”;单词目前Mock。WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1看葡语说中文/2看中文说葡语)},前后端字段必须一致 |
-| `POST /api/words/evaluate` | FormData: audio,word_id,mode。mode1=ASR(zh)+义项快速匹配+LLM语义评判;mode2=ASR(pt)+纯规则(归一化后完全一致,含空格的短语允许相似度≥`WORD_PT_MATCH_THRESHOLD`)。返回 `{passed,recognized_text,comment}`;没听清 422(不算答错) |
-| `POST /api/words/complete` | **JSON body**: {session_id,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]},outcome=good/hard/again/skipped(每词当天第一轮结果),服务端按它结算复习盒子并记今天已完成;同一词同一天只结算一次(word_outcomes 主键),“重新学习”再提交会被忽略;total 取今日计划里要测的词数。“今天”=服务器本地日期 |
-| `POST /api/words/record_error` | **JSON body**: {session_id,word_id,mode,user_text?},写 `word_errors` 表 |
-| `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=` | 朗读单词/例句。只按id取服务端文本合成,不接受任意文本(防被当TTS代理);Piper结果按文本哈希落 `data/word_audio/` |
-| `WS /ws/chat/{session_id}` | **简化骨架**:整段收/整段发,历史走 `session_manager.get_history` 但**不落库** `orig`/`msg_uid`/`audio_file`,与 `/chat/*` 的持久化不对齐。要给 WS 通道加翻译/解析/拆词缓存需要先补这部分 |
+| `POST /api/user/{username}/theme` | body {theme:{--var:#hex}},≤32 项,key/value 双重正则白名单 |
+| `POST /api/user/{username}/background` | FormData: file,≤5MB,后缀+魔数双重校验,服务端生成 `bg_{uuid32}.{ext}` |
+| `POST /api/user/{username}/tts` | body {provider,voices:{edge?,streamelements?}},白名单校验,非法 422 |
+| `POST /api/user/{username}/persona` | body {persona},清洗后超 300 字 422,空串清除 |
+| `GET /api/background/{name}` | 白名单正则,`Cache-Control: immutable` |
+| `POST /api/vocab` | **JSON body** {session_id,items:[...]} 批量加入单词库 |
+| `GET /api/vocab?session_id=&limit=500` | 单词库列表,按插入时间倒序 |
+| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,times,completed_at}` |
+| `POST /api/words/evaluate` | FormData: audio,word_id,mode → `{word_id,mode,passed,recognized_text,comment}`;422 没听清(不算答错) |
+| `POST /api/words/complete` | **JSON** {session_id,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
+| `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
+| `POST /api/words/mark_mastered` | **JSON** {session_id,word_id},手动标记已掌握 |
+| `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=` | 朗读单词/例句 |
+| `WS /ws/chat/{session_id}` | **简化骨架**,整段收发,**不落库** orig/msg_uid/audio_file,与 `/chat/*` 不对齐;有意的过渡状态,不要顺手统一 |
 
-统一错误格式:`HTTPException(status, "中文错误信息")`,前端 `errMsg()` 读
-`detail`(string 或 `[{msg}]` 数组)或 `message`。响应体用 `{status, data}` 或扁平
-对象均可,前端 `req()` 用 `j.data || j` 兼容。**新增接口请遵循这套约定。**
+统一错误格式:`HTTPException(status, "中文错误信息")`,前端 `errMsg()` 读 `detail`(string 或 `[{msg}]`)或 `message`。响应体用 `{status,data}` 或扁平对象均可,前端 `req()` 用 `j.data || j` 兼容。**新增接口遵循这套约定。**
 
-## 安全模式(项目里反复用到的写法,新增涉及文件/用户输入的功能时复用)
-- **服务端生成文件名,绝不用用户输入拼路径**:回复音频 `msg_{uuid12}.wav`,背景图
-  `bg_{uuid32}.{ext}`。
-- **读取/删除文件前必须过白名单正则** `fullmatch`,防目录穿越(`_AUDIO_NAME`/
-  `_BG_NAME`)。
-- **上传文件不信任 Content-Type 和后缀**,靠文件头魔数嗅探(`_sniff_image`),且
-  校验後缀与真实格式一致。
-- **大小限制用"多读一字节"模式**(`file.read(MAX+1)`),避免整个超大文件读进内存
-  才发现超限。
-- **主题变量走双重正则白名单**(key: `--[\w-]{1,30}`,value: `#hex`),前后端
-  各自校验一遍,任何一边新增变量名规则都要同步改。
-- **LLM 返回结构化数据(如拆词的 JSON)时不要直接信任格式**:先剥掉可能的
-  ```json 代码块标记再 parse,parse 失败或字段缺失直接 502,不要静默吞掉拼出
-  一个假结果;有明确"这个词/值不该出现"的规则(比如 Correção 不是单词)时,在
-  解析层再加一道正则兜底清洗,不要只靠 prompt 约束。
+## 安全模式(涉及文件/用户输入的新功能照此写)
+- **服务端生成文件名,绝不用用户输入拼路径**:回复音频 `msg_{uuid12}.{wav|mp3}`,背景图 `bg_{uuid32}.{ext}`,单词朗读缓存 `piper_{sha1[:16]}.wav`。
+- **读取/删除文件前必须过白名单正则**(`_AUDIO_NAME`/`_BG_NAME` 用 `fullmatch`)。
+- **上传文件不信任 Content-Type 和后缀**,靠文件头魔数嗅探(`_sniff_image`),且后缀与真实格式一致。
+- **大小限制用"多读一字节"模式**(`file.read(MAX+1)`)。
+- **主题变量双重正则白名单**(key `--[\w-]{1,30}`,value `#hex`),前后端各校验一遍。
+- **用户可编辑文本拼进提示词前要清洗**(人设:去控制字符和 `<>`,放进标签包裹),超长直接 422。
+- **LLM 返回结构化数据不要直接信任**:先剥 ```json 代码块再 parse,失败/字段缺失直接 502,不静默拼假结果;有明确"不该出现"的值(如 Correção)时在解析层再加正则兜底。
+- 单词朗读等"按 id 取服务端文本"的接口**不接受前端传任意文本**;结算接口**只认服务端计划里的词**,不信前端 id/总数。
 
 ## LLM 引擎(`core/llm_engine.py`)
-- `LLM_PROVIDER` 三选一:`gemini`/`grok`/`ollama`,业务代码(`routes.py`)完全不关心
-  具体实现,只调 `get_llm_engine().generate(messages)`。
-- 云端模式(gemini/grok)自动包一层 `FallbackEngine`:额度用完(429)冷却 30 分钟
-  直接走本地 Ollama,其他故障冷却 1 分钟。**冷却期靠内存里的 `_skip_until`,进程重
-  启会重置**,不持久化。
-- Gemini 额外有模型级降级:主模型 → `gemini-2.5-flash` → `gemini-2.0-flash`,
-  429/404 立即换模型,500/502/503/504 重试 `ATTEMPTS_PER_MODEL=2` 次再换。
-- 新增 provider 需要继承 `BaseLLMEngine` 实现 `async generate(messages)`,注册进
-  `_ENGINES` dict。
+- `LLM_PROVIDER` 三选一:`gemini` / `groq` / `ollama`,业务代码只调 `get_llm_engine().generate(messages)`。
+- 云端模式(gemini/groq)包一层 `FallbackEngine`,按 `[gemini, groq]` 链(主 provider 排前面)依次降级,最后是本地 Ollama;额度用完(429)冷却 30 分钟(`QUOTA_COOLDOWN`),其他故障冷却 1 分钟(`ERROR_COOLDOWN`)。**冷却靠内存 `_skip_until`,重启重置**。
+- Gemini 另有模型级降级(主模型 → `gemini-2.5-flash` → `gemini-2.0-flash`),429/404 立即换模型,5xx 重试 `ATTEMPTS_PER_MODEL=2` 次再换。
+- 新增 provider:继承 `BaseLLMEngine` 实现 `async generate(messages)`,注册进 `_ENGINES`。
 
 ## ASR / TTS
-- `asr_engine.py`:全局单例 + `asyncio.Lock` 双重检查锁定,防止并发请求重复加载
-  模型;Windows 下会在 import 前手动把 torch/cublas/cudnn 的 DLL 目录加进搜索路径。
-  中文求助模式必须显式传 `language="zh"`,否则会按葡语解码出现乱码。
-- `tts_engine.py`:`clean_text_for_tts()` 会清掉 Markdown 符号和换行,**改
-  `SYSTEM_PROMPT` 或新增回复内容时要注意 LLM 别输出 Markdown**,不然合成会有杂音。
-  Piper 走异步子进程,每次生成带 uuid 的临时文件名避免并发覆盖。
+- `asr_engine.py`:全局单例 + `asyncio.Lock` 双重检查,防并发重复加载;Windows 下 import 前手动加 torch/cublas/cudnn 的 DLL 目录。中文求助必须传 `language="zh"`,否则按葡语解码乱码。
+- `tts_engine.py`:`clean_text_for_tts()` 清 Markdown 符号和换行,**改系统提示词/新增回复内容时让 LLM 别输出 Markdown**。四个音源:`piper`(本地子进程,每次带 uuid 临时文件)、`google`(翻译接口,`GOOGLE_TTS_MAX_CHARS` 限长)、`edge`、`streamelements`;后三者带按文本(+音色)哈希的缓存目录,`CACHED_PROVIDERS` 里的文件只能 copy 不能 move。`synthesize_any(..., force=True)` 跳过缓存读取。
 
-## 存储(SQLite,`memory/` 下三个独立表)
-- `messages` 表(session_manager):`msg_uid`/`orig`/`audio_file`/`translation`/
-  `explanation`/`breakdown` 是后加的列,`init_db()` 用 `PRAGMA table_info` 检测缺列
-  自动 `ALTER TABLE`,**旧库不需要删库重建,新增列也照这个模式加**。
-- `users` 表(user_manager):同样的自动迁移模式。`theme` 存 JSON 字符串,读出来
-  再 `json.loads`。
-- `vocab` 表(vocab_manager):单词库,字段 `session_id`/`language`/`word`/
-  `example_sentence`/`chinese_meaning`/`example_chinese`,新表没有历史包袱,目前
-  没用自动迁移那套,以后加列可以照 messages/users 的模式补上。
-- `word_errors` 表(word_error_manager):错题事件流,字段 `session_id`/`word_id`/`mode`/`pt_word`/
-  `cn_meaning`/`user_text`/`created_at`,pt_word 和 cn_meaning 是答错时的快照。
-- `word_task_done` 表(word_task_manager):UNIQUE(session_id,task_date),`times` 是当天累计完成次数,
-  `completed_at` 存 UTC,前端转本地时间显示。
-- 这些表目前**没有外键关联**,纯靠 `session_id`(等于 `username` 或游客的
-  `guestSid`)这个约定串起来。
+## 存储(SQLite,同一个 `SQLITE_PATH`,表之间无外键,靠 `session_id` 约定串联)
+- `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak` 同理。三处都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
+- `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
+- `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
+- 单词相关五张表见"单词任务"一节;WordMemorizer 是**另一个**只读 SQLite 文件,不要往里写。
 
 ## 已知简化 / 别顺手"修复"
-- 没有鉴权 token,身份完全基于 username 明文 + 可选 PIN,生产部署前需要补鉴权/限流
-  (README 里已经标注为待办)。
-- WebSocket 骨架的持久化字段与 `/chat/*` 不对齐(见上面 API 表),这是有意的过渡
-  状态,不要在无关需求里顺便"统一"。
-- LLM 的语法纠错格式依赖 Prompt 约束(`tutor_prompt.py` 里的"Correção: "前缀),不是
-  强约束的结构化输出;拆词逻辑因此要专门处理这个前缀(见上面"单词拆解 & 单词库"
-  一节),不要假设教练的回复永远是干净的单句。
-- `data/tmp_audio/` 正常流程会自动清理,进程异常退出可能残留,目前没有定时清理任务。
-- 单词库目前没有查看/删除的前端界面,也没有去重(同一个词可以重复加入多条)。
-
-- 单词任务页(`words.js`)里有一小段 `NAME_RE`/guestSid/主题/`tts_<sid>` 的精简拷贝(没有构建工具,
-  index.js 不是模块没法 import)。**改 NAME_RE、localStorage 键名(sid/username/theme/tts_<sid>)时,
-  index.js、words.js、后端要一起改。**
-- 单词任务的单词目前是 `word_source.py` 里写死的 Mock,真实数据来自另一个独立 SQLite(TODO);
-  前端进度(todoList/failedList)只在内存里,刷新页面会重新领取。
-- 单词任务页“💡 公布答案”(`#reveal`,仅测试中显示):**纯前端**,不调 evaluate;按“答错”处理(`markMissed`:进 `failedList`、要重试、下一轮重测),并调 `record_error`(`user_text` 传空串,避免污染“识别成了什么”的分析);不计入 `attempts`、不播失败音效;**两种方向公布后都自动朗读单词**;置 `curRevealed`,当天结果记为 again。**答错(AI 判错)时**,失败音效播完后(`speakAfterSfx`,最多等1.5秒)自动朗读单词。单词页标题栏/提示语放大的样式都写在 `words.css` 里(`#app > header` 覆盖),不要改 `index.css`(聊天页共用)。
-- **单词任务答题流程(`words.js`,纯前端,后端 evaluate 直接用前端传的 mode,不要求等于单词原始 mode)**:逐词练——答错/公布答案后停在同一个词同一个方向,按钮变“🔁 再试一次”(`retry()`),答对才“下一个”。`curMissed` = 当前词本轮是否出过错;**只有一次就答对的词才进 `passed`(过关)**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2)** 成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以“重新学习”仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词;`record_error` 每次答错都记一行(事件流)。最后一个词答对但还有错词时按钮显示“进入下一轮”。
-- 单词页“跳过”(`#skip`,纯前端):ASR 对葡语不准,所以**同一个词本轮被 AI 判错 ≥2 次(`aiWrong`,`SKIP_AFTER`)才在结果页出现**;公布答案、没听清(422)都不计数,不能一上来就跳。跳过 = **算通过**:`noteOutcome(w,'skipped')`,从 `failedList` 移除并加入 `passed`,下一轮不再重测(不计入 `firstPass`;服务端对 skipped 不升级盒子);之前已写的 `word_errors` 不撤销。`aiWrong` 在 `next()`/`begin()` 重置。
-- mode=2 评判刻意**不用 LLM**(要求完全一致,规则更稳);ASR 也刻意不给目标单词做 initial_prompt,
-  否则识别会被带向正确答案。
+- 没有鉴权 token,身份完全基于 username 明文 + 可选 PIN;生产部署前需要补鉴权/限流(README 已标待办)。
+- WebSocket 骨架持久化与 `/chat/*` 不对齐,是有意过渡状态。
+- 教练的语法纠错格式依赖 Prompt("Correção: "前缀),不是结构化输出,拆词要专门处理。
+- `data/tmp_audio/` 正常会自动清理,异常退出可能残留,没有定时清理。
+- 单词库没有浏览/删除界面,也没有去重。
+- 已掌握的词不会自动退回复习,没有定期抽查(如要做,需要新 kind + `settle` 放行 mastered 词 + 前端 `KIND_LABEL`,三处一起改)。
+- `word_errors` 目前只记录,不参与调度(`hard_streak`/`lapses` 才是调度依据)。
+- 单词任务进度(`todoList`/`failedList`/`outcomes`)只在前端内存,刷新或中途退出会丢,该天计划不变、可重新领取。
 
 ## 回复用户时的默认做法
-- 用户一般直接贴改动需求或报 bug,默认只改动涉及的文件。**每个被改动的文件要以
-  完整文件的形式生成(从头到尾,包含未改动的部分),写到用户可以直接下载覆盖本地
-  文件的地方(用 create_file 写到 /mnt/user-data/outputs/ 下对应文件名,再用
-  present_files 交付),而不是把整份代码贴在聊天正文里。** 没有被这次改动涉及的
-  文件不要重复生成。聊天正文里只用简短文字说明改了什么、为什么这么改、前后端
-  哪一侧要跟着改;讲思路/原理也可以多写,但代码本身通过文件下载交付,不在正文里
-  展示大段代码块。
-- **改动接口字段/请求参数时,必须同时指出前端或后端哪一侧要跟着改**,不要只改一端
-  就当作完成了。
-- 涉及新文件上传/文件名生成的功能,默认套用上面"安全模式"里的写法(服务端生成
-  文件名 + 白名单正则 + 魔数嗅探),除非用户明确说不需要。
-- 项目语言是简体中文注释 + 中文 UI 文案(后端日志/异常信息也是中文),葡语系统
-  提示词本身用葡语撰写,新增代码保持这个风格。
-- 涉及 `.env`/API Key 的内容,提醒用户上传/分享前清空真实 Key。
-- **改完项目功能后想一下这份 skill 有没有过时**:文件地图、API 契约表、存储
-  一节、已知简化一节,只要新增/删改了接口、表、文件,就顺手同步更新,不要让 skill
-  和实际代码脱节。
-
-## 每周动态单词任务(间隔重复)
-- 目标:每周30个新词,工作日每天约6个,含复习+预习;答对的少复习、答错的多复习;每天数量随掌握情况动态变。算法全在 `word_planner.py`(纯函数),**调参只改文件顶部常量**(WORKLOAD/NEW_MIN/NEW_MAX/REVIEW_MAX/INTERVALS/MASTER_BOX/RATE_LOW/RATE_HIGH)。
-- 结果归类(前端 `noteOutcome` 只记第一轮):good 一次答对 box+1;hard 答错后才对 box不变;again 公布答案或AI判错≥2次 box-2、lapses+1、次日复习;skipped 算通过但不升级。间隔(工作日)box1~5=1/2/4/7/14,周末顺延周一。掌握=box≥4 且说葡语(mode2)答对过,退出日常复习;again 会撤销掌握。
-- 出题方向:新词/box<2 用 mode1;box≥2 且上次 good 用 mode2;否则退回 mode1。每天新词数以“本周正好学完”的进度为基准,昨天通过率<60%减2、>90%加1,复习多则少学(上限 WORKLOAD−复习数),夹在 3~10;周五学不完的顺延下周(`ensure_week` 先带上没学的旧词)。周五额外加“本周回顾”(本周词里 box<4 的用 mode2 再测);周末不排新词,只有≤8个可选复习;预习=明天大概要学的词(固定顺序,不评分不改进度)。
-- 前端 `words.js`:today 里 `kind` 显示类型标签,`preview` 非空且今天还没完成时,全部测完后进入 `preview` 状态(按钮“预习完成”),`finish()` 先 POST complete 再展示;“重新学习”不预习、不重复结算。
-- 已知没做:顽固词(lapses≥3)“多一次例句测试”(evaluate 只支持单词,目前只是复习时排最前);掌握的词不再进入长期复习。
-- `test_word_plan.py` 会打印两周里每天的复习/回顾/新词/预习数量,调参后先跑它。
-- 词源只需提供 `word_source.list_word_ids()`(按学习顺序的全部 id)和 `get_word(id)`;旧的 `get_today_words` 已弃用不再被路由调用。Mock 只有5个词,所以本周词表也只有5个,接真实词库后才会是30。
-- `/today` 内部:`ensure_week`→`load_plan`(没有就 `build_today_plan`+`save_plan`)→按计划展开单词;`/complete` 先 `settle`(结算失败只记日志,不影响完成记录)再 `word_task_manager.mark_done`(total=计划里要测的词数)。
+- 用户一般直接贴改动需求或报 bug,默认只改涉及的文件。**每个被改动的文件以完整文件形式生成(从头到尾,含未改动部分),用 create_file 写到 `/mnt/user-data/outputs/` 下对应文件名,再用 present_files 交付**,不要把整份代码贴在聊天里。没涉及的文件不要重复生成。正文只用简短文字说明改了什么、为什么、前后端哪一侧要跟着改;讲思路可以多写。
+- **保留原文件的换行符**:后端 `.py` 是 CRLF(Windows 开发),改完要保持 CRLF,否则整文件 diff 全红。
+- **改接口字段/请求参数时,必须同时指出前端或后端哪一侧要跟着改。**
+- 涉及新文件上传/文件名生成,默认套用"安全模式"。
+- 项目语言是简体中文注释 + 中文 UI 文案(后端日志/异常信息也是中文),葡语系统提示词用葡语撰写,新增代码保持这个风格。
+- 改调度规则(`word_planner.py`)时:先用纯函数写个模拟(造几个 row 跑 `apply_outcome` + `build_today_plan`)验证,再交付;动了表结构要补自动迁移并测"跑两次幂等"。
+- 涉及 `.env`/API Key 的内容,提醒用户上传/分享前清空真实 Key(**zip 里的 `.env` 带着真实 Gemini/Groq Key,分享前务必清掉并考虑轮换**)。
+- **改完功能后想一下这份 skill 有没有过时**:文件地图、API 契约表、存储一节、已知简化一节,新增/删改了接口、表、文件、调度参数,就顺手同步更新。
