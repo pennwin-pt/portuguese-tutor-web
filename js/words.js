@@ -87,7 +87,7 @@ function spk(w, kind) {
 
 /* ---------- 任务状态 ----------
    Word Item（与后端 memory/word_source.py 的 WordItem 一致）：
-   { id, pt_word, cn_meaning, pt_sentence, cn_sentence, mode }   mode: 1=看葡语说中文, 2=看中文说葡语
+   { id, pt_word, cn_meaning, pt_sentence, cn_sentence, mode }   mode: 1=看葡语说中文, 2=看中文说葡语, 3=句子填空（多一个 cloze 字段，含 ____ 占位）
    state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示 | preview 预习明天的词（不评分）
           | done 今日已完成（刚通关，或打开页面时服务器记录显示今天早已完成；都可以“重新学习”） */
 let state = 'loading';
@@ -136,9 +136,23 @@ function viewIdle() {
     return c;
 }
 function viewLoading() { const c = el('div', 'wcard'); c.append(el('div', 'ask', '加载今日任务…')); return c; }
+function viewCloze(w, c) {                           // 模式 3：句子填空。全部用 el()/textContent，例句里的特殊字符不会被当成 HTML；不放喇叭、不朗读（读句子会泄露答案）
+    c.append(el('div', 'tag', '🧩 填空：看句子，说出缺的词'));
+    const box = el('div', 'cloze');
+    w.cloze.split('____').forEach((seg, i) => {
+        if (i > 0) box.append(el('span', 'blank', '＿＿＿'));
+        box.append(document.createTextNode(seg));
+    });
+    c.append(box);
+    if (w.cn_sentence) c.append(el('div', 'azh', w.cn_sentence));
+    c.append(el('div', 'hint', '提示：' + w.cn_meaning),
+        el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : '请只说出缺的那个词'));
+    return c;
+}
 function viewTest() {
     const w = cur, c = el('div', 'wcard');
     if (KIND_LABEL[w.kind]) c.append(el('div', 'kind', KIND_LABEL[w.kind]));
+    if (w.mode === 3 && w.cloze) return viewCloze(w, c);     // cloze 缺失时（理论上不会）自然落到下面按 mode 2 渲染
     c.append(el('div', 'tag', w.mode === 1 ? '🇵🇹 → 🇨🇳 看葡语，说中文' : '🇨🇳 → 🇵🇹 看中文，说葡语'));
     const row = el('div', 'termrow');
     row.append(el('div', 'term', w.mode === 1 ? w.pt_word : w.cn_meaning));
@@ -225,7 +239,7 @@ function render() {
 /* ---------- 流程 ---------- */
 async function fetchToday() {
     const d = await get(`/api/words/today?session_id=${enc(sid)}`);
-    d.words = (d.words || []).filter(w => w && w.id != null && w.pt_word && (w.mode === 1 || w.mode === 2));
+    d.words = (d.words || []).filter(w => w && w.id != null && w.pt_word && [1, 2, 3].includes(w.mode));
     d.preview = (d.preview || []).filter(w => w && w.id != null && w.pt_word);
     today = d;
 }
@@ -272,7 +286,7 @@ function next() {                                   // 取下一个待测词；�
     if (!todoList.length) {
         if (!failedList.length) { finish(); return; }
         // 下一轮只测本轮出过错的词，并把方向翻转（上轮说中文 → 这轮说葡语，反之亦然）；用拷贝，不改 today.words 里的原始 mode
-        todoList = failedList.map(w => ({ ...w, mode: w.mode === 1 ? 2 : 1 })); failedList = []; round++; roundTotal = todoList.length;
+        todoList = failedList.map(w => ({ ...w, mode: w.mode === 3 ? 1 : (w.mode === 1 ? 2 : 1) })); failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
     cur = todoList.shift(); curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null; state = 'test'; render();

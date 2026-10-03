@@ -60,3 +60,8 @@
 .plist{margin-top:14px;text-align:left}
 .pitem{padding:12px 0;border-top:1px solid #eef2f6}
 .pitem:first-child{border-top:0}
+
+/* 句子填空（mode 3） */
+.cloze{font-size:24px;font-weight:600;line-height:1.6;word-break:break-word}
+.cloze .blank{display:inline-block;min-width:3.2em;margin:0 .15em;border-bottom:3px solid var(--blue);color:transparent;user-select:none}
+.hint{margin-top:10px;font-size:13px;color:#9aa5b1}
