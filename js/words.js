@@ -55,6 +55,7 @@ function speak(w, kind, btn) {                     // kind: 'word' | 'sentence'�
     spkBtn?.classList.remove('play'); spkBtn = btn || null;
     const c = ttsCfg(), q = new URLSearchParams({ kind, tts_provider: c.provider });
     if (c.voice) q.set('tts_voice', c.voice);
+    if (kind === 'sentence' && w.ex) q.set('ex', w.ex);       // 填空题用的是第 ex 条生成例句：读的必须和屏幕上显示的是同一句（ex 为 0 / 没有 = 原例句）
     player.src = `${API}/api/words/${w.id}/audio?${q}`;
     player.play().then(() => spkBtn?.classList.add('play')).catch(() => toast('朗读失败，点喇叭重试'));
 }

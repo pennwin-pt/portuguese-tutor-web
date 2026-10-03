@@ -17,7 +17,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   words.html / css/words.css / js/words.js                                单词任务页(复用 index.css;聊天页 header 的 📚 进入)
   sounds/success.wav, sounds/fail.wav                                      单词页答对/答错音效(缺文件静默不播)
 后端:
-  main.py                  FastAPI入口,挂 /api 下三个路由 + startup 依次 init_db(session/user/vocab/word_error/word_task/word_progress)+ WS骨架
+  main.py                  FastAPI入口,挂 /api 下三个路由 + startup 依次 init_db(session/user/vocab/word_error/word_task/word_progress/word_example)+ WS骨架
   run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
   config.py                全局配置,读.env(ASR/LLM/TTS/WORD_*/SQLITE_PATH/CORS)
   api/routes.py            聊天核心:/chat/*,/history,/translate,/explain,/breakdown,/regenerate_audio,/audio,/session,/message,/vocab
@@ -34,9 +34,11 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   memory/word_progress_manager.py ★进度存储:word_progress/word_week/word_daily_plan/word_outcomes 四张表
   memory/word_task_manager.py     每日"是否完成"记录(word_task_done)
   memory/word_error_manager.py    错词事件流(word_errors)
+  memory/word_example_manager.py  ★生成例句缓存(P4):word_examples/word_example_use 两张表 + norm_sentence/pick_example 轮换
   prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona)
   prompts/helper_prompts.py 中文求助翻译/语法解析/单词拆解提示词
-  prompts/word_prompts.py   单词评判提示词(mode1 义项语义 / mode2 葡语是否说对目标词),纯JSON输出
+  prompts/word_prompts.py   单词评判提示词(mode1 义项语义 / mode2 葡语是否说对目标词)+ 例句生成提示词 WORD_EXAMPLES_PROMPT,纯JSON输出
+  tools/gen_examples.py     ★在用户机器上手动运行:给词批量生成 pt-PT 例句写入 word_examples(见「多例句轮换」一节)
 ```
 
 ## 身份 & 会话模型(前后端共用,改动前必读)
@@ -73,7 +75,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 
 ## 数据来源
 `word_source.py` 只读 **WordMemorizer** 的独立 SQLite(`WORD_DB_PATH`,`PRAGMA query_only`):`WeeklyPlans`(StartDate 周日 ~ EndDate 周六,每周日录入 30 个新词)→ `WeeklyPlanWords.WordId` → `Words`。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。**不再是 Mock**。库文件不存在时返回空列表并记日志。
-`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`。
+`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`,若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。
 
 ## 一周节奏(周日~周六)
 - **周日**:新一周词表已生成,全部放进 `preview` 只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。
@@ -128,12 +130,24 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 ## 句子填空(mode 3)
 - 定义:显示挖空例句(`____`)+ 中文翻译 + 提示,用户只说缺的词;不自动朗读、无喇叭(读句子会泄露答案)。
 - 出题规则:仅 `kind=review`;`choose_mode` 在"顽固/上次 again → 1"之后、"box≥2"之前,`box==3 且 last_outcome=="good"` → 3;一天最多 `CLOZE_MAX` 个;非 review 的 mode 3 一律降为 2(`build_today_plan` 末尾后处理)。
-- 挖空:`word_planner.make_cloze(sentence, pt_word)`,只做整词精确匹配、忽略大小写、去掉 `pt_word` 里的括号备注,只换第一处;`word_routes._load_words` 里对 mode 3 构造 `cloze`,**找不到就把该词 mode 降为 2 且不带 `cloze`**(不回写计划表)。
+- 挖空:`word_planner.make_cloze(sentence, pt_word)`,只做整词精确匹配、忽略大小写、去掉 `pt_word` 里的括号备注,只换第一处;`word_routes._load_words` 里对 mode 3 构造 `cloze`,**找不到就把该词 mode 降为 2 且不带 `cloze`**(不回写计划表)。P4 之后挖空的例句来源不止原例句,见下一节「多例句轮换」。
 - 评判:`_judge_pt_cloze` = 规则 → 逐词规则 → `_judge_pt_llm`;ASR 与 mode 2 一样用葡语。
 - 前端:`fetchToday` 的 mode 白名单为 `[1,2,3]`;`viewCloze` 渲染;下一轮翻转 `3→1, 1→2, 2→1`。
 - 接口:`/words/today` 的 `words[].mode` 可为 3 并带 `cloze`;`/words/evaluate`、`/words/complete`、`/words/record_error` 的 `mode` 取值 `1|2|3`。
 - 回退:`CLOZE_ENABLED=False` 重启即可,不用动其他代码。
-- 已知取舍:"掌握前必过填空"是概率保证(box 3 且 last 非 good 时走 mode 1 可绕过);动词变位/复数的词会降级回 mode 2(词库实测约 78% 的词能挖空)。
+- 已知取舍:"掌握前必过填空"是概率保证(box 3 且 last 非 good 时走 mode 1 可绕过);动词变位/复数的词会降级回 mode 2(词库实测约 78% 的词能挖空);跑过 `gen_examples.py` 的词可被救回(见下一节)。
+
+## 多例句轮换(P4)
+- **为什么**:词库里每个词只有 1 条例句,约 22% 因例句里是变位/复数挖不出空;且总用同一句,用户会背句子而不是背词。P4 用 LLM 给词再生成 pt-PT 例句缓存起来,mode 3 挖空时轮换,同时把挖不出空的词救回来。
+- **生成(每周日,在用户机器上手动运行)**:每周日在 WordMemorizer 导入本周 30 个新词后,运行 `python tools/gen_examples.py --week`(只处理当天所在周的计划词,约 3 次 LLM 调用)。**历史老词不批量生成**,继续只用原例句;要补"正在学、未掌握"的老词用 `--active`。其余参数:`--report`(只看覆盖率,不调 LLM、不写库)/ `--dry-run` / `--only-failing` / `--ids` / `--limit` / `--per-word`(默认 2,最大 3)/ `--batch`(默认 10)/ `--sleep`。`--ids/--week/--active` 取并集,都不给 = 词库全部词(不推荐);周计划为空或 sessions.db 里没有相关表时**不会退化成处理全库**。只读词库、只写 `word_examples`,可断点续跑(已有 ≥ `per_word` 条的词自动跳过,每词写完即提交)。启动时脚本先 `load_dotenv(项目根/.env)`。
+- **提示词与校验**:`WORD_EXAMPLES_PROMPT`——pt-PT、A1~A2、5~12 词、**必须原样包含目标词(不变位不变复数;`-se` 反身动词写成 `lembrar-se`,主语用第三人称)**、简体中文翻译。`validate_example` 必须全过才入库:能 `make_cloze` 挖空、有汉字、词数 3~16、≤120 字符、`norm_sentence` 后不与已有例句重复。LLM 常输出的 U+2010/2011/2012 连字符先归一成 `-`;`parse_examples_json` 容错(多余逗号、裸换行、被截断时逐条捞);解析失败的 LLM 原文落盘 `data/gen_examples_failed.txt`。**不要为了通过校验而放宽 `validate_example`。**
+- **表**(`memory/word_example_manager.py`,`main.py` 启动时 `init_db`):`word_examples(word_id, idx, pt_sentence, cn_sentence, enabled, source, created_on)`——idx ≥ 1,**idx 0 = 词库原例句,不入表**;`enabled=0` 停用某条;新增 idx 在已有最大 idx(含已停用)之后顺延,所以停用后不会复用编号。`word_example_use(session_id, word_id, last_idx, last_used_on)`——每人每词上次用的例句编号,用于轮换。两张表无外键。
+- **选择**(只发生在 mode 3):`word_routes._load_words(entries, session_id=None)`。有 `session_id` 时整个调用**批量**取一次 `get_examples` 和 `get_uses`(无 N+1);候选池 = 原例句(idx 0)+ 启用的生成例句,**读取时重新用 `make_cloze` 校验**、只留能挖空的;`pick_example(pool, last_idx, used_today)` 轮换(`last_idx` 之后的下一个,回绕;`last_used_on == 今天` 且 `last_idx` 仍在池里则沿用,同一天刷新不变);池为空才降级 mode 2。**没有任何生成例句的词、没传 `session_id`(预习那处)、或例句表读取异常**:退回只用原例句的旧行为(不带 `ex`、不写 `word_example_use`);`get_examples`/`get_uses`/`record_use` 的异常都 `logger.exception` 吞掉,绝不让 `/today` 失败。选择结果用一次 `record_use` 写入(只写今天还没记录过、或 `last_idx` 变了的)。不回写计划表。
+- **词对象**:选中例句时 `pt_sentence`/`cn_sentence` 换成该例句(填空题的中文翻译、结果页例句都和挖空的句子一致),并新增 `ex`(整数,原例句为 0);没有 `ex` 键 = 没走例句轮换。mode 1/2、预习条目不带 `ex`。
+- **朗读**:`GET /words/{id}/audio?kind=sentence&ex=N`;`ex` 缺省 0 = 原例句,`ex<0` 422,`ex>0` 取不到(不存在或已停用)404,`kind=word` 时忽略 `ex`。前端 `speak` 在 `kind==='sentence' && w.ex` 时才带 `ex`;`ex` 随 `{...w, mode}` 拷贝自动带到下一轮。缓存键按文本哈希,不用改。
+- **评判**:不变,`_judge_pt_cloze` 仍以 `pt_word` 为准,与用了哪条例句无关。
+- **回退**:`UPDATE word_examples SET enabled = 0;` 即回到只用原例句,不用改代码。单条不好的:`UPDATE word_examples SET enabled = 0 WHERE word_id = … AND idx = …;`。
+- **已知取舍**:生成例句没有人工审核,靠自动校验 + 抽查;只有跑过 `--week`/`--active` 的词有生成例句,老词没有;`--report` 的覆盖率统计的是**整个词库**,每周只生成 30 个词时涨得很慢,不是成功指标;mode 1 / 2 不轮换例句;挖空仍是精确匹配,所以生成例句必须含原形(模糊匹配仍是未做的后续项)。
 
 ## 评判规则(`/words/evaluate`,FormData: audio,word_id,mode)
 - **mode=1**(看葡语说中文):ASR 用 zh → 先做义项精确匹配快速通道(`cn_meaning` 按 `;；,，、/|` 拆义项,括号备注不参与)→ 不中再交给 LLM 语义评判(`WORD_MEANING_JUDGE_PROMPT`)。
@@ -178,12 +192,12 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 | `GET /api/background/{name}` | 白名单正则,`Cache-Control: immutable` |
 | `POST /api/vocab` | **JSON body** {session_id,items:[...]} 批量加入单词库 |
 | `GET /api/vocab?session_id=&limit=500` | 单词库列表,按插入时间倒序 |
-| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,times,completed_at}` |
+| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex)],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,times,completed_at}` |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3) → `{word_id,mode,passed,recognized_text,comment}`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
 | `POST /api/words/mark_mastered` | **JSON** {session_id,word_id},手动标记已掌握 |
-| `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=` | 朗读单词/例句 |
+| `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=&ex=` | 朗读单词/例句;`ex`(≥0,默认 0)仅 `kind=sentence` 有效:读第 ex 条生成例句,不存在/已停用 404,负数 422 |
 | `WS /ws/chat/{session_id}` | **简化骨架**,整段收发,**不落库** orig/msg_uid/audio_file,与 `/chat/*` 不对齐;有意的过渡状态,不要顺手统一 |
 
 统一错误格式:`HTTPException(status, "中文错误信息")`,前端 `errMsg()` 读 `detail`(string 或 `[{msg}]`)或 `message`。响应体用 `{status,data}` 或扁平对象均可,前端 `req()` 用 `j.data || j` 兼容。**新增接口遵循这套约定。**
@@ -212,7 +226,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak` 同理。三处都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
 - `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
 - `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
-- 单词相关五张表见"单词任务"一节;WordMemorizer 是**另一个**只读 SQLite 文件,不要往里写。
+- 单词相关五张表见"单词任务"一节;P4 另有 `word_examples` / `word_example_use` 两张(见"多例句轮换"一节,由 `word_example_manager` 管)。WordMemorizer 是**另一个**只读 SQLite 文件,不要往里写(`gen_examples.py` 也只读它)。
 
 ## 已知简化 / 别顺手"修复"
 - 没有鉴权 token,身份完全基于 username 明文 + 可选 PIN;生产部署前需要补鉴权/限流(README 已标待办)。
@@ -224,6 +238,8 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - `word_errors` 目前只记录,不参与调度(`hard_streak`/`lapses` 才是调度依据)。
 - 单词任务进度(`todoList`/`failedList`/`outcomes`)只在前端内存,刷新或中途退出会丢,该天计划不变、可重新领取。
 - 填空只做精确匹配,模糊匹配(共享前缀 + 相似度)是未做的后续项。
+- 例句轮换的"今天已用"按服务器日期 `today_str()` 判定;`record_use` 是在读取 `/today` 时写的,不是用户真正答题时,所以轮换进度按"每天一轮"推进。
+- 生成例句没有人工审核;只有跑过 `gen_examples.py --week/--active` 的词才有,老词继续只用原例句——别顺手"给全词库批量生成"。
 
 ## 回复用户时的默认做法
 - 用户一般直接贴改动需求或报 bug,默认只改涉及的文件。**每个被改动的文件以完整文件形式生成(从头到尾,含未改动部分),用 create_file 写到 `/mnt/user-data/outputs/` 下对应文件名,再用 present_files 交付**,不要把整份代码贴在聊天里。没涉及的文件不要重复生成。正文只用简短文字说明改了什么、为什么、前后端哪一侧要跟着改;讲思路可以多写。
