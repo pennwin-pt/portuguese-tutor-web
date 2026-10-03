@@ -73,7 +73,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 
 ## 数据来源
 `word_source.py` 只读 **WordMemorizer** 的独立 SQLite(`WORD_DB_PATH`,`PRAGMA query_only`):`WeeklyPlans`(StartDate 周日 ~ EndDate 周六,每周日录入 30 个新词)→ `WeeklyPlanWords.WordId` → `Words`。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。**不再是 Mock**。库文件不存在时返回空列表并记日志。
-`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1/2)}`,**前后端字段必须一致**;今日接口会额外带 `kind`。
+`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`。
 
 ## 一周节奏(周日~周六)
 - **周日**:新一周词表已生成,全部放进 `preview` 只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。
@@ -97,6 +97,8 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 | `WEAK_HARD_STREAK` | 2 | 周六加练:连续 hard ≥ 此次数 |
 | `LAPSE_DECAY_STREAK` | 2 | 每连续答对(good)这么多次,lapses −1(最低 0) |
 | `SATURDAY_MAX` | 10 | 周六任务总上限 |
+| `CLOZE_ENABLED` | True | 句子填空(mode 3)总开关;改回 False 重启即可回退 |
+| `CLOZE_MAX` | 6 | 一天最多几道填空题 |
 
 ## 每个词当天结果(只看第一轮,每词每天只结算一次)
 前端 `noteOutcome` 判定,点"完成"时随 `/words/complete` 提交 `outcomes`:
@@ -107,7 +109,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 | again | 点了"公布答案"或被 AI 判错 ≥2 次 | −2,至少 1 | **+1** | 清零 | 清零 | **下一个工作日** |
 | skipped | 点"跳过" | 不变,至少 1 | 不变 | 不变 | 不变 | 按 box 间隔 |
 - good 衰减:`streak % LAPSE_DECAY_STREAK == 0 and lapses > 0` 时 lapses −1(streak 本身不清零,所以是每 2 次一减)。
-- mode=2(说葡语)good ⇒ `mode2_ok=1`;mode=2 的 again ⇒ `mode2_ok=0`(之前"会说"的证明作废)。
+- mode=2(说葡语)good ⇒ `mode2_ok=1`;mode=2 的 again ⇒ `mode2_ok=0`(之前"会说"的证明作废)。mode=3(填空)答对也会置 `mode2_ok=1`;mode=3 答错**不会**清 `mode2_ok`。
 - `mastered = box ≥ MASTER_BOX 且 mode2_ok`。**已掌握的词后端 `settle` 直接跳过,不会被自动改回未掌握**(也没有定期抽查机制,是已知简化)。
 - 用户在结果页点"✅ 我已掌握"(`POST /words/mark_mastered`):`master_row` 直接 box=5、`mode2_ok=1`、`mastered=1`、`hard_streak=0`,以后不再复习,也不会再当新词;前端同时从本轮 `outcomes`/`failedList` 里移除该词。
 - 没听清/ASR 空结果(422)、公布答案都**不算 AI 判错**,不计入 `aiWrong`。
@@ -123,16 +125,27 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 其余三张:`word_week`(每周 30 词及顺序)、`word_daily_plan`(当天计划,kind 含 `preview`)、`word_outcomes`(主键 (session_id,task_date,word_id),保证"一天只结算一次";`yesterday_rate` 取最近一个学习日的 good 占比)。`word_task_done` 由 `word_task_manager` 管,`word_errors` 由 `word_error_manager` 管(每次答错一行,`pt_word`/`cn_meaning` 是快照,目前只记录不参与调度)。
 `settle` 只认今天计划里的词(不信前端传的 id),且 `outcome`/`mode` 过枚举校验。
 
+## 句子填空(mode 3)
+- 定义:显示挖空例句(`____`)+ 中文翻译 + 提示,用户只说缺的词;不自动朗读、无喇叭(读句子会泄露答案)。
+- 出题规则:仅 `kind=review`;`choose_mode` 在"顽固/上次 again → 1"之后、"box≥2"之前,`box==3 且 last_outcome=="good"` → 3;一天最多 `CLOZE_MAX` 个;非 review 的 mode 3 一律降为 2(`build_today_plan` 末尾后处理)。
+- 挖空:`word_planner.make_cloze(sentence, pt_word)`,只做整词精确匹配、忽略大小写、去掉 `pt_word` 里的括号备注,只换第一处;`word_routes._load_words` 里对 mode 3 构造 `cloze`,**找不到就把该词 mode 降为 2 且不带 `cloze`**(不回写计划表)。
+- 评判:`_judge_pt_cloze` = 规则 → 逐词规则 → `_judge_pt_llm`;ASR 与 mode 2 一样用葡语。
+- 前端:`fetchToday` 的 mode 白名单为 `[1,2,3]`;`viewCloze` 渲染;下一轮翻转 `3→1, 1→2, 2→1`。
+- 接口:`/words/today` 的 `words[].mode` 可为 3 并带 `cloze`;`/words/evaluate`、`/words/complete`、`/words/record_error` 的 `mode` 取值 `1|2|3`。
+- 回退:`CLOZE_ENABLED=False` 重启即可,不用动其他代码。
+- 已知取舍:"掌握前必过填空"是概率保证(box 3 且 last 非 good 时走 mode 1 可绕过);动词变位/复数的词会降级回 mode 2(词库实测约 78% 的词能挖空)。
+
 ## 评判规则(`/words/evaluate`,FormData: audio,word_id,mode)
 - **mode=1**(看葡语说中文):ASR 用 zh → 先做义项精确匹配快速通道(`cn_meaning` 按 `;；,，、/|` 拆义项,括号备注不参与)→ 不中再交给 LLM 语义评判(`WORD_MEANING_JUDGE_PROMPT`)。
 - **mode=2**(看中文说葡语):ASR 用 pt。先走规则:`_norm_pt` 归一化(NFC+小写+连字符当空格+去标点,**保留重音**)后完全一致;含空格短语相似度 ≥ `WORD_PT_MATCH_THRESHOLD`(0.85);单个 ≥7 字母的长词允许"同词干近似"(`_near_single_word`:相似度 ≥ `WORD_PT_SINGLE_THRESHOLD` 0.80 且共享前缀 ≥ max(5,len−3))。规则没放行的再交给 LLM(`WORD_PT_JUDGE_PROMPT`);LLM 调用失败退回规则结果;`WORD_PT_USE_LLM=0` 可关闭 LLM。LLM 返回解析失败 → 502(不算答错,前端让用户再说)。
+- **mode=3**(填空):见上面"句子填空"一节,ASR 用 pt,评判走 `_judge_pt_cloze`。
 - ASR **刻意不给目标单词做 initial_prompt**(否则识别被带向正确答案);mode=2 只用 `ASR_PROMPT_WORD`(风格提示,不含具体单词)。
 - 录音大小限制 `WORD_MAX_AUDIO_SIZE`(10MB),超限 413;422 = 没录上/没听清(不算答错)。
 - 单词朗读 `GET /words/{id}/audio?kind=word|sentence&tts_provider=&tts_voice=`:**只按 id 取服务端文本合成,不接受任意文本**(防被当 TTS 代理);Piper 结果按文本哈希落 `data/word_audio/`。
 
 ## 单词页前端流程(`words.js`,纯前端状态机)
 - state:`loading → idle → test ⇄ judging → result → …`,另有 `preview`(只看不评分)、`done`(今日已完成,可"重新学习")。
-- **逐词练**:答错/公布答案后停在同一个词同一个方向,按钮变"🔁 再试一次"(`retry()`),答对才"下一个"。`curMissed` 标记当前词本轮是否出过错;**只有一次就答对的词才进 `passed`**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2)**成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以"重新学习"仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词。
+- **逐词练**:答错/公布答案后停在同一个词同一个方向,按钮变"🔁 再试一次"(`retry()`),答对才"下一个"。`curMissed` 标记当前词本轮是否出过错;**只有一次就答对的词才进 `passed`**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2;3→1)**成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以"重新学习"仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词。
 - **公布答案**(`#reveal`,仅测试中):纯前端,不调 evaluate;按"答错"处理(`markMissed`,进 `failedList`),并调 `record_error`(`user_text` 传空串);不计入 `attempts`、不播失败音效;自动朗读单词;结果记 `again`。
 - **跳过**(`#skip`):同一个词本轮被 AI 判错 ≥ `SKIP_AFTER=2` 次才在结果页出现(ASR 对葡语不准);跳过 = 记 `skipped` + 从 `failedList` 移除 + 算过关,不计入 `firstPass`。
 - `outcomes` 只记第 1 轮(`round===1`)的结果,后续翻转重测不改;`finish()` 时 `POST /words/complete`(JSON: session_id,rounds,first_pass,attempts,outcomes),**服务器 `total` 取计划里的词数,不信前端**;重新学习后再完成:成绩覆盖、`times+1`,但进度不会重复结算。
@@ -165,7 +178,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 | `POST /api/vocab` | **JSON body** {session_id,items:[...]} 批量加入单词库 |
 | `GET /api/vocab?session_id=&limit=500` | 单词库列表,按插入时间倒序 |
 | `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,times,completed_at}` |
-| `POST /api/words/evaluate` | FormData: audio,word_id,mode → `{word_id,mode,passed,recognized_text,comment}`;422 没听清(不算答错) |
+| `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3) → `{word_id,mode,passed,recognized_text,comment}`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
 | `POST /api/words/mark_mastered` | **JSON** {session_id,word_id},手动标记已掌握 |
@@ -209,6 +222,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - 已掌握的词不会自动退回复习,没有定期抽查(如要做,需要新 kind + `settle` 放行 mastered 词 + 前端 `KIND_LABEL`,三处一起改)。
 - `word_errors` 目前只记录,不参与调度(`hard_streak`/`lapses` 才是调度依据)。
 - 单词任务进度(`todoList`/`failedList`/`outcomes`)只在前端内存,刷新或中途退出会丢,该天计划不变、可重新领取。
+- 填空只做精确匹配,模糊匹配(共享前缀 + 相似度)是未做的后续项。
 
 ## 回复用户时的默认做法
 - 用户一般直接贴改动需求或报 bug,默认只改涉及的文件。**每个被改动的文件以完整文件形式生成(从头到尾,含未改动部分),用 create_file 写到 `/mnt/user-data/outputs/` 下对应文件名,再用 present_files 交付**,不要把整份代码贴在聊天里。没涉及的文件不要重复生成。正文只用简短文字说明改了什么、为什么、前后端哪一侧要跟着改;讲思路可以多写。
