@@ -8,8 +8,10 @@
     -webkit-tap-highlight-color: transparent !important;
 }
 
-/* 语音气泡本身：告诉浏览器这是一个可点击/可长按的控件，减少手势误判 */
-.bub.pill, #hold { touch-action: manipulation; }
+/* 语音气泡本身：告诉浏览器这是一个可点击/可长按的控件，减少手势误判。
+   注意不要给 #hold 设 touch-action：index.css 里它是 none（按住后上滑取消要自己处理手势），
+   在这里覆盖成 manipulation 的话，iOS 上手指稍微滑动就会触发 pointercancel，录音被悄悄丢掉。 */
+.bub.pill { touch-action: manipulation; }
 
 /* 自定义长按菜单：加大点击热区，字号变大，间距更宽松，更容易点中 */
 #sheet button {

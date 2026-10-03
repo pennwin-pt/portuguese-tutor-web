@@ -150,8 +150,9 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - **跳过**(`#skip`):同一个词本轮被 AI 判错 ≥ `SKIP_AFTER=2` 次才在结果页出现(ASR 对葡语不准);跳过 = 记 `skipped` + 从 `failedList` 移除 + 算过关,不计入 `firstPass`。
 - `outcomes` 只记第 1 轮(`round===1`)的结果,后续翻转重测不改;`finish()` 时 `POST /words/complete`(JSON: session_id,rounds,first_pass,attempts,outcomes),**服务器 `total` 取计划里的词数,不信前端**;重新学习后再完成:成绩覆盖、`times+1`,但进度不会重复结算。
 - `KIND_LABEL`:🆕新词 / 🔁复习 / 📅本周回顾 / 💪周六加练。进度只在内存,中途退出会弹确认且**不保留**。
-- **麦克风流复用**:`getMic()` 整个测试期间复用同一个 MediaStream(每次按下重新 `getUserMedia` 在安卓/小米平板上要 1~3 秒,iPhone 较快),`begin()` 时预热;`finish()`、页面切到后台(`visibilitychange`)、`pagehide` 时 `releaseMic()` 释放,`onstop` 里**不要再 stop 轨道**。轨道被系统抢走(`readyState!=='live'`)会自动重新申请。若某设备出现"录音后朗读音量变小/走听筒",是安卓开着麦克风时的音频通道副作用,可回退为每次申请,或给 getUserMedia 关掉 echoCancellation/noiseSuppression 再试。聊天页 index.js 仍是每次申请(未改)。
-- 声音:进页面和每次手势里 `unlock()`/`primeSfx()` 解锁 iOS 自动播放;答错先播失败音效,播完(≤1.5s)再朗读单词。录音手势与聊天页一致(按住录、松开发、上滑取消,iOS 优先 audio/mp4)。
+- **麦克风流复用**:`getMic()` 整个测试期间复用同一个 MediaStream(每次按下重新 `getUserMedia` 在安卓/小米平板上要 1~3 秒,iPhone 较快),`begin()` 时预热;`finish()`、页面切到后台(`visibilitychange`)、`pagehide` 时 `releaseMic()` 释放,`onstop` 里**不要再 stop 轨道**。轨道被系统抢走(`readyState!=='live'`)会自动重新申请;**`live` 的流也可能被系统静音(`muted`,iOS 音频会话被打断)**:按下时 `waitMicLive` 等 1.5s 仍不 unmute 就丢弃旧流(`releaseMic()`)重新申请一次,还不行就提示"麦克风暂时被系统占用"而不是对着静音轨道录音;录出空文件(<`MIN_BYTES`)时也 `releaseMic()`,下次按住用新流;`getMic()` 缓存申请中的 Promise,预热和首次按住不会开出两条流。若某设备出现"录音后朗读音量变小/走听筒",是安卓开着麦克风时的音频通道副作用,可回退为每次申请,或给 getUserMedia 关掉 echoCancellation/noiseSuppression 再试。聊天页 index.js 仍是每次申请(未改)。
+- 声音:进页面和每次手势里 `unlock()`/`primeSfx()` 解锁 iOS 自动播放;答错先播失败音效,播完(≤1.5s)再朗读单词。录音手势与聊天页一致(按住录、松开发、上滑取消,iOS 优先 audio/mp4)。**按住说话的手势里不要 `unlock()`**(只 `player.pause()`):往 `#player` 塞静音 wav 并 play 会和 getUserMedia/`rec.start()` 同时切换 iOS 音频会话,是"没录上"的嫌疑之一。
+- `touch-protection.css` 里**不要给 `#hold` 设 `touch-action: manipulation`**:会覆盖 `index.css` 的 `none`,iOS 上手指稍动就 `pointercancel`,录音被悄悄丢掉(聊天页、单词页共用)。
 - 单词页标题栏放大等样式写在 `words.css`(`#app > header` 覆盖),**不要改 `index.css`**(聊天页共用)。
 - words.js 里有一小段从 index.js 精简拷贝的 `NAME_RE`/guestSid/主题/`ttsCfg()`,改这些时 index.js、words.js、后端一起改。
 

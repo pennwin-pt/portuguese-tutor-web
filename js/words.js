@@ -399,21 +399,29 @@ const MIME = window.MediaRecorder && MIME_LIST.find(t => MediaRecorder.isTypeSup
 const MIN_MS = 500, MIN_BYTES = 1200;      // 太短 / 太小的录音直接丢弃，不发给服务器
 const TAIL_MS = 250, MIC_WAIT_MS = 1500;   // 松手后多录一小会儿防止句尾被切；等麦克风真正出声的最长时间
 let mr, chunks, t0, startY, cancel, stream, stopTimer, preparing = false, holding = false;
-const waitMicLive = s => new Promise(res => {    // iOS 的麦克风轨道刚拿到时可能还是 muted（没有数据），等它 unmute 再开始录
+// iOS 的麦克风轨道刚拿到、或音频会话被打断（通知音 / 切耳机 / 其它音频抢占）时是 muted（没有数据）。
+// 返回 true = 轨道已出声；false = 等到超时仍是 muted，调用方不能再对着它录音（录出来只有文件头）。
+const waitMicLive = s => new Promise(res => {
     const t = s.getAudioTracks()[0];
-    if (!t || !t.muted) return res();
-    const done = () => { t.removeEventListener('unmute', done); clearTimeout(timer); res(); };
-    const timer = setTimeout(done, MIC_WAIT_MS);
-    t.addEventListener('unmute', done);
+    if (!t) return res(false);
+    if (!t.muted) return res(true);
+    const fin = ok => { t.removeEventListener('unmute', onUnmute); clearTimeout(timer); res(ok); };
+    const onUnmute = () => fin(true);
+    const timer = setTimeout(() => fin(!t.muted), MIC_WAIT_MS);
+    t.addEventListener('unmute', onUnmute);
 });
 // 麦克风流整个测试期间复用：每次按下都重新 getUserMedia 在安卓（小米平板等）上要 1~3 秒，
 // 复用后只有第一次要等。测试结束 / 页面切到后台时释放，不让系统一直亮着麦克风图标。
-let micStream = null;
+// 注意：readyState 仍是 live 的流可能已被系统静音（muted），是否还能用由按下时的 waitMicLive 判断，不在这里判断。
+let micStream = null, micPromise = null;
 async function getMic() {
     if (micStream && micStream.getAudioTracks().some(t => t.readyState === 'live')) return micStream;
-    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
-    s.getAudioTracks().forEach(t => { t.onended = () => { if (micStream === s) micStream = null; }; });   // 被系统 / 其他 App 抢走后，下次按下会重新申请
-    return micStream = s;
+    if (micPromise) return micPromise;                // 预热和第一次按住同时到：共用同一次申请，不开出两条流
+    micPromise = navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+        s.getAudioTracks().forEach(t => { t.onended = () => { if (micStream === s) micStream = null; }; });   // 被系统 / 其他 App 抢走后，下次按下会重新申请
+        return micStream = s;
+    }).finally(() => { micPromise = null; });
+    return micPromise;
 }
 function releaseMic() {
     if (micStream) micStream.getTracks().forEach(t => t.stop());
@@ -426,18 +434,28 @@ holdBtn.addEventListener('pointerdown', async e => {
     if (state !== 'test') return;
     Object.values(sfx).forEach(a => a.pause());   // 答对/答错音效还在响时先停掉，免得和录音抢音频通道
     if (preparing || (mr && mr.state === 'recording')) return;          // 上一次还在准备 / 收尾
-    e.preventDefault(); holding = true; startY = e.clientY; cancel = false; unlock();
+    // 录音手势里不 unlock()：往 #player 塞静音 wav 并 play() 会和 getUserMedia / rec.start() 同时切换 iOS 音频会话，
+    // 容易让麦克风轨道被静音、录出空文件。页面早已解锁（领取 / 下一个 / 再试一次都 unlock 过），这里只停掉正在播的朗读。
+    e.preventDefault(); holding = true; startY = e.clientY; cancel = false; player.pause();
     holdBtn.setPointerCapture(e.pointerId);
     if (!MIME) { toast('浏览器不支持录音（需 HTTPS）'); holding = false; return; }
     preparing = true; holdBtn.textContent = '准备中…';                      // 麦克风真正就绪前不显示“录音中”，避免一开口就丢字
-    let s;
-    try { s = await getMic(); }
-    catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); holding = false; preparing = false; holdIdle(); return; }
+    let s, live;
+    const micFail = () => { holding = false; preparing = false; holdIdle(); };
+    try { s = await getMic(); live = await waitMicLive(s); }
+    catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); micFail(); return; }
+    if (holding && !live) {                          // 复用的流被系统静音了（iOS 音频会话被打断）：丢掉，重新申请一条再试一次
+        releaseMic();
+        try { s = await getMic(); live = await waitMicLive(s); }
+        catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); micFail(); return; }
+    }
     stream = s;
-    await waitMicLive(s);                                                        // 复用的流已经出声，这里立即返回
-    if (!holding) { preparing = false; return; }                                 // 准备期间已松手（流留着，下次直接用）
+    if (!holding) { preparing = false; return; }                                 // 准备期间已松手（流留着，下次按下会再检查）
+    if (!live) { releaseMic(); toast('麦克风暂时被系统占用，请再按一次'); micFail(); return; }   // 不对着静音轨道录音
     chunks = [];
-    const rec = new MediaRecorder(s, { mimeType: MIME, audioBitsPerSecond: 64000 });
+    let rec;
+    try { rec = new MediaRecorder(s, { mimeType: MIME, audioBitsPerSecond: 64000 }); }
+    catch { releaseMic(); toast('录音启动失败，请再按一次'); micFail(); return; }
     mr = rec;
     rec.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
     rec.onstart = () => {
@@ -451,7 +469,12 @@ holdBtn.addEventListener('pointerdown', async e => {
         if (cancel) return;
         if (Date.now() - t0 < MIN_MS) return toast('说话时间太短');
         const blob = new Blob(chunks, { type: MIME });
-        if (blob.size < MIN_BYTES) return toast('没录上，请再说一次');         // 空录音 / 只有文件头
+        if (blob.size < MIN_BYTES) {                                            // 空录音 / 只有文件头：多半是轨道中途被系统静音，这条流不能再用了
+            const tk = s.getAudioTracks()[0];
+            console.warn('录音为空', blob.size + 'B', (Date.now() - t0) + 'ms', 'muted=' + tk?.muted, tk?.readyState);
+            releaseMic();                                                       // 下次按住会用新申请的流
+            return toast('没录上，请再说一次');
+        }
         evaluate(blob, MIME.includes('mp4') ? 'm4a' : 'webm');
     };
     rec.start();
