@@ -102,25 +102,78 @@ let aiWrong = 0;            // 当前这个词在本轮里被 AI 评判为“答
 const SKIP_AFTER = 2;
 let curRevealed = false;    // 当前这个词是否点过“公布答案”（用来判定当天结果 again）
 const outcomes = {};        // 每个词当天第一轮的结果 {word_id,outcome,mode}：good 一次答对 | hard 答错后才对 | again 公布答案/判错≥2次 | skipped 跳过；完成时提交给服务器调度复习间隔
-const KIND_LABEL = { new: '🆕 新词', review: '🔁 复习', weekly: '📅 本周回顾', extra: '💪 周六加练' };
+const KIND_LABEL = { new: '🆕 新词', review: '🔁 复习', weekly: '📅 本周回顾', extra: '💪 周六加练', preview: '👀 先看后测' };
 let curMissed = false;      // 当前这个词在本轮里是否已经答错 / 公布过答案（= 不是“一次通过”，本轮结束后要重测）
 let round = 1, roundTotal = 0, total = 0, attempts = 0, firstPass = 0;
 const passed = new Set();   // 已“过关”的单词 id：某一轮里一次就答对的词（答错后重试才对的不算，还要进下一轮）
 
+/* ---------- 周日“以测代看”（sunMode） ----------
+   只在 previewOnly()（没有测试任务、只有可浏览的词，周日常见）时可用。每个词：先揭示答案（自动朗读）→ 盖住答案说葡语（mode 2）。
+   不计入学习进度：不调 /words/complete、不记 outcomes、不记 word_errors、不提供“我已掌握”（它会改服务器进度）。
+   第 1 轮出过错的词进 failedList，复测轮沿用现有“错词翻转方向”机制（先 mode 1，再 mode 2 …）。
+   连错 SKIP_AFTER 次（第 1 轮）：公布答案、记为“待巩固”（weak）并往下走，不卡人。
+   断点：每个词开始前把待测队列存进 localStorage（键里带 sid 和本周起始日），中途退出 / 刷新后可继续；词表变了则作废。 */
+let sunMode = false;
+const weak = new Set();     // 第 1 轮里连错两次、被直接公布答案的词 id（待巩固）
+const SUN_VER = 1;
+const weekStartOf = ds => { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() - d.getDay()); const p = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`; };
+const sunKey = () => `sunquiz|${sid}|${weekStartOf(today.date)}`;      // sid 的合法字符里没有 |，不会和别的智能体的键串
+const sunIds = () => today.preview.map(w => w.id).sort((a, b) => a - b);
+function sunSaved() {                                // 读取并校验本周断点；没有 / 损坏 / 词表和现在对不上 → null
+    if (!today?.preview?.length) return null;
+    try {
+        const s = JSON.parse(localStorage.getItem(sunKey()) || 'null');
+        if (!s || s.v !== SUN_VER || JSON.stringify(s.ids) !== JSON.stringify(sunIds())) return null;
+        if (![s.todo, s.failed, s.passed, s.weak].every(Array.isArray)) return null;
+        return s;
+    } catch { return null; }
+}
+function sunSave(done) {
+    if (!today?.preview?.length) return;
+    try {
+        const key = sunKey(), pre = `sunquiz|${sid}|`;
+        for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith(pre) && k !== key) localStorage.removeItem(k); }   // 清掉往周的
+        localStorage.setItem(key, JSON.stringify({
+            v: SUN_VER, ids: sunIds(), done: !!done, round, roundTotal, total, attempts, firstPass,
+            todo: todoList.map(w => [w.id, w.mode]), failed: failedList.map(w => [w.id, w.mode]), passed: [...passed], weak: [...weak]
+        }));
+    } catch {}                                       // 隐私模式 / 存储满：不影响测试，只是不能续测
+}
+function sunClear() { try { localStorage.removeItem(sunKey()); } catch {} }
+const sunGaveUp = () => sunMode && round === 1 && state === 'result' && !!lastRes && !lastRes.passed && aiWrong >= SKIP_AFTER;   // 第 1 轮连错够次数：结果页直接“下一个”
+function sunProgressText(s) { return s.round === 1 ? `${s.roundTotal - s.todo.length}/${s.total}` : `第 ${s.round} 轮，还剩 ${s.todo.length} 个错词`; }
+function sunPct() {                                  // 顶部进度条：第 1 轮 = 已完成 / 总数；复测轮 = 不再需要重测的词 / 总数
+    if (!total) return 0;
+    if (round === 1) {
+        const settled = cur && state === 'result' && lastRes && (lastRes.passed || sunGaveUp()) ? 1 : 0;
+        return Math.min(1, (roundTotal - todoList.length - (cur ? 1 : 0) + settled) / total);
+    }
+    const left = new Set([...todoList, ...failedList].map(w => w.id));
+    if (cur && !passed.has(cur.id)) left.add(cur.id);
+    return Math.max(0, (total - left.size) / total);
+}
+
 const isLast = () => !todoList.length && !failedList.length;
-const canSkip = () => state === 'result' && !!lastRes && !lastRes.passed && aiWrong >= SKIP_AFTER;   // 只在“AI 已连续判错两次”的结果页开放，不能一上来就跳
+const canSkip = () => state === 'result' && !!lastRes && !lastRes.passed && aiWrong >= SKIP_AFTER && !(sunMode && round === 1);   // 周日第 1 轮连错会自动公布答案往下走，不需要跳过   // 只在“AI 已连续判错两次”的结果页开放，不能一上来就跳
 
 const isSunday = () => !!today?.date && new Date(today.date + 'T00:00:00').getDay() === 0;   // 周日：只浏览本周全部单词，周一才开始记
 const previewOnly = () => !!today && !today.words.length && !!today.preview?.length;           // 没有测试任务、只有可浏览的词（周日常见）
 
 function viewIdle() {
-    if (previewOnly()) {
-        const c = el('div', 'wcard');
-        c.append(el('div', 'term', '📚 本周单词'),
-            el('p', 'intro', isSunday()
-                ? '新的一周从明天（周一）开始记。今天可以先把这些词浏览一遍、听听读音，不用背，也不会测试。'
-                : '现在没有要测试的单词，可以先浏览一下接下来要学的词。'),
-            el('div', 'stat', `共 ${today.preview.length} 个单词`));
+    if (previewOnly()) {                              // 周日等“只有可浏览的词”：主入口是以测代看，列表浏览是次要入口（#act2）
+        const n = today.preview.length, s = sunSaved(), c = el('div', 'wcard');
+        c.append(el('div', 'term', '🧪 本周新词 · 以测代看'),
+            el('p', 'intro', (isSunday() ? '新的一周从明天（周一）开始记。今天先把这些词一个个过一遍：' : '') +
+                '每个词先看答案、听读音，再盖住答案考你一次。答错会再看一遍，连错两次就公布答案往下走。不计入学习进度，随时可以退出，下次接着测。'));
+        let stat = `共 ${n} 个单词`;
+        if (s && s.done) stat = `✅ 上次已测完：一次通过 ${s.firstPass}/${s.total} · 待巩固 ${s.weak.length} 个\n想再来一遍就点下面的按钮`;
+        else if (s) stat = `共 ${n} 个单词\n上次测到 ${sunProgressText(s)}，可以继续`;
+        c.append(el('div', 'stat', stat));
+        if (s && !s.done) {
+            const rb = el('button', 'sbtn', '🔄 重新开始'); rb.type = 'button';
+            rb.onclick = () => { if (confirm('确定放弃上次的进度，从头开始吗？')) { unlock(); beginSun(false); } };
+            c.append(rb);
+        }
         return c;
     }
     const c = el('div', 'wcard');
@@ -171,6 +224,20 @@ function viewTest() {
     c.append(row, el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : (w.mode === 1 ? '请用中文说出它的意思' : '请用葡语说出这个词')));
     return c;
 }
+function viewReveal() {                              // 周日以测代看 ①：先露答案（进入时自动朗读单词），看熟了再点“开始说”
+    const w = cur, c = el('div', 'wcard');
+    c.append(el('div', 'kind', KIND_LABEL.preview), el('div', 'tag', '👀 先看一遍，记住它，然后说出来'));
+    const row = el('div', 'termrow');
+    row.append(el('div', 'term', w.pt_word), spk(w, 'word'));
+    c.append(row, el('div', 'ask', w.cn_meaning));
+    if (w.pt_sentence) {
+        const ans = el('div', 'ans'), r = el('div', 'arow'), t = el('div', 'tx');
+        t.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
+        r.append(t, spk(w, 'sentence')); ans.append(r); c.append(ans);
+    }
+    c.append(el('div', 'hint', '看熟了点“开始说”，下一步会盖住答案考你'));
+    return c;
+}
 function viewResult() {
     const w = cur, r = lastRes, c = el('div', 'wcard');
     if (r.revealed) {                                   // 主动公布答案：不是答错，也不播失败音效，但本轮结束后会重测
@@ -181,6 +248,7 @@ function viewResult() {
         if (r.comment) c.append(el('div', 'cmt', '💬 ' + r.comment));
         if (w.mode === 4 && lastRes?.corrected) c.append(el('div', 'cmt', '参考说法：' + lastRes.corrected));
     }
+    if (sunGaveUp()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次，答案在下面。先记为“待巩固”，往下走，稍后会换个方向再测。`));
     if (canSkip()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次。如果觉得是识别不准，可以跳过（跳过后这个词算已通过，不再重测）`));
     const ans = el('div', 'ans');
     const r1 = el('div', 'arow'), t1 = el('div', 'tx'), r3 = el('div', 'arow'), t3 = el('div', 'tx');
@@ -189,6 +257,7 @@ function viewResult() {
     t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
     r3.append(t3, spk(w, 'sentence'));
     ans.append(r1, r3); c.append(ans);
+    if (sunMode) return c;                           // 周日以测代看不碰学习进度：不放“我已掌握”（它会改服务器进度）
     const mb = el('button', 'mbtn', '✅ 我已掌握，以后不再复习'); mb.type = 'button';
     mb.onclick = () => markMastered(mb);
     c.append(mb);
@@ -214,7 +283,26 @@ function fmtTime(s) {       // 服务器存的是 UTC（'YYYY-MM-DD HH:MM:SS'）
     const d = s ? new Date(s.replace(' ', 'T') + 'Z') : null;
     return d && !isNaN(d) ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
 }
+function viewSunDone() {                             // 周日以测代看完成页：一次通过 X/N、待巩固 Y 个，并列出待巩固的词方便再听
+    const s = summary, c = el('div', 'wcard');
+    c.append(el('div', 'term', '🎉 本周新词测完了'),
+        el('div', 'stat', `共 ${s.total} 个单词，用了 ${s.rounds} 轮\n一次通过 ${s.first_pass}/${s.total} · 待巩固 ${s.weak.length} 个`),
+        el('p', 'intro', s.weak.length ? '这几个词连错了两次，周一的新词环节仍会照常出现。趁现在再听几遍：' : '全部过关！周一仍按正常的新词流程再巩固。'));
+    if (s.weak.length) {
+        const list = el('div', 'plist'), byId = new Map(today.preview.map(w => [w.id, w]));
+        for (const id of s.weak) {
+            const w = byId.get(id); if (!w) continue;
+            const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
+            tx.append(el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
+            if (w.pt_sentence) tx.append(el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
+            r1.append(tx, spk(w, 'word')); row.append(r1); list.append(row);
+        }
+        c.append(list);
+    }
+    return c;
+}
 function viewDone() {
+    if (summary?.sun) return viewSunDone();
     const s = summary, c = el('div', 'wcard');
     const lines = [`共 ${s.total} 个单词，用了 ${s.rounds} 轮`, `一次通过 ${s.first_pass} 个 · 共评判 ${s.attempts} 次`];
     const at = fmtTime(s.completed_at);
@@ -231,21 +319,26 @@ function render() {
     hold.hidden = !testing;
     hold.disabled = state === 'judging';
     $('#reveal').hidden = !testing;                              // 测试中随时可以“公布答案”
+    $('#reveal').textContent = sunMode && round === 1 ? '👀 再看一眼' : '💡 公布答案';   // 周日第 1 轮：回到揭示页重看（算没一次通过，但不算判错）
     $('#reveal').disabled = state === 'judging';
     $('#skip').hidden = !canSkip();
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
     act.hidden = testing || state === 'loading';
-    $('#act2').hidden = state !== 'done';                         // 完成页：[返回聊天] [重新学习]
-    const resultLabel = !lastRes ? '' : !lastRes.passed ? '🔁 再试一次'            // 没答对：停在这个词
+    const sunIdle = state === 'idle' && previewOnly();
+    $('#act2').hidden = !(state === 'done' || sunIdle);          // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
+    $('#act2').textContent = sunIdle ? '👀 只看列表' : '返回聊天';
+    const ss = sunIdle ? sunSaved() : null;
+    const resultLabel = !lastRes ? '' : (!lastRes.passed && !sunGaveUp()) ? '🔁 再试一次'            // 没答对：停在这个词
         : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测
-    act.textContent = { idle: previewOnly() ? '👀 查看本周单词' : '领取今日任务', result: resultLabel,
-        preview: summary ? '预习完成' : '看完了', done: '🔄 重新学习' }[state] || '';
+    const idleLabel = !previewOnly() ? '领取今日任务' : !ss ? '🧪 开始以测代看' : ss.done ? '🔄 再测一遍' : '▶ 继续测试';
+    act.textContent = { idle: idleLabel, result: resultLabel, reveal: '🎤 开始说',
+        preview: summary ? '预习完成' : '看完了', done: sunMode ? '🔄 再测一遍' : '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
-    $('#prog').textContent = testing || state === 'result' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
-    $('#bar i').style.width = total ? (passed.size / total * 100) + '%' : '0';
-    stage.classList.toggle('top', state === 'preview');             // 预习列表可能很长，从顶部开始排，不居中
+    $('#prog').textContent = testing || state === 'result' || state === 'reveal' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
+    $('#bar i').style.width = sunMode ? (sunPct() * 100) + '%' : total ? (passed.size / total * 100) + '%' : '0';
+    stage.classList.toggle('top', state === 'preview' || (state === 'done' && !!summary?.sun && summary.weak.length > 0));   // 预习 / 待巩固列表可能很长，从顶部开始排，不居中
     stage.innerHTML = '';
-    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, result: viewResult, preview: viewPreview, done: viewDone }[state]());
+    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, reveal: viewReveal, result: viewResult, preview: viewPreview, done: viewDone }[state]());
 }
 
 /* ---------- 流程 ---------- */
@@ -256,10 +349,30 @@ async function fetchToday() {
     today = d;
 }
 function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
+    sunMode = false; weak.clear();
     getMic().catch(() => {});                       // 预热麦克风：失败不提示，真正按住说话时会再试并提示
     todoList = words.slice(); failedList = []; passed.clear(); curMissed = false; curRevealed = false; aiWrong = 0;
     Object.keys(outcomes).forEach(k => delete outcomes[k]);
     total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
+    next();
+}
+function beginSun(resume) {                        // 开始 / 继续周日以测代看；resume=true 且有有效断点时从断点接着测
+    sunMode = true;
+    getMic().catch(() => {});
+    const s = resume ? sunSaved() : null;
+    passed.clear(); weak.clear(); failedList = []; curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null; summary = null;
+    Object.keys(outcomes).forEach(k => delete outcomes[k]);
+    if (s && !s.done) {
+        const byId = new Map(today.preview.map(w => [w.id, w])), mk = ([id, mode]) => byId.has(id) ? { ...byId.get(id), mode } : null;
+        todoList = s.todo.map(mk).filter(Boolean); failedList = s.failed.map(mk).filter(Boolean);
+        s.passed.forEach(id => passed.add(id)); s.weak.forEach(id => weak.add(id));
+        round = s.round; roundTotal = s.roundTotal; total = s.total; attempts = s.attempts; firstPass = s.firstPass;
+        toast('继续上次的进度：' + sunProgressText(s));
+    } else {
+        sunClear();
+        todoList = today.preview.map(w => ({ ...w, mode: 2 }));      // 第 1 轮固定 mode 2：先露答案，再看中文说葡语
+        total = roundTotal = todoList.length; round = 1; attempts = 0; firstPass = 0;
+    }
     next();
 }
 async function start() {
@@ -267,7 +380,7 @@ async function start() {
     const btn = $('#act'); btn.disabled = true;
     try {
         if (!today) await fetchToday();             // 页面打开时加载失败的话，这里重试
-        if (previewOnly()) { state = 'preview'; render(); return; }      // 只有可浏览的词（周日）：直接进浏览页，不领取任务
+        if (previewOnly()) { const s = sunSaved(); beginSun(!!s && !s.done); return; }      // 只有可浏览的词（周日）：以测代看（有未完成的断点就继续）；只看列表走 #act2
         if (!today.words.length) return toast('今天没有单词任务');
         if (today.completed) showDone(today.completed, false);     // 重试时发现今天其实已经完成了
         else begin(today.words);
@@ -275,12 +388,18 @@ async function start() {
     finally { btn.disabled = false; }
 }
 function restart() {                                // 今日已完成后选择“重新学习”：同一批单词从头再测，不需要再请求
+    if (sunMode) { unlock(); beginSun(false); return; }      // 周日以测代看测完后“再测一遍”
     if (!today?.words.length) return;
     unlock(); begin(today.words);
 }
 function showDone(rec, fresh) { cur = null; summary = { ...rec, fresh }; state = 'done'; render(); }
 function finish() {                                 // 所有单词都通过：先把当天结果提交给服务器（结算复习进度 + 记完成），再进预习 / 成绩页
     releaseMic();
+    if (sunMode) {                                   // 周日以测代看：只存本地结果，绝不提交服务器（不计入学习进度）
+        cur = null; sunSave(true);
+        summary = { rounds: round, total, first_pass: firstPass, attempts, weak: [...weak], sun: true, fresh: true };
+        showDone(summary, true); return;
+    }
     cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, fresh: true };
     if (today?.preview?.length && !today.completed) { state = 'preview'; render(); }    // 重新学习时不再预习
     else showDone(summary, true);
@@ -301,7 +420,10 @@ function next() {                                   // 取下一个待测词；�
         todoList = failedList.map(w => ({ ...w, mode: w.mode === 3 ? 1 : (w.mode === 4 ? 2 : (w.mode === 1 ? 2 : 1)) })); failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
-    cur = todoList.shift(); curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null; state = 'test'; render();
+    if (sunMode) sunSave(false);                     // 断点：每个词开始前存一次（此刻 cur 还没取出，待测队列里含即将出的这个词）
+    cur = todoList.shift(); curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null;
+    if (sunMode && round === 1) { state = 'reveal'; render(); speak(cur, 'word', $('#stage .spk')); return; }   // 周日第 1 轮：先揭示答案（自动朗读），再考
+    state = 'test'; render();
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));      // 模式 1：展示时自动朗读一次
 }
 function retry() {                                  // 没答对：停在同一个词、同一个方向，直到答对
@@ -332,7 +454,7 @@ async function markMastered(btn) {               // 用户确认自己已经掌�
     next();
 }
 function noteOutcome(w, force) {                   // 只记每个词第一轮的结果；后面轮次（翻转方向重测）不再改
-    if (round !== 1 || outcomes[w.id]) return;
+    if (sunMode || round !== 1 || outcomes[w.id]) return;     // 周日以测代看不记 outcomes（不计入学习进度）
     const oc = force || (curRevealed || aiWrong >= SKIP_AFTER ? 'again' : curMissed ? 'hard' : 'good');
     outcomes[w.id] = { word_id: w.id, outcome: oc, mode: w.mode };
 }
@@ -355,7 +477,8 @@ async function evaluate(blob, ext) {
         } else {
             aiWrong++;                              // AI 判错一次；同一个词累计到 SKIP_AFTER 次就可以跳过
             markMissed(w);                          // 进入本轮的错词列表；当前词不前进，等用户“再试一次”
-            post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: d.recognized_text || '' })
+            if (sunMode && round === 1 && aiWrong >= SKIP_AFTER) weak.add(w.id);    // 周日第 1 轮连错：待巩固
+            if (!sunMode) post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: d.recognized_text || '' })
                 .catch(err => toast('错题记录失败：' + err.message));
         }
         state = 'result'; render();
@@ -380,10 +503,11 @@ function reveal() {                                 // 不会就直接看答案�
     if (state !== 'test' || holding) return;         // 评判中 / 正在录音时不响应
     unlock();
     const w = cur;
+    if (sunMode && round === 1) { markMissed(w); state = 'reveal'; render(); speak(w, 'word', $('#stage .spk')); return; }   // 周日第 1 轮：回到揭示页再看一眼
     curRevealed = true;
     markMissed(w);
     lastRes = { passed: false, revealed: true };
-    post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: '' })
+    if (!sunMode) post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: '' })
         .catch(err => toast('错题记录失败：' + err.message));
     state = 'result'; render();
     speak(w, 'word', $('#stage .spk'));                     // 公布答案：无论哪种方向，都直接朗读这个词的葡语
@@ -392,13 +516,17 @@ $('#reveal').onclick = reveal;
 $('#skip').onclick = skip;
 $('#act').onclick = () => {
     if (state === 'idle') start();
-    else if (state === 'result') { if (lastRes?.passed) next(); else retry(); }
+    else if (state === 'reveal') { unlock(); state = 'test'; render(); }       // 周日：看完答案，盖住开始说
+    else if (state === 'result') { if (lastRes?.passed || sunGaveUp()) next(); else retry(); }
     else if (state === 'preview') { if (summary) showDone(summary, true); else { state = 'idle'; render(); } }   // 纯浏览：看完回到首页
     else if (state === 'done') restart();
 };
-$('#act2').onclick = () => { location.href = 'index.html'; };
+$('#act2').onclick = () => {
+    if (state === 'idle' && previewOnly()) { unlock(); state = 'preview'; render(); return; }     // 周日首页的“只看列表”
+    location.href = 'index.html';
+};
 $('#back').onclick = () => {
-    if (!['loading', 'idle', 'preview', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
+    if (!sunMode && !['loading', 'idle', 'preview', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
     location.href = 'index.html';
 };
 
