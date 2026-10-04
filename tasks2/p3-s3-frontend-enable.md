@@ -6,7 +6,7 @@
 **本步:前端能显示 → 打开开关 → 端到端验证 → 更新 skill。这是唯一会让造句"上线"的一步。**
 
 ## 要附的文件
-`js/words.js`(最新版,已含填空 `viewCloze` 和麦克风复用改动)、`memory/word_planner.py`、`SKILL.md`(没有就不附)
+`js/words.js`(**最新版**:已含填空 `viewCloze`、P4 的 `speak` 带 `ex`)、`memory/word_planner.py`(P3-S1 之后的版本)、`SKILL.md`(**最新版**:已含"聊天联动(P2)"和"多例句轮换(P4)"两节;没有就不附)
 
 ## 只读这些文件。定位用 grep 锚点,不要信行号。**`words.js` 是 CRLF,改完必须保持 CRLF。**
 
@@ -17,7 +17,8 @@
 python tools/test_p3s1.py     # 调度
 python tools/test_p3s2.py     # 后端
 python tools/test_step3.py    # 第一阶段后端回归（已同步放开 mode 4）
-python tools/test_step4.py    # 第一阶段前端静态检查（在前端目录下运行）
+python tools/test_step4.py    # 第一阶段前端静态检查（在前端目录下运行；不在后台 zip 里，在你本机跑）
+python tools/test_p4s3.py     # P4 前端静态检查（words.js 里 speak 带 ex 的那行不能被误删；需 WORDS_JS_PATH 指向前端 words.js）
 ```
 
 ### B. `js/words.js` 的改动(共 5 处)
@@ -32,18 +33,18 @@ python tools/test_step4.py    # 第一阶段前端静态检查（在前端目录
    3. 中文释义:`el('div', 'azh', w.cn_meaning)`。
    4. 询问行:`el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : '请用这个词，说一句完整的葡语')`。
    5. `return c`。
-   (造句**不用**挖空,也**不显示**例句——显示例句会让用户照抄。)
-3. **结果页显示 AI 的参考说法**(锚点:`function viewResult`,里面显示"你说的"/识别结果的那一行,grep `'heard'`):在该行之后追加
+      (造句**不用**挖空,也**不显示**例句——显示例句会让用户照抄。mode 4 的词对象**没有** `cloze`,也**没有** `ex`;不要给它加。)
+3. **结果页显示 AI 的参考说法**(锚点:`function viewResult`;grep `'heard'` 找到"你说的"那条 `c.append(...)`,它后面紧跟 `if (r.comment) c.append(... '💬 ' ...)` 一行):**插在 `if (r.comment)` 那一行之后**(这样顺序是:你说的 → 评语 → 参考说法),追加
    ```js
    if (w.mode === 4 && lastRes?.corrected) c.append(el('div', 'cmt', '参考说法：' + lastRes.corrected));
    ```
-   (`cmt` 是已有的小号灰字类;只在 mode 4 且 `corrected` 非空时显示;用 `lastRes`,即 `evaluate()` 里保存的上一次评判返回。如果 `viewResult` 里变量名不叫 `lastRes`/`w`,按实际名字改,**不要新增全局变量**。)
+   (`cmt` 是已有的小号灰字类;只在 mode 4 且 `corrected` 非空时显示。`viewResult` 里已有局部变量 `w = cur`、`r = lastRes`,用它们写也行(`r.corrected`),**不要新增全局变量**。"公布答案"分支里 `lastRes = {passed:false, revealed:true}` 没有 `corrected`,所以自然不显示。结果页下面原有的"例句 + 喇叭"保持不动,它显示的是词库原例句。)
 4. **下一轮翻转方向**(锚点:`mode: w.mode === 3 ? 1 : (w.mode === 1 ? 2 : 1)`,在 `function next` 里)改成:
    ```js
    mode: w.mode === 3 ? 1 : (w.mode === 4 ? 2 : (w.mode === 1 ? 2 : 1))
    ```
    (造句答错的词,下一轮退回"看中文说葡语",先确认认得这个词;其余方向不变。)
-5. **顶部注释**(锚点:`Word Item（与后端 memory/word_source.py 的 WordItem 一致）`):mode 说明补上 `4=造句（说一句用到目标词的话，评判返回 corrected）`。
+5. **顶部注释**(锚点:`Word Item（与后端 memory/word_source.py 的 WordItem 一致）`):mode 说明补上 `4=造句（说一句用到目标词的话，评判返回 corrected；无 cloze、无 ex）`。(P4 已让 mode 3 的词可能带 `ex`,这行注释里没写它,可顺手补一句"mode 3 可能带 ex（生成例句编号）",只改注释。)
 
 **其余一律不动**:`next()`/`retry()` 里的 `if (cur.mode === 1) speak(...)` 保持原样(mode 4 不自动朗读);公布答案、跳过、录音、`evaluate`、`noteOutcome`(它原样传 `w.mode`)、`markMastered`、`render` 都不用改。**不要碰 `css/words.css`**(只用已有类 `tag/termrow/term/azh/ask/cmt`)。
 
@@ -71,14 +72,14 @@ python tools/test_step4.py    # 第一阶段前端静态检查（在前端目录
 | g | 新词、周五 `weekly` 条目 | 没有 4 |
 
 ### E. 更新 `SKILL.md`(如果用户附了;只做最小改动,找不到对应小节就加在最接近的位置)
-1. **调度参数表**增加三行:`SENTENCE_ENABLED`(造句总开关,True)、`SENTENCE_MAX`(3,一天最多几道造句)、`SENTENCE_BOX_MIN`(4,复习词 box ≥ 此值才出)。
+1. **调度参数表**(现有"调度参数"一节,表里已有 `CLOZE_ENABLED`/`CLOZE_MAX`/`CHAT_FOCUS_NEW`)增加三行:`SENTENCE_ENABLED`(造句总开关,True)、`SENTENCE_MAX`(3,一天最多几道造句)、`SENTENCE_BOX_MIN`(4,复习词 box ≥ 此值才出)。
 2. **结果判定表下面的说明**补一句:mode 4(造句)答对也会置 `mode2_ok=1`;mode 4 答错**不会**清 `mode2_ok`。
 3. 新增一小节「造句(mode 4)」,照抄要点,不要扩写:
    - 定义:显示目标词 + 中文释义,用户用它说一整句葡语;不显示例句、不自动朗读(词旁有喇叭可手动听)。
    - 出题规则:`build_today_plan` 后处理(**在填空限量之前**):仅 ① `kind=review` 且 `box >= SENTENCE_BOX_MIN` 且未掌握 ② `kind=extra`(周六加练);排除 `lapses >= STUBBORN_LAPSES` 或 `last_outcome == "again"` 的词;一天最多 `SENTENCE_MAX` 个;`choose_mode` 本身永不返回 4;`weekly`/`new` 不出。
-   - 评判:`_judge_sentence`——少于 2 个词直接判错(不调 LLM)→ `WORD_PT_USE_LLM` 关或 LLM 抛异常时退回规则(`pt_text.find_words` 整词匹配)→ 否则 `WORD_SENTENCE_JUDGE_PROMPT`,返回 `{pass, comment, corrected}`;语法小错不扣通过。ASR 用葡语 + `ASR_PROMPT_PT`(整句提示词)。
+   - 评判:(同时在"评判规则"一节补一条 **mode=4**,指向这里)`_judge_sentence`——少于 2 个词直接判错(不调 LLM)→ `WORD_PT_USE_LLM` 关或 LLM 抛异常时退回规则(`pt_text.find_words` 整词匹配)→ 否则 `WORD_SENTENCE_JUDGE_PROMPT`,返回 `{pass, comment, corrected}`;语法小错不扣通过。ASR 用葡语 + `ASR_PROMPT_PT`(整句提示词)。
    - 前端:`fetchToday` 白名单 `[1,2,3,4]`;`viewSentence` 渲染;结果页显示"参考说法";下一轮翻转 `4→2, 3→1, 1→2, 2→1`。
-   - 接口:`/words/today` 的 `words[].mode` 可为 4(无 `cloze`);`/words/evaluate` 对 mode 4 额外返回 `corrected`;`/words/evaluate`、`/words/complete`、`/words/record_error` 的 `mode` 取值 `1|2|3|4`。
+   - 接口:`/words/today` 的 `words[].mode` 可为 4(无 `cloze`、无 `ex`);`/words/evaluate` 对 mode 4 额外返回 `corrected`;`/words/evaluate`、`/words/complete`、`/words/record_error` 的 `mode` 取值 `1|2|3|4`。
    - 回退:`SENTENCE_ENABLED=False` 重启即可,不用动其他代码。
    - 已知取舍:出现频率很低(复习词里 box≥4 且未掌握的很少——box 3 的词先走填空、过了就毕业;主要靠周六加练);每次造句评判消耗一次 LLM,故严格限量;`corrected` 只显示文字,没有朗读。
 4. **"已知简化 / 别顺手修复"** 补一条:造句评判完全依赖 LLM 判断词义与用法,规则兜底只检查"是否说出目标词"。
@@ -114,3 +115,4 @@ P3完成，造句（mode 4）已开启。
 
 ## 完成标志
 `python tools/test_p3s3.py` 打印 `P3步骤3测试全部通过`,且 `SENTENCE_ENABLED` 为 `True`。
+**测试脚本找不到 `words.js` 时不能算通过**:静态检查被跳过时,脚本应打印警告并以非零退出码结束(参照 `tools/test_p4s3.py` 的做法,支持 `WORDS_JS_PATH` 环境变量),不要在跳过的情况下仍打印"全部通过"。
