@@ -124,7 +124,7 @@ syncAgentVoice();
 
 let histLock = false;                          // 上翻加载更早消息时置 true，避免渲染过程把视图拉回底部
 const scroll = () => { if (!histLock) requestAnimationFrame(() => chat.scrollTop = chat.scrollHeight); };
-function toast(m) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); }
+function toast(m, ms = 2200) { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), ms); }
 
 /* ---------- 网络 ---------- */
 const errMsg = j => typeof j.detail === 'string' ? j.detail
@@ -335,7 +335,16 @@ $('#wadd').onclick = async () => {
     const btn = $('#wadd'); btn.disabled = true;
     try {
         const d = await post('/api/vocab', { session_id: sid, items });
-        toast(`已加入 ${d.added} 个单词`); $('#wmask').hidden = true;
+        // 直接写进 WordMemorizer 的生词本；生词本里已经有的词不会重复加入，后端放在 existing_words 里
+        const ex = d.existing_words || [];
+        if (d.added > 0) {
+            toast(ex.length ? `已加入 ${d.added} 个单词；已存在（未重复加入）：${ex.join('、')}` : `已加入 ${d.added} 个单词`, ex.length ? 4500 : 2200);
+            $('#wmask').hidden = true;
+        } else if (ex.length) {
+            toast(`已存在，无需重复加入：${ex.join('、')}`, 4500);      // 一个都没加成：面板保持打开，方便改选别的词
+        } else {
+            toast('没有可加入的单词');
+        }
     } catch (err) { toast('加入失败：' + err.message); }
     finally { btn.disabled = false; }
 };
