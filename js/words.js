@@ -350,7 +350,7 @@ async function fetchToday() {
 }
 function begin(words) {                             // 开始一遍新的测试（首次领取 / 重新学习共用）
     sunMode = false; weak.clear();
-    getMic().catch(() => {});                       // 预热麦克风：失败不提示，真正按住说话时会再试并提示
+    warmMic();                                      // 预热麦克风：失败不提示，真正按住说话时会再试并提示
     todoList = words.slice(); failedList = []; passed.clear(); curMissed = false; curRevealed = false; aiWrong = 0;
     Object.keys(outcomes).forEach(k => delete outcomes[k]);
     total = roundTotal = words.length; round = 1; attempts = 0; firstPass = 0; summary = null;
@@ -358,7 +358,7 @@ function begin(words) {                             // 开始一遍新的测试�
 }
 function beginSun(resume) {                        // 开始 / 继续周日以测代看；resume=true 且有有效断点时从断点接着测
     sunMode = true;
-    getMic().catch(() => {});
+    warmMic();
     const s = resume ? sunSaved() : null;
     passed.clear(); weak.clear(); failedList = []; curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null; summary = null;
     Object.keys(outcomes).forEach(k => delete outcomes[k]);
@@ -550,11 +550,16 @@ const waitMicLive = s => new Promise(res => {
     const timer = setTimeout(() => fin(!t.muted), MIC_WAIT_MS);
     t.addEventListener('unmute', onUnmute);
 });
-// 麦克风流整个测试期间复用：每次按下都重新 getUserMedia 在安卓（小米平板等）上要 1~3 秒，
-// 复用后只有第一次要等。测试结束 / 页面切到后台时释放，不让系统一直亮着麦克风图标。
+// 麦克风流策略按平台分开：
+// · 安卓（小米平板等）：整个测试期间复用同一条流——每次按下都重新 getUserMedia 要 1~3 秒，复用后只有第一次要等。
+// · iOS：每次按下重新申请、录完就关（KEEP_MIC = false）。iOS 上长期开着的流一旦闲置一阵、或中间播过朗读 / 音效，
+//   下一次录音常常是空的（轨道没标 muted，但录不进数据 → “没录上”），第一次按住尤其明显；而 iOS 重新申请很快（几十到几百毫秒）。
+// 测试结束 / 页面切到后台时都会释放，不让系统一直亮着麦克风图标。
+const KEEP_MIC = !IS_IOS;
 // 注意：readyState 仍是 live 的流可能已被系统静音（muted），是否还能用由按下时的 waitMicLive 判断，不在这里判断。
 let micStream = null, micPromise = null;
 async function getMic() {
+    if (!KEEP_MIC) releaseMic();                      // iOS：不复用，每次都是新申请的流
     if (micStream && micStream.getAudioTracks().some(t => t.readyState === 'live')) return micStream;
     if (micPromise) return micPromise;                // 预热和第一次按住同时到：共用同一次申请，不开出两条流
     micPromise = navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
@@ -562,6 +567,10 @@ async function getMic() {
         return micStream = s;
     }).finally(() => { micPromise = null; });
     return micPromise;
+}
+function warmMic() {                                // 提前触发麦克风权限询问（在“领取 / 开始”那一下点击里）
+    if (KEEP_MIC) getMic().catch(() => {});
+    else navigator.mediaDevices?.getUserMedia({ audio: true }).then(st => st.getTracks().forEach(t => t.stop())).catch(() => {});   // iOS：只为弹权限，不留着流
 }
 function releaseMic() {
     if (micStream) micStream.getTracks().forEach(t => t.stop());
@@ -590,7 +599,7 @@ holdBtn.addEventListener('pointerdown', async e => {
         catch { toast('无法使用麦克风：请用 HTTPS 访问并允许权限'); micFail(); return; }
     }
     stream = s;
-    if (!holding) { preparing = false; return; }                                 // 准备期间已松手（流留着，下次按下会再检查）
+    if (!holding) { preparing = false; if (!KEEP_MIC) releaseMic(); return; }    // 准备期间已松手（安卓：流留着，下次按下会再检查；iOS：关掉）
     if (!live) { releaseMic(); toast('麦克风暂时被系统占用，请再按一次'); micFail(); return; }   // 不对着静音轨道录音
     chunks = [];
     let rec;
@@ -605,13 +614,14 @@ holdBtn.addEventListener('pointerdown', async e => {
         holdBtn.classList.add('rec'); holdBtn.textContent = '松开 发送'; $('#rec').hidden = false;
     };
     rec.onstop = () => {
-        preparing = false;                           // 不再 stop 轨道：流由 releaseMic() 统一释放
+        const tk = s.getAudioTracks()[0], muted = tk?.muted;               // 先记下轨道状态，空录音时用来排查
+        preparing = false;
+        if (!KEEP_MIC) releaseMic();                 // iOS：每次录完就关；安卓：不 stop，流由 releaseMic() 统一释放
         if (cancel) return;
         if (Date.now() - t0 < MIN_MS) return toast('说话时间太短');
         const blob = new Blob(chunks, { type: MIME });
         if (blob.size < MIN_BYTES) {                                            // 空录音 / 只有文件头：多半是轨道中途被系统静音，这条流不能再用了
-            const tk = s.getAudioTracks()[0];
-            console.warn('录音为空', blob.size + 'B', (Date.now() - t0) + 'ms', 'muted=' + tk?.muted, tk?.readyState);
+            console.warn('录音为空', blob.size + 'B', (Date.now() - t0) + 'ms', 'muted=' + muted, 'keep=' + KEEP_MIC);
             releaseMic();                                                       // 下次按住会用新申请的流
             return toast('没录上，请再说一次');
         }
