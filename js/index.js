@@ -305,7 +305,7 @@ function renderWords() {
     if (!wdata?.words?.length) { wlist.innerHTML = '<div class="tip">没有识别出可拆解的单词</div>'; return; }
     wdata.words.forEach((w, i) => {
         const row = el('label', 'wrow'), cb = el('input');
-        cb.type = 'checkbox'; cb.checked = true; cb.dataset.i = i;
+        cb.type = 'checkbox'; cb.checked = false; cb.dataset.i = i;     // 默认都不勾选，由用户自己挑要加入单词库的词
         const wd = el('div', 'wd'); wd.append(el('b', '', w.word), el('span', '', w.meaning));
         if (w.sentence) wd.append(el('small', '', w.sentence));
         row.append(cb, wd); wlist.append(row);
