@@ -355,7 +355,10 @@ async function send({ blob, ext, text }) {
         // d.message_id / d.audio_url 是教练的；用户译文语音条的字段带 user_ 前缀，这里映射成 fillMe 认的名字
         fillMe(mine, { user_pt: d.user_pt, user_text: d.user_text, message_id: d.user_message_id, audio_url: d.user_audio_url, row_id: d.user_row_id });
         addAI(d);
-        if (d.tts_fallback) toast('在线语音暂时不可用，已用本地语音代替');
+        const notes = [];
+        if (d.used_words?.length) notes.push('✅ 用到了：' + d.used_words.map(x => x.pt_word).join('、'));
+        if (d.tts_fallback) notes.push('在线语音暂时不可用，已用本地语音代替');
+        if (notes.length) toast(notes.join('；'));
     } catch (err) { typing.remove(); mine.parentNode.parentNode.remove(); toast(err.message); }
 }
 

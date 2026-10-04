@@ -30,12 +30,14 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   memory/user_manager.py          智能体资料(users表:PIN/背景/主题/tts/persona)
   memory/vocab_manager.py         单词库(vocab表,聊天里"拆解单词→加入单词库")
   memory/word_source.py           单词任务数据源:只读 WordMemorizer 的独立 SQLite(WORD_DB_PATH)
-  memory/word_planner.py          ★调度算法(纯函数,不碰数据库):Leitner盒子+工作日间隔+周六加练
-  memory/word_progress_manager.py ★进度存储:word_progress/word_week/word_daily_plan/word_outcomes 四张表
+  memory/word_planner.py          ★调度算法(纯函数,不碰数据库):Leitner盒子+工作日间隔+周六加练;另有 pick_chat_focus(聊天联动选目标词)
+  memory/word_progress_manager.py ★进度存储:word_progress/word_week/word_daily_plan/word_outcomes 四张表;另有 get_latest_week_ids / credit_chat_use(聊天加分)
+  memory/pt_text.py               ★葡语文本公共纯函数(P2):norm_pt / strip_parens / find_words(整词匹配);word_routes._norm_pt 即从这里导入
+  memory/chat_words.py            ★聊天联动异步薄封装(P2):pick_focus / detect_and_credit,所有异常吞掉并记日志
   memory/word_task_manager.py     每日"是否完成"记录(word_task_done)
   memory/word_error_manager.py    错词事件流(word_errors)
   memory/word_example_manager.py  ★生成例句缓存(P4):word_examples/word_example_use 两张表 + norm_sentence/pick_example 轮换
-  prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona)
+  prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona, focus_words=None)
   prompts/helper_prompts.py 中文求助翻译/语法解析/单词拆解提示词
   prompts/word_prompts.py   单词评判提示词(mode1 义项语义 / mode2 葡语是否说对目标词)+ 例句生成提示词 WORD_EXAMPLES_PROMPT,纯JSON输出
   tools/gen_examples.py     ★在用户机器上手动运行:给词批量生成 pt-PT 例句写入 word_examples(见「多例句轮换」一节)
@@ -49,11 +51,12 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 
 ## 聊天流水线(`/api/chat/audio`、`/api/chat/text` → `_run_turn`)
 1. `mode=zh`(中文求助)先用 `ZH2PT_PROMPT` 译成葡语,`user_pt` 才是进入教练历史的葡语;`mode=pt` 时 `user_pt == raw_text`。中文求助模式 ASR 必须显式传 `language="zh"`。
-2. 取最近 `LLM_HISTORY_TURNS` 轮历史;**系统提示词 = `build_system_prompt(persona)`**,persona 来自 `user_manager.get_persona(session_id)`(游客/没设 = 空串 = 默认 Tuga 老师;读取失败退回默认,不影响聊天)。
+2. 取最近 `LLM_HISTORY_TURNS` 轮历史;**系统提示词 = `build_system_prompt(persona, focus_words)`**,persona 来自 `user_manager.get_persona(session_id)`(游客/没设 = 空串 = 默认 Tuga 老师;读取失败退回默认,不影响聊天);`focus_words` 是聊天联动注入的目标词(见"聊天联动(P2)"一节,无目标词时提示词与原来逐字节相同)。
 3. 中文求助模式下,译出的葡语也并行合成一条语音(用户语音条);教练回复再合成。TTS 走 `synthesize_any(text, provider, voice)`,在线音源失败会兜底回 Piper,响应里 `tts_provider_used`/`tts_fallback` 告知实际用了谁。
 4. 语音落盘到 `data/replies/`,文件名 `msg_{uuid12hex}.(wav|mp3)`;缓存型在线音源(google/edge/streamelements)只能 **copy**,Piper 临时文件 **move**。
 5. `session_manager.add_turn` 原子写入用户+教练两行并返回 `user_row_id`/`ai_row_id`(前端删除一轮靠它)。教练行存 `msg_uid`/`audio_file`;用户行存 `content=user_pt, orig=raw_text`,中文求助模式下还有自己的 `msg_uid`/`audio_file`。
 6. 响应体固定用 `audio_url`(不含 base64)。**改响应字段时前端 `audioUrl()`/`fillMe()`/`addAI()` 要同步检查。**
+7. `add_turn` 成功之后(失败的轮次不加分),`CHAT_WORD_LINK` 开且有目标词且 `mode=="pt"` 时检测用户用了哪些目标词并加分;响应里**总是**带 `used_words`(见"聊天联动(P2)")。
 
 ## 聊天页功能要点
 - **长按语音条菜单**:原文 / 翻译中文 / 语法解析 / 拆解单词 / 🔁 重新生成语音 / 🗑 删除这一轮 / 取消。
@@ -63,6 +66,17 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - **绑定智能体弹窗**含:绑定/恢复、音源四选一(本地 Piper/谷歌/Edge/SE)、音色(只有 edge 和 streamelements 有多音色)、角色人设(模板按钮 + ≤300 字文本框,游客禁用)。
 - **音色白名单**:前端 `VOICE_OPTIONS` 与后端 `tts_engine.EDGE_VOICES`/`STREAMELEMENTS_VOICES` 必须一致,改一边另一边同步;`/user/{u}/tts` 对非法音源/音色直接 422,不静默丢弃。
 - **角色人设**:`PERSONA_MAX=300`,前端 `PERSONA_MAX` 与后端 `user_manager.PERSONA_MAX` 一致;`clean_persona` 去控制字符和 `<>`(人设包在 `<persona>` 标签里拼进系统提示词,防标签注入);超长直接 422 不静默截断;空串=清除。每轮对话都会带上人设,所以要限长省 token。
+- **用词提示**:`/chat/*` 响应的 `used_words` 非空时,`index.js` 在 `addAI(d)` 之后弹 toast「✅ 用到了:xxx」,与 `tts_fallback` 的提示合并成一条(`toast` 一次只显示一条;内部用 `textContent`,不要改成 `innerHTML`)。重新生成语音那处的 `tts_fallback` 提示是另一个函数,不动。
+
+## 聊天联动(P2)
+- **做什么**:教练聊天时自然带入用户最弱的几个词;用户在对话里用到了,该词熟练度加一点。开关 `CHAT_WORD_LINK`(默认开;`.env` 写 `CHAT_WORD_LINK=0` 并重启即可关闭,不用改代码);`CHAT_WORD_N`(每轮最多给教练几个目标词,默认 5)。这两项在 `config.py`,走环境变量。
+- **目标词**:`word_planner.pick_chat_focus(progress, week_ids, n)`(纯函数)——未掌握且最弱的词(`lapses` 降序 → 上次 `again` 优先 → `hard_streak` 降序 → `box` 升序 → `word_id`)+ 最多 `CHAT_FOCUS_NEW`(2)个本周还没进入进度表的新词,共 ≤ `CHAT_WORD_N`。本周词表来自 `word_progress_manager.get_latest_week_ids`(`word_week` 里 `week_start` 最大的那周;`week_start` 是周计划起始日即周日,不是周一)。
+- **注入**:`build_system_prompt(persona, focus_words)`;`_FOCUS_SECTION` 让教练每轮最多自然带入 1~2 个词,不改人设/A1/简短/`Correção:` 等规则;词包在 `<focus_words>` 标签里当数据(清洗:只留字符串、去 `<>` 和换行、截断 30 字符、最多 5 个)。无目标词时提示词与改动前逐字节相同。**提示词每轮多约 100~150 token**,嫌贵就调小 `CHAT_WORD_N` 或压缩 `_FOCUS_SECTION`。
+- **检测**:`chat_words.detect_and_credit`——仅 `mode == "pt"`;`pt_text.find_words` 整词/整短语匹配(不做词形变化/模糊,`casas` 不命中 `casa`);目标词去括号、按 `/,;` 拆变体,去空格后少于 3 个字母的不参与;排除教练**上一句**里已出现的词(防鹦鹉学舌)。只检测当前注入的目标词。
+- **加分**:`word_progress_manager.credit_chat_use`——每词每天最多生效一次(`last_used_on == today` 跳过);没有进度行或已掌握的跳过;只有 `box <= 2` 才 `+1`(**封顶 3,聊天绝不让词毕业**,毕业只能靠单词任务测试);`due_date/lapses/streak/last_outcome/mode2_ok/mastered` 一律不动。`used_count`/`last_used_on` 每次生效都记(box ≥ 3 时只记次数不加分)。
+- **接口**:`/api/chat/audio`、`/api/chat/text` 响应新增 `used_words: [{word_id, pt_word, boosted}]`(总是存在)。`boosted:false` = 用到了但没加分(今天已加过 / box ≥ 3)。前端 `index.js` 在 `addAI` 之后弹"✅ 用到了:…",与 `tts_fallback` 提示合并成一条 toast。
+- **故障隔离**:`chat_words.py` 里所有异常吞掉并 `logger.exception`,聊天主流程不受影响;加分失败时命中的词仍返回(`boosted:false`)。失败的轮次(LLM/TTS 出错)不加分。
+- **回退**:`.env` 加 `CHAT_WORD_LINK=0` 重启即可。
 
 ## 单词拆解 & 单词库(长按教练语音条 → 🧩 拆解单词)
 - `POST /api/breakdown`(FormData: text,message_id?,session_id)。**教练一条回复可能是好几句拼在一起**(典型:`"Correção: ...\n\n..."`),`BREAKDOWN_PROMPT` 要求先按自然边界拆句、去掉 `Correção:` 前缀,再逐句给词;每个词自带 `sentence`/`sentence_zh`(所在那一句原文+中文),**不要退回"整段话当一个例句"**。
@@ -101,6 +115,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 | `SATURDAY_MAX` | 10 | 周六任务总上限 |
 | `CLOZE_ENABLED` | True | 句子填空(mode 3)总开关;改回 False 重启即可回退 |
 | `CLOZE_MAX` | 6 | 一天最多几道填空题 |
+| `CHAT_FOCUS_NEW` | 2 | 聊天联动:目标词里最多留几个"本周还没测过的新词"名额 |
 
 ## 每个词当天结果(只看第一轮,每词每天只结算一次)
 前端 `noteOutcome` 判定,点"完成"时随 `/words/complete` 提交 `outcomes`:
@@ -123,6 +138,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 
 ## word_progress 表与迁移
 `word_progress(session_id, word_id, box, due_date, streak, lapses, hard_streak, introduced_on, last_mode, last_outcome, mode2_ok, mastered)`,主键 (session_id, word_id)。
+另有两列 `used_count`(聊天里用到的累计次数)、`last_used_on`(最近一次生效日期,TEXT,默认空串)——P2 后加,**不在 `_COLS` 里**(所以 `new_row`/`_upsert`/`get_progress` 都看不到它们),只被 `credit_chat_use` 读写。
 `hard_streak` 是后加的列:`word_progress_manager.init_db()` 用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE ... DEFAULT 0`(幂等,旧库不用删)。`apply_outcome` 对没有该键的旧 row 用 `setdefault` 兼容。**以后给这张表加列照这个模式。**
 其余三张:`word_week`(每周 30 词及顺序)、`word_daily_plan`(当天计划,kind 含 `preview`)、`word_outcomes`(主键 (session_id,task_date,word_id),保证"一天只结算一次";`yesterday_rate` 取最近一个学习日的 good 占比)。`word_task_done` 由 `word_task_manager` 管,`word_errors` 由 `word_error_manager` 管(每次答错一行,`pt_word`/`cn_meaning` 是快照,目前只记录不参与调度)。
 `settle` 只认今天计划里的词(不信前端传的 id),且 `outcome`/`mode` 过枚举校验。
@@ -174,8 +190,8 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 | 接口 | 说明 |
 |---|---|
 | `GET /api/health` | 健康检查 |
-| `POST /api/chat/audio` | FormData: audio,session_id,mode(pt/zh),tts_provider,tts_voice? |
-| `POST /api/chat/text` | FormData: session_id,text,mode,tts_provider,tts_voice? |
+| `POST /api/chat/audio` | FormData: audio,session_id,mode(pt/zh),tts_provider,tts_voice?。响应含 `used_words: [{word_id,pt_word,boosted}]`(总是存在,没有就是 `[]`) |
+| `POST /api/chat/text` | FormData: session_id,text,mode,tts_provider,tts_voice?。响应同上含 `used_words` |
 | `GET /api/history?session_id=&limit=30&before_id=` | `{messages,has_more}`,含缓存的 translation/explanation;游标分页 |
 | `POST /api/translate` `POST /api/explain` | FormData: text,message_id?,session_id(占位)。有 message_id 且有缓存则不再调 LLM |
 | `POST /api/breakdown` | FormData: text,message_id?,session_id → `{words:[{word,meaning,sentence,sentence_zh}]}` |
@@ -223,7 +239,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - `tts_engine.py`:`clean_text_for_tts()` 清 Markdown 符号和换行,**改系统提示词/新增回复内容时让 LLM 别输出 Markdown**。四个音源:`piper`(本地子进程,每次带 uuid 临时文件)、`google`(翻译接口,`GOOGLE_TTS_MAX_CHARS` 限长)、`edge`、`streamelements`;后三者带按文本(+音色)哈希的缓存目录,`CACHED_PROVIDERS` 里的文件只能 copy 不能 move。`synthesize_any(..., force=True)` 跳过缓存读取。
 
 ## 存储(SQLite,同一个 `SQLITE_PATH`,表之间无外键,靠 `session_id` 约定串联)
-- `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak` 同理。三处都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
+- `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak`/`used_count`/`last_used_on` 同理。这些都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
 - `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
 - `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
 - 单词相关五张表见"单词任务"一节;P4 另有 `word_examples` / `word_example_use` 两张(见"多例句轮换"一节,由 `word_example_manager` 管)。WordMemorizer 是**另一个**只读 SQLite 文件,不要往里写(`gen_examples.py` 也只读它)。
@@ -239,6 +255,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - 单词任务进度(`todoList`/`failedList`/`outcomes`)只在前端内存,刷新或中途退出会丢,该天计划不变、可重新领取。
 - 填空只做精确匹配,模糊匹配(共享前缀 + 相似度)是未做的后续项。
 - 例句轮换的"今天已用"按服务器日期 `today_str()` 判定;`record_use` 是在读取 `/today` 时写的,不是用户真正答题时,所以轮换进度按"每天一轮"推进。
+- 聊天联动只检测当前注入的目标词,聊天里用了别的已学词不加分(有意,限成本、防刷);ASR 听错的词不会被计数(宁可漏判不误判);`used_words` 里 `boosted:false` 的词(今天已加过 / box ≥ 3)只提示不加分;中文求助模式不加分。别顺手放宽成"检测所有已学词"或"允许聊天让词毕业"。
 - 生成例句没有人工审核;只有跑过 `gen_examples.py --week/--active` 的词才有,老词继续只用原例句——别顺手"给全词库批量生成"。
 
 ## 回复用户时的默认做法
