@@ -17,7 +17,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   words.html / css/words.css / js/words.js                                单词任务页(复用 index.css;聊天页 header 的 📚 进入)
   sounds/success.wav, sounds/fail.wav                                      单词页答对/答错音效(缺文件静默不播)
 后端:
-  main.py                  FastAPI入口,挂 /api 下三个路由 + startup 依次 init_db(session/user/vocab/word_error/word_task/word_progress/word_example)+ WS骨架
+  main.py                  FastAPI入口,挂聊天/用户/单词/管理 API 路由 + startup 初始化各 manager(SQLite)
   run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
   config.py                全局配置,读.env(ASR/LLM/TTS/WORD_*/SQLITE_PATH/CORS)
   api/routes.py            聊天核心:/chat/*,/history,/translate,/explain,/breakdown,/regenerate_audio,/audio,/session,/message,/vocab
@@ -28,8 +28,11 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   core/tts_engine.py       Piper子进程 + 谷歌/Edge/StreamElements在线音源(带缓存) + synthesize_any 统一入口
   memory/session_manager.py       对话历史(messages表)
   memory/user_manager.py          智能体资料(users表:PIN/背景/主题/tts/persona)
-  memory/vocab_manager.py         单词库(vocab表,聊天里"拆解单词→加入单词库")
-  memory/word_source.py           单词任务数据源:只读 WordMemorizer 的独立 SQLite(WORD_DB_PATH)
+  memory/vocab_manager.py         旧 vocab 表查询接口
+  memory/newword_manager.py       聊天拆词后加生词:写入 NewWords(与 WordMemorizer 共用服务端库)
+  memory/word_source.py           单词任务数据源:只读服务端 SQLite 中的 Words / WeeklyPlans(WORD_DB_PATH 默认与 SQLITE_PATH 相同)
+  memory/wm_manager.py            WordMemorizer 六张管理表的建表与读写(与陪练共用 sessions.db)
+  api/admin_routes.py             WordMemorizer 管理 API:/api/admin/*
   memory/word_planner.py          ★调度算法(纯函数,不碰数据库):Leitner盒子+工作日间隔+周六加练;另有 pick_chat_focus(聊天联动选目标词)
   memory/word_progress_manager.py ★进度存储:word_progress/word_week/word_daily_plan/word_outcomes 四张表;另有 get_latest_week_ids / credit_chat_use(聊天加分)
   memory/pt_text.py               ★葡语文本公共纯函数(P2):norm_pt / strip_parens / find_words(整词匹配);word_routes._norm_pt 即从这里导入
@@ -88,7 +91,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 # 单词任务(每周动态调度 · 间隔重复)
 
 ## 数据来源
-`word_source.py` 只读 **WordMemorizer** 的独立 SQLite(`WORD_DB_PATH`,`PRAGMA query_only`):`WeeklyPlans`(StartDate 周日 ~ EndDate 周六,每周日录入 30 个新词)→ `WeeklyPlanWords.WordId` → `Words`。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。**不再是 Mock**。库文件不存在时返回空列表并记日志。
+`word_source.py` 通过只读连接(`PRAGMA query_only`)从服务端数据库读取 `WeeklyPlans` → `WeeklyPlanWords` → `Words`。WordMemorizer 的六张表与陪练数据共存于 `SQLITE_PATH` 指定的 `sessions.db`；`WORD_DB_PATH` 默认自动跟随 `SQLITE_PATH`，不要再把它当作独立的客户端数据库。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。库文件不存在时返回空列表并记日志。WordMemorizer 通过服务端 `/api/admin/*` 管理接口读写这些数据。
 `WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`,若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。
 
 ## 一周节奏(周日~周六)
@@ -238,11 +241,12 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - `asr_engine.py`:全局单例 + `asyncio.Lock` 双重检查,防并发重复加载;Windows 下 import 前手动加 torch/cublas/cudnn 的 DLL 目录。中文求助必须传 `language="zh"`,否则按葡语解码乱码。
 - `tts_engine.py`:`clean_text_for_tts()` 清 Markdown 符号和换行,**改系统提示词/新增回复内容时让 LLM 别输出 Markdown**。四个音源:`piper`(本地子进程,每次带 uuid 临时文件)、`google`(翻译接口,`GOOGLE_TTS_MAX_CHARS` 限长)、`edge`、`streamelements`;后三者带按文本(+音色)哈希的缓存目录,`CACHED_PROVIDERS` 里的文件只能 copy 不能 move。`synthesize_any(..., force=True)` 跳过缓存读取。
 
-## 存储(SQLite,同一个 `SQLITE_PATH`,表之间无外键,靠 `session_id` 约定串联)
+## 存储(SQLite)
 - `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak`/`used_count`/`last_used_on` 同理。这些都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
 - `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
 - `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
-- 单词相关五张表见"单词任务"一节;P4 另有 `word_examples` / `word_example_use` 两张(见"多例句轮换"一节,由 `word_example_manager` 管)。WordMemorizer 是**另一个**只读 SQLite 文件,不要往里写(`gen_examples.py` 也只读它)。
+- 陪练自身的 `messages`、`users`、`word_*` 等表与 WordMemorizer 的 `Words`、`WeeklyPlans`、`WeeklyPlanWords`、`ScoreRecord`、`ConsumeLog`、`NewWords` 六张表共用同一个 `SQLITE_PATH` 数据库。后六张表保留 PascalCase 表名，由 FastAPI 的 `wm_manager` 管理；WordMemorizer 通过 `/api/admin/*` 读写，陪练的 `word_source.py` 和 `newword_manager.py` 按 `WORD_DB_PATH` 只读/写入相应数据。WAL 开启时备份必须使用 `tools/backup_db.py` 的 SQLite backup API，不要直接复制 `.db` 文件。
+- P4 另有 `word_examples` / `word_example_use` 两张表(见"多例句轮换"一节,由 `word_example_manager` 管)。它们也在服务端 `SQLITE_PATH` 数据库中；`gen_examples.py` 读取 `Words` 并写入例句表。
 
 ## 已知简化 / 别顺手"修复"
 - 没有鉴权 token,身份完全基于 username 明文 + 可选 PIN;生产部署前需要补鉴权/限流(README 已标待办)。
