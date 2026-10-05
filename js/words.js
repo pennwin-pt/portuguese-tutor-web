@@ -30,6 +30,20 @@ function ttsCfg() {                                // 聊天页里给当前智�
 }
 
 const toast = m => { $('#toast')?.remove(); const t = el('div', '', m); t.id = 'toast'; document.body.append(t); setTimeout(() => t.remove(), 2200); };
+let points = { correct_count: 0, today_count: 0, consumed_total: 0, balance: 0 };
+let runId = null, roundScore = 0;
+function renderPoints() {
+    const p = $('#points');
+    if (p) p.textContent = `累计得分：${points.correct_count} · 今日得分：${points.today_count} · 余额：${points.balance} · 本轮得分：${roundScore}`;
+}
+async function refreshPoints() {
+    try { points = await get('/api/admin/points'); renderPoints(); if (state === 'done') render(); }
+    catch { /* 积分 API 不可用时不阻断单词学习 */ }
+}
+async function openRun(restart = false) {
+    const r = await post('/api/words/run', { session_id: sid, restart });
+    runId = r.run_id; roundScore = r.round_score || 0; renderPoints();
+}
 
 /* ---------- 网络（同 index.js 的 req） ---------- */
 const errMsg = j => typeof j.detail === 'string' ? j.detail
@@ -306,7 +320,8 @@ function viewSunDone() {                             // 周日以测代看完成
 function viewDone() {
     if (summary?.sun) return viewSunDone();
     const s = summary, c = el('div', 'wcard');
-    const lines = [`共 ${s.total} 个单词，用了 ${s.rounds} 轮`, `一次通过 ${s.first_pass} 个 · 共评判 ${s.attempts} 次`];
+    const lines = [`本轮得分 ${s.round_score ?? roundScore} 分 · 今日得分 ${points.today_count} 分 · 累计得分 ${points.correct_count} 分 · 当前余额 ${points.balance} 分`,
+        `共 ${s.total} 个单词，用了 ${s.rounds} 轮`, `一次通过 ${s.first_pass} 个 · 共评判 ${s.attempts} 次`];
     const at = fmtTime(s.completed_at);
     if (at) lines.push(`完成于 ${at}` + (s.times > 1 ? ` · 今天第 ${s.times} 次完成` : ''));
     c.append(el('div', 'term', s.fresh ? '🎉 今日任务完成' : '✅ 今日任务已完成'),
@@ -385,14 +400,17 @@ async function start() {
         if (previewOnly()) { const s = sunSaved(); beginSun(!!s && !s.done); return; }      // 只有可浏览的词（周日）：以测代看（有未完成的断点就继续）；只看列表走 #act2
         if (!today.words.length) return toast('今天没有单词任务');
         if (today.completed) showDone(today.completed, false);     // 重试时发现今天其实已经完成了
-        else begin(today.words);
+        else { await openRun(false); begin(today.words); }
     } catch (err) { toast('领取失败：' + err.message); }
     finally { btn.disabled = false; }
 }
-function restart() {                                // 今日已完成后选择“重新学习”：同一批单词从头再测，不需要再请求
+async function restart() {                          // 今日已完成后重新学习：创建新批次
     if (sunMode) { unlock(); beginSun(false); return; }      // 周日以测代看测完后“再测一遍”
     if (!today?.words.length) return;
-    unlock(); begin(today.words);
+    unlock(); const btn = $('#act'); btn.disabled = true;
+    try { await openRun(true); begin(today.words); }
+    catch (err) { toast('开始重新学习失败：' + err.message); }
+    finally { btn.disabled = false; }
 }
 function showDone(rec, fresh) { cur = null; summary = { ...rec, fresh }; state = 'done'; render(); }
 function finish() {                                 // 所有单词都通过：先把当天结果提交给服务器（结算复习进度 + 记完成），再进预习 / 成绩页
@@ -402,14 +420,14 @@ function finish() {                                 // 所有单词都通过：�
         summary = { rounds: round, total, first_pass: firstPass, pass2, attempts, weak: [...weak], sun: true, fresh: true };
         showDone(summary, true); return;
     }
-    cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, fresh: true };
+    cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, round_score: roundScore, fresh: true };
     if (today?.preview?.length && !today.completed) { state = 'preview'; render(); }    // 重新学习时不再预习
     else showDone(summary, true);
-    post('/api/words/complete', { session_id: sid, rounds: round, first_pass: firstPass, attempts, outcomes: Object.values(outcomes) })
+    post('/api/words/complete', { session_id: sid, run_id: runId, rounds: round, first_pass: firstPass, attempts, outcomes: Object.values(outcomes) })
         .then(d => {
             if (!d.completed) return;
             if (today) today.completed = d.completed;
-            if (summary?.fresh) { summary = { ...d.completed, fresh: true }; if (state === 'done') render(); }   // 换成服务器的记录（含完成时间、次数）
+            if (summary?.fresh) { summary = { ...d.completed, round_score: roundScore, fresh: true }; if (state === 'done') render(); }   // 换成服务器的记录（含完成时间、次数）
         })
         .catch(err => toast('完成记录保存失败：' + err.message));
 }
@@ -470,8 +488,12 @@ async function evaluate(blob, ext) {
     state = 'judging'; render();
     const fd = new FormData();
     fd.append('audio', blob, 'rec.' + ext); fd.append('word_id', w.id); fd.append('mode', w.mode);
+    if (!sunMode && runId) { fd.append('session_id', sid); fd.append('run_id', runId); }
     try {
         const d = await post('/api/words/evaluate', fd);
+        if (d.earned) roundScore = d.round_score || (roundScore + 1);
+        else if (d.round_score != null) roundScore = d.round_score;
+        if (d.earned) await refreshPoints(); else renderPoints();
         attempts++; lastRes = d;
         if (d.passed) {
             noteOutcome(w);
@@ -656,8 +678,10 @@ holdBtn.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ---------- 启动：先看今天是不是已经完成了 ---------- */
 render();
+renderPoints();
+refreshPoints();
 (async () => {
     try { await fetchToday(); } catch (err) { toast('加载今日任务失败：' + err.message); }
-    if (today?.completed && today.words.length) showDone(today.completed, false);
+    if (today?.completed && today.words.length) { roundScore = today.completed.round_score || 0; renderPoints(); showDone(today.completed, false); }
     else { state = 'idle'; render(); }                      // 没完成 / 加载失败（点“领取”会重试）
 })();
