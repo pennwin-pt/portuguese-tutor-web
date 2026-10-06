@@ -22,7 +22,7 @@ sounds/success.wav, fail.wav                                         答对/答�
 - 长按教练语音条 → `#sheet` 菜单：原文 / 翻译中文 / 语法解析 / 拆解单词 / 重新生成语音 / 删除这一轮。
 - 长按标题 `h1` = 清空对话。
 - 面板（绑定智能体 `#umask`、背景与主题 `#tmask`、拆解单词 `#wmask`）都是 `.mask` 底部弹层，由统一的点击遮罩/`data-close` 关闭。
-- 绑定智能体面板含：绑定/恢复、音源四选一（piper 本地 / google / edge / streamelements=SE）、音色（只有 edge 和 SE 有多音色）、角色人设（模板按钮 + ≤300 字，游客禁用）。
+- 绑定智能体面板含：绑定/恢复、音源三选一（piper 本地 / google / edge）、音色（只有 edge 有多音色）、角色人设（模板按钮 + ≤300 字，游客禁用）。
 - 历史分页：`GET /api/history?session_id=&limit=30&before_id=` 返回 `{messages,has_more}`，用 `row_id` 做游标，上滑到顶加载更早的（`HIST_PAGE=30`）。
 - toast 一次只显示一条，内部用 `textContent`，**不要改成 `innerHTML`**。`/chat/*` 响应的 `used_words` 非空时弹「✅ 用到了：xxx」，与 `tts_fallback` 提示合并成一条。
 

@@ -17,17 +17,16 @@ if (!NAME_RE.test(username)) username = '';
 let sid = username || guestSid;
 let mode = 'pt', textMode = false, cur = null, playingPill = null, holding = false;
 
-const TTS_PROVIDERS = ['piper', 'google', 'edge', 'streamelements'];
+const TTS_PROVIDERS = ['piper', 'google', 'edge'];
 const TTS_HINTS = {
     piper: '本地离线合成，速度最快，不挑网络',
     google: '谷歌在线语音，音质一般，每日次数有限',
     edge: '微软 Edge 在线语音，音质最自然（推荐）',
-    streamelements: 'StreamElements 在线语音，Edge 不可用时的备选',
 };
-const TTS_SHORT = { piper: '本地', google: '谷歌', edge: 'Edge', streamelements: 'SE' };
+const TTS_SHORT = { piper: '本地', google: '谷歌', edge: 'Edge' };
 const ttsSeg = $('#ttsSeg'), voiceHint = $('#voiceHint');
 // 音色是"每个智能体各自一份"：按当前 sid（绑定的智能体名 / 游客 sid）存在 localStorage 的 tts_<sid> 里，
-// 切换智能体时重新读取。ttsVoices 形如 {edge:'pt-PT-DuarteNeural', streamelements:'Ines'}。
+// 切换智能体时重新读取。ttsVoices 形如 {edge:'pt-PT-DuarteNeural'}。
 let ttsProvider = 'piper', ttsVoices = {};
 const ttsKey = () => 'tts_' + sid;
 // 只保留合法的音色（key 必须是有多音色的音源，value 必须在 VOICE_OPTIONS 白名单里），本地和服务器都存干净的
@@ -52,7 +51,7 @@ function loadTts() {
     if (!cfg) {                                     // 该智能体还没设置过：把旧版全局设置一次性迁移过来，之后就是新智能体默认本地音色
         const old = localStorage.getItem('ttsProvider');
         if (old) {
-            cfg = { provider: old, voices: { edge: localStorage.getItem('ttsVoice_edge'), streamelements: localStorage.getItem('ttsVoice_streamelements') } };
+            cfg = { provider: old, voices: { edge: localStorage.getItem('ttsVoice_edge') } };   // 旧版 streamelements 已下线：provider 不在白名单会回退本地，残留的 ttsVoice_streamelements 在下一行一并清掉
             ['ttsProvider', 'ttsVoice_edge', 'ttsVoice_streamelements'].forEach(k => localStorage.removeItem(k));
             ttsProvider = TTS_PROVIDERS.includes(cfg.provider) ? cfg.provider : 'piper'; ttsVoices = cleanVoices(cfg.voices); saveTtsLocal(); return;
         }
@@ -61,16 +60,12 @@ function loadTts() {
     ttsVoices = cleanVoices(cfg && cfg.voices);
 }
 
-// 只有 edge / streamelements 有多个音色可选；key 要跟后端 tts_engine.py 里的
-// EDGE_VOICES / STREAMELEMENTS_VOICES 白名单完全一致，改一边另一边要同步改。
+// 只有 edge 有多个音色可选；key 要跟后端 tts_engine.py 里的
+// EDGE_VOICES 白名单完全一致，改一边另一边要同步改。
 const VOICE_OPTIONS = {
     edge: {
         'pt-PT-RaquelNeural': '女声 Raquel',
         'pt-PT-DuarteNeural': '男声 Duarte',
-    },
-    streamelements: {
-        'Ines': '女声 Ines',
-        'Cristiano': '男声 Cristiano',
     },
 };
 const voiceOptSeg = $('#voiceOptSeg');

@@ -24,7 +24,7 @@ const sid = username || guestSid;
 
 function ttsCfg() {                                // 聊天页里给当前智能体选的音源 / 音色，朗读单词沿用；音色白名单在后端校验
     let c = null; try { c = JSON.parse(localStorage.getItem('tts_' + sid)); } catch {}
-    const provider = c && ['piper', 'google', 'edge', 'streamelements'].includes(c.provider) ? c.provider : 'piper';
+    const provider = c && ['piper', 'google', 'edge'].includes(c.provider) ? c.provider : 'piper';
     const v = c && c.voices && typeof c.voices[provider] === 'string' ? c.voices[provider] : null;
     return { provider, voice: v };
 }
