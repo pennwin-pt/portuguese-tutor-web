@@ -100,9 +100,41 @@ function spk(w, kind) {
     return b;
 }
 
+/* ---------- 单词来源：图片关联 / 聊天上下文 ---------- */
+const sourceDialog = $('#source-dialog');
+const sourceImage = $('#source-image'), sourceRemark = $('#source-remark'), sourceEmpty = $('#source-empty');
+function sourceButton(w) {
+    if (![1, 2].includes(Number(w.source))) return null;
+    const b = el('button', 'source-btn', '查看来源'); b.type = 'button';
+    b.onclick = () => {
+        sourceImage.hidden = sourceRemark.hidden = sourceEmpty.hidden = true;
+        sourceImage.onerror = null;
+        sourceImage.removeAttribute('src');
+        if (Number(w.source) === 1) {
+            sourceDialog.querySelector('#source-title').textContent = '图片来源';
+            if (Number(w.reference_image_number) > 0) {
+                sourceImage.src = `${API}/api/words/source-image/${encodeURIComponent(w.reference_image_number)}`;
+                sourceImage.hidden = false;
+                sourceImage.onerror = () => { sourceImage.hidden = true; sourceEmpty.textContent = '找不到这张来源图片。'; sourceEmpty.hidden = false; };
+            } else {
+                sourceEmpty.textContent = '这个单词没有关联图片编号。'; sourceEmpty.hidden = false;
+            }
+        } else {
+            sourceDialog.querySelector('#source-title').textContent = '聊天来源';
+            if ((w.remark || '').trim()) { sourceRemark.textContent = w.remark; sourceRemark.hidden = false; }
+            else { sourceEmpty.textContent = '这个单词还没有保存聊天上下文。'; sourceEmpty.hidden = false; }
+        }
+        sourceDialog.showModal();
+    };
+    return b;
+}
+function appendSourceButton(parent, w) { const b = sourceButton(w); if (b) parent.append(b); }
+$('#source-close').onclick = () => sourceDialog.close();
+sourceDialog.addEventListener('click', e => { if (e.target === sourceDialog) sourceDialog.close(); });
+
 /* ---------- 任务状态 ----------
    Word Item（与后端 memory/word_source.py 的 WordItem 一致）：
-   { id, pt_word, cn_meaning, pt_sentence, cn_sentence, mode }   mode: 1=看葡语说中文, 2=看中文说葡语, 3=句子填空（多一个 cloze 字段，含 ____ 占位；可能带 ex＝生成例句编号）,
+   { id, pt_word, cn_meaning, pt_sentence, cn_sentence, source, remark, reference_image_number, mode }   mode: 1=看葡语说中文, 2=看中文说葡语, 3=句子填空（多一个 cloze 字段，含 ____ 占位；可能带 ex＝生成例句编号），
    4=造句（说一句用到目标词的话，评判返回 corrected；无 cloze、无 ex）
    state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示 | preview 预习明天的词（不评分）
           | done 今日已完成（刚通关，或打开页面时服务器记录显示今天早已完成；都可以“重新学习”） */
@@ -231,13 +263,14 @@ function viewSentence(w, c) {                        // 模式 4：造句。全�
 function viewTest() {
     const w = cur, c = el('div', 'wcard');
     if (KIND_LABEL[w.kind]) c.append(el('div', 'kind', KIND_LABEL[w.kind]));
-    if (w.mode === 3 && w.cloze) return viewCloze(w, c);     // cloze 缺失时（理论上不会）自然落到下面按 mode 2 渲染
-    if (w.mode === 4) return viewSentence(w, c);
+    if (w.mode === 3 && w.cloze) { viewCloze(w, c); appendSourceButton(c, w); return c; } // cloze 缺失时（理论上不会）自然落到下面按 mode 2 渲染
+    if (w.mode === 4) { viewSentence(w, c); appendSourceButton(c, w); return c; }
     c.append(el('div', 'tag', w.mode === 1 ? '🇵🇹 → 🇨🇳 看葡语，说中文' : '🇨🇳 → 🇵🇹 看中文，说葡语'));
     const row = el('div', 'termrow');
     row.append(el('div', 'term', w.mode === 1 ? w.pt_word : w.cn_meaning));
     if (w.mode === 1) row.append(spk(w, 'word'));         // 模式 1：可以随时重听单词读音
     c.append(row, el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : (w.mode === 1 ? '请用中文说出它的意思' : '请用葡语说出这个词')));
+    appendSourceButton(c, w);
     return c;
 }
 function viewReveal() {                              // 周日以测代看 ①：先露答案（进入时自动朗读单词），看熟了再点“开始说”
@@ -252,6 +285,7 @@ function viewReveal() {                              // 周日以测代看 ①�
         r.append(t, spk(w, 'sentence')); ans.append(r); c.append(ans);
     }
     c.append(el('div', 'hint', '看熟了点“开始说”，下一步会盖住答案考你'));
+    appendSourceButton(c, w);
     return c;
 }
 function viewResult() {
@@ -273,6 +307,7 @@ function viewResult() {
     t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
     r3.append(t3, spk(w, 'sentence'));
     ans.append(r1, r3); c.append(ans);
+    appendSourceButton(c, w);
     if (sunMode) return c;                           // 周日以测代看不碰学习进度：不放“我已掌握”（它会改服务器进度）
     const mb = el('button', 'mbtn', '✅ 我已掌握，以后不再复习'); mb.type = 'button';
     mb.onclick = () => markMastered(mb);
@@ -289,7 +324,7 @@ function viewPreview() {                            // 预习：只看、只听�
         const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
         tx.append(el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
         if (w.pt_sentence) tx.append(el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
-        r1.append(tx, spk(w, 'word'));
+        r1.append(tx); const sb = sourceButton(w); if (sb) r1.append(sb); r1.append(spk(w, 'word'));
         row.append(r1); list.append(row);
     }
     c.append(list);
@@ -311,7 +346,7 @@ function viewSunDone() {                             // 周日以测代看完成
             const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
             tx.append(el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
             if (w.pt_sentence) tx.append(el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
-            r1.append(tx, spk(w, 'word')); row.append(r1); list.append(row);
+            r1.append(tx); const sb = sourceButton(w); if (sb) r1.append(sb); r1.append(spk(w, 'word')); row.append(r1); list.append(row);
         }
         c.append(list);
     }

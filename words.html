@@ -30,6 +30,16 @@
 </div>
 <div id="rec" hidden><div class="wave"><i></i><i></i><i></i><i></i><i></i></div><span>正在录音… 上滑取消</span></div>
 
+<dialog id="source-dialog" aria-labelledby="source-title">
+  <div class="source-dialog-head">
+    <h2 id="source-title">单词来源</h2>
+    <button id="source-close" class="ib" type="button" aria-label="关闭">×</button>
+  </div>
+  <img id="source-image" alt="单词关联图片" hidden>
+  <pre id="source-remark" hidden></pre>
+  <p id="source-empty" hidden></p>
+</dialog>
+
 <audio id="player" playsinline></audio>
 
 <script src="js/words.js"></script>

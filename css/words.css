@@ -25,6 +25,19 @@
 /* 喇叭按钮 */
 .spk{flex:none;width:40px;height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;border:1.5px solid var(--blue);border-radius:50%;background:#fff;color:var(--blue);font-size:18px;line-height:1;touch-action:manipulation;-webkit-appearance:none}
 .spk.play{animation:pulse .8s infinite}
+.source-btn{flex:none;min-height:38px;padding:0 12px;border:1.5px solid var(--blue);border-radius:20px;background:#fff;color:var(--blue);font-size:14px;font-weight:600;touch-action:manipulation}
+.wcard > .source-btn{margin-top:16px}
+
+/* 来源弹窗 */
+#source-dialog{width:min(92vw,680px);max-height:88vh;padding:18px;border:0;border-radius:18px;box-shadow:0 12px 44px rgba(0,0,0,.25);color:var(--tx)}
+#source-dialog::backdrop{background:rgba(15,23,42,.58)}
+.source-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+.source-dialog-head h2{margin:0;font-size:19px}
+#source-dialog #source-close{flex:none;width:36px;height:36px;border:0;border-radius:50%;background:#f1f5f9;color:var(--tx);font-size:24px}
+#source-image{display:block;max-width:100%;max-height:calc(88vh - 100px);margin:0 auto;object-fit:contain}
+#source-image[hidden]{display:none}
+#source-remark{max-height:calc(88vh - 100px);overflow:auto;margin:0;padding:14px;border-radius:10px;background:#f7f9fc;font:inherit;font-size:15px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+#source-empty{margin:8px 0;color:var(--sub)}
 
 /* 结果阶段 */
 .verdict{font-size:22px;font-weight:700}
