@@ -6,16 +6,28 @@ html,body{height:100%;margin:0;font:16px/1.5 -apple-system,"PingFang SC","Noto S
 #bg{position:fixed;inset:0;z-index:0;background:center/cover no-repeat}
 #bg::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.4)}
 #bg:not(.on){display:none}
-header{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 8px;background:var(--blue);color:#fff}
+header{position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:6px;padding:calc(env(safe-area-inset-top,0px) + 8px) 12px 8px;background:var(--blue);color:#fff}
 #ttl{flex:0 1 auto;min-width:0;max-width:34vw;text-align:center}
 header h1{margin:0;font-size:17px;font-weight:600;letter-spacing:.3px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #agentVoice{display:block;font-size:10.5px;line-height:1.2;color:rgba(255,255,255,.88);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #st{flex:1 1 0;min-width:0;font-size:12px;display:flex;align-items:center;gap:5px;white-space:nowrap}
-#st i{width:8px;height:8px;border-radius:50%;background:#9ca3af}
+#st i{width:10px;height:10px;border-radius:50%;background:#9ca3af}
+#st span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}   /* 只留圆点，文字仅供读屏 */
 #st.on i{background:#4ade80}#st.off i{background:#f87171}
 .hr{flex:1 1 0;display:flex;align-items:center;justify-content:flex-end;gap:6px}
 .ib{flex:none;width:30px;height:26px;padding:0;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.12);color:#fff;border-radius:14px;font-size:14px;line-height:1}
 .ib.on{background:#fff}
+#more{width:36px;height:30px;display:inline-flex;align-items:center;justify-content:center}
+#more.open{background:rgba(255,255,255,.3)}
+/* 右上角下拉菜单 */
+#menu{position:absolute;z-index:6;top:calc(100% - 4px);right:10px;min-width:210px;padding:6px;background:#fff;color:var(--tx);border-radius:14px;box-shadow:0 8px 28px rgba(0,0,0,.18);transform-origin:top right;animation:pop .14s ease-out}
+#menu::before{content:"";position:absolute;top:-5px;right:14px;width:12px;height:12px;background:#fff;border-radius:2px;transform:rotate(45deg)}
+@keyframes pop{from{opacity:0;transform:scale(.92)}}
+.mi{position:relative;display:flex;align-items:center;gap:10px;width:100%;min-height:48px;padding:6px 12px;border:0;border-radius:10px;background:none;color:var(--tx);font-size:16px;text-align:left;touch-action:manipulation}
+.mi:active{background:var(--bg)}
+.mi .ico{flex:none;width:24px;text-align:center;font-size:18px}
+.mi .lb{flex:1;min-width:0}
+.mi small{display:block;font-size:12px;line-height:1.3;color:var(--sub);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #mode{min-width:74px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.12);color:#fff;border-radius:14px;padding:3px 8px;font-size:12px;white-space:nowrap}
 #mode.zh{background:#fff;color:var(--blue);font-weight:600}
 .panel .voice-seg{margin-top:8px}

@@ -140,10 +140,12 @@ async function req(path, body, method = 'POST') {   // body: FormData 走 multip
 }
 const post = (path, body) => req(path, body);
 const get = path => req(path, null, 'GET');
+let wasOn = null;                                  // 上一次探测结果：只在"在线 -> 断线"时弹一次提示
 async function ping() {
     const s = $('#st');
-    try { const r = await fetch(API + '/api/health', { cache: 'no-store' }); if (!r.ok) throw 0; s.className = 'on'; s.lastChild.textContent = '已连接'; }
-    catch { s.className = 'off'; s.lastChild.textContent = '未连接'; }
+    const setSt = (on, t) => { s.className = on ? 'on' : 'off'; s.lastChild.textContent = t; s.title = t; };   // 标题栏只显示圆点，文字放 title / 读屏
+    try { const r = await fetch(API + '/api/health', { cache: 'no-store' }); if (!r.ok) throw 0; setSt(true, '已连接'); wasOn = true; }
+    catch { setSt(false, '未连接'); if (wasOn) toast('连接已断开，正在重试…'); wasOn = false; }
 }
 ping(); setInterval(ping, 15000);
 
@@ -457,6 +459,14 @@ $('#mode').onclick = e => {
     toast(mode === 'zh' ? '已切换：中文将先翻译成葡语' : '已切换：葡语模式');
 };
 
+/* ---------- 顶部 ⋯ 下拉菜单（单词任务 / 绑定智能体 / 背景与主题） ---------- */
+const moreBtn = $('#more'), menu = $('#menu');
+const setMenu = open => { menu.hidden = !open; moreBtn.classList.toggle('open', open); moreBtn.setAttribute('aria-expanded', open); };
+moreBtn.onclick = e => { e.stopPropagation(); setMenu(menu.hidden); };
+menu.onclick = e => { if (e.target.closest('.mi')) setMenu(false); };            // 点任一菜单项后收起（各项自己的 onclick 先执行）
+document.addEventListener('click', e => { if (!menu.hidden && !menu.contains(e.target)) setMenu(false); });   // 点菜单外收起
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setMenu(false); });
+
 /* ---------- 主题（CSS 变量）与背景 ---------- */
 const DEFAULT_BLUE = '#3d9be9';
 const PRESETS = ['#3d9be9', '#34a96b', '#8b6fd6', '#f08a3c', '#e0568d', '#4b5563'];
@@ -603,8 +613,7 @@ psave.onclick = async () => {
 /* ---------- 用户名：绑定 / 恢复 / 退出 ---------- */
 const uname = $('#uname');
 function syncUserUI() {
-    $('#user').classList.toggle('on', !!username);
-    $('#user').title = username || '游客';
+    $('#userCur').textContent = username ? '当前：' + username : '游客模式';
     $('#ucur').textContent = username ? '当前智能体：' + username : '当前：未绑定智能体（游客模式，聊天记录只跟随本机浏览器）';
     $('#ulogout').hidden = !username;
     uname.value = username;

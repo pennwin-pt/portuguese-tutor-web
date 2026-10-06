@@ -13,13 +13,19 @@
 <div id="bg"></div>
 <div id="app">
     <header>
-        <div id="st"><i></i><span>连接中</span></div>
+        <div id="st" title="连接中" role="status"><i></i><span>连接中</span></div>
         <div id="ttl"><h1 id="agent">葡语陪练</h1><small id="agentVoice"></small></div>
         <div class="hr">
-            <button class="ib" id="words" aria-label="单词任务" onclick="location.href='words.html'">📚</button>
-            <button class="ib" id="user" aria-label="绑定智能体">👤</button>
-            <button class="ib" id="theme" aria-label="背景与主题">🎨</button>
             <button id="mode">🇵🇹 葡语</button>
+            <button class="ib" id="more" aria-label="更多" aria-haspopup="menu" aria-expanded="false">
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><circle cx="3" cy="9" r="1.8"/><circle cx="9" cy="9" r="1.8"/><circle cx="15" cy="9" r="1.8"/></svg>
+            </button>
+        </div>
+        <!-- 右上角下拉菜单：低频入口都收在这里（id 沿用旧按钮，index.js 里的绑定不用改） -->
+        <div id="menu" role="menu" hidden>
+            <button class="mi" id="words" role="menuitem" onclick="location.href='words.html'"><span class="ico">📚</span><span class="lb">单词任务</span></button>
+            <button class="mi" id="user" role="menuitem"><span class="ico">👤</span><span class="lb">绑定智能体<small id="userCur">游客</small></span></button>
+            <button class="mi" id="theme" role="menuitem"><span class="ico">🎨</span><span class="lb">背景与主题</span></button>
         </div>
     </header>
     <div id="banner" hidden>中文求助模式：说中文，我会先翻译成葡语，再由教练回复</div>
