@@ -88,6 +88,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - **回退**:`.env` 加 `CHAT_WORD_LINK=0` 重启即可。
 
 ## 单词拆解 & 单词库(长按教练语音条 → 🧩 拆解单词)
+- 聊天加词请求会携带来源 message_id；服务端把该词所在句子及同一会话中紧邻的上一条、下一条对话写入 WordMemorizer 的 NewWords.Remark（最多 5000 字符）。重复词不会新增记录或覆盖原备注。
 - `POST /api/breakdown`(FormData: text,message_id?,session_id)。**教练一条回复可能是好几句拼在一起**(典型:`"Correção: ...\n\n..."`),`BREAKDOWN_PROMPT` 要求先按自然边界拆句、去掉 `Correção:` 前缀,再逐句给词;每个词自带 `sentence`/`sentence_zh`(所在那一句原文+中文),**不要退回"整段话当一个例句"**。
 - 后端 `_parse_breakdown_json` 有兜底:正则去 `Correção:` 前缀,过滤 `word` 本身就是 correção(不论大小写/重音)的项。**这条兜底不要删**,是防 LLM 不听 prompt 的最后一道保险。
 - 结果按 `message_id` 缓存在 `messages.breakdown` 列(同 `translation`/`explanation`)。

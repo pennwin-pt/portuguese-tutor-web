@@ -298,7 +298,7 @@ async function regenAudio(m) {
 // wdata.words 里每一项自带 word/meaning/sentence/sentence_zh —— sentence 是这个词
 // 所在的那一句葡语原句（如果原话是 "Correção: ..." 这种纠错句，前缀已经被后端去掉），
 // sentence_zh 是那一句的中文翻译。加入单词库时按每个词各自的句子存，不用整段消息。
-let wdata = null;      // {words:[{word,meaning,sentence,sentence_zh}], src}
+let wdata = null;      // {words:[{word,meaning,sentence,sentence_zh}], src, messageId}
 const wlist = $('#wlist');
 function renderWords() {
     wlist.innerHTML = '';
@@ -318,7 +318,7 @@ async function openBreakdown(m) {
     const fd = new FormData(); fd.append('session_id', sid); fd.append('text', m.text); if (m.id) fd.append('message_id', m.id);
     try {
         const d = await post('/api/breakdown', fd);
-        wdata = { words: d.words || [], src: m.text };
+        wdata = { words: d.words || [], src: m.text, messageId: m.id || null };
         renderWords();
     } catch (err) { $('#wmask').hidden = true; toast(err.message); }
 }
@@ -334,7 +334,7 @@ $('#wadd').onclick = async () => {
     }));
     const btn = $('#wadd'); btn.disabled = true;
     try {
-        const d = await post('/api/vocab', { session_id: sid, items });
+        const d = await post('/api/vocab', { session_id: sid, message_id: wdata.messageId, items });
         // 直接写进 WordMemorizer 的生词本；生词本里已经有的词不会重复加入，后端放在 existing_words 里
         const ex = d.existing_words || [];
         if (d.added > 0) {
