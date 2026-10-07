@@ -91,6 +91,23 @@ function speakText(text, btn) {                     // 场景固定台词：失�
         });
     });
 }
+function speakSceneSentence(w, template, btn) {
+    spkBtn?.classList.remove('play'); spkBtn = btn || null;
+    const c = ttsCfg(), q = new URLSearchParams({ word_id: String(w.id), scene_template: template, tts_provider: c.provider });
+    if (c.provider === 'edge' && c.voice) q.set('tts_voice', c.voice);
+    player.src = `${API}/api/scene/sentence-audio?${q}`;
+    return new Promise(resolve => {
+        const finish = () => {
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish);
+            resolve(true);
+        };
+        player.addEventListener('ended', finish); player.addEventListener('error', finish); player.addEventListener('pause', finish);
+        player.play().then(() => spkBtn?.classList.add('play')).catch(() => {
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish);
+            toast('场景句朗读失败，请再点一次'); resolve(false);
+        });
+    });
+}
 player.onended = player.onpause = () => spkBtn?.classList.remove('play');
 player.onerror = () => {
     spkBtn?.classList.remove('play');
@@ -352,7 +369,8 @@ function viewScene() {
     if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
     sceneCur?.cancel();
     const last = sceneIdx >= sceneWords.length - 1;
-    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: last, speak, speakText, extra: sourceButton });
+    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: last, speak, speakText, speakSceneSentence, extra: sourceButton,
+        captureAudio: recordSceneAudio, cancelAudio: cancelSceneAudio, checkSpeech: checkSceneSpeech, notify: toast });
     sceneCur = { idx: sceneIdx, root: s.root, cancel: s.cancel };
     s.done.then(() => {
         if (sceneCur?.root !== s.root) return;                                // 已经切到别处了
@@ -675,6 +693,7 @@ const waitMicLive = s => new Promise(res => {
 const KEEP_MIC = !IS_IOS;
 // 注意：readyState 仍是 live 的流可能已被系统静音（muted），是否还能用由按下时的 waitMicLive 判断，不在这里判断。
 let micStream = null, micPromise = null;
+let sceneHolding = false, sceneRecorder = null, sceneCaptureCancel = null;
 async function getMic() {
     if (!KEEP_MIC) releaseMic();                      // iOS：不复用，每次都是新申请的流
     if (micStream && micStream.getAudioTracks().some(t => t.readyState === 'live')) return micStream;
@@ -693,8 +712,99 @@ function releaseMic() {
     if (micStream) micStream.getTracks().forEach(t => t.stop());
     micStream = null;
 }
-document.addEventListener('visibilitychange', () => { if (document.hidden && !holding && !preparing) releaseMic(); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && !holding && !preparing && !sceneHolding) releaseMic(); });
 window.addEventListener('pagehide', releaseMic);
+
+function cancelSceneAudio() { sceneCaptureCancel?.(); releaseMic(); }
+function recordSceneAudio(button, initialEvent) {
+    if (sceneHolding) return Promise.resolve(null);
+    return new Promise((resolve, reject) => {
+        let localStream = null, recorder = null, chunks = [], startedAt = 0, canceled = false, settled = false;
+        const cleanup = () => {
+            button.removeEventListener('pointerdown', down);
+            button.removeEventListener('pointerup', up);
+            button.removeEventListener('pointercancel', cancel);
+            button.removeEventListener('pointermove', move);
+            button.removeEventListener('contextmenu', noMenu);
+            sceneHolding = false;
+            sceneRecorder = null;
+            sceneCaptureCancel = null;
+            button.classList.remove('rec', 'cancel');
+            button.textContent = '🎤 按住说话';
+            if (!KEEP_MIC) releaseMic();
+        };
+        const finish = (error, blob) => {
+            if (settled) return;
+            settled = true; cleanup();
+            if (error) reject(error); else resolve(blob);
+        };
+        const noMenu = e => e.preventDefault();
+        const cancel = () => {
+            canceled = true;
+            if (recorder && recorder.state === 'recording') recorder.stop();
+            else { sceneHolding = false; finish(null, null); }
+        };
+        const up = () => {
+            if (recorder && recorder.state === 'recording')
+                setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, TAIL_MS);
+            else sceneHolding = false;
+        };
+        const move = e => {
+            if (!sceneHolding || typeof button._sceneStartY !== 'number') return;
+            const shouldCancel = e.clientY < button._sceneStartY - 80;
+            button.classList.toggle('cancel', shouldCancel);
+            button.textContent = shouldCancel ? '松开取消' : '松开发送';
+            canceled = shouldCancel;
+        };
+        const down = async e => {
+            if (sceneHolding) return;
+            e.preventDefault(); sceneHolding = true; canceled = false; button._sceneStartY = e.clientY;
+            try { button.setPointerCapture?.(e.pointerId); } catch {} player.pause();
+            if (!MIME) { sceneHolding = false; const err = new Error('浏览器不支持录音（需 HTTPS）'); err.name = 'NotSupportedError'; finish(err); return; }
+            button.textContent = '准备麦克风…';
+            try {
+                if (!navigator.mediaDevices?.getUserMedia) {
+                    const err = new Error('请用 HTTPS 访问并允许麦克风权限。'); err.name = 'NotSupportedError'; throw err;
+                }
+                localStream = await getMic();
+                let live = await waitMicLive(localStream);
+                if (sceneHolding && !live) { releaseMic(); localStream = await getMic(); live = await waitMicLive(localStream); }
+                if (!sceneHolding) { releaseMic(); finish(null, null); return; }
+                if (!live) { releaseMic(); const err = new Error('麦克风暂时被系统占用。'); err.name = 'NotAllowedError'; throw err; }
+                recorder = new MediaRecorder(localStream, { mimeType: MIME, audioBitsPerSecond: 64000 });
+                sceneRecorder = recorder; chunks = [];
+                recorder.ondataavailable = ev => ev.data.size && chunks.push(ev.data);
+                recorder.onstart = () => {
+                    if (!sceneHolding) { canceled = true; recorder.stop(); return; }
+                    startedAt = Date.now(); button.classList.add('rec'); button.textContent = '松开发送';
+                };
+                recorder.onstop = () => {
+                    if (canceled) { finish(null, null); return; }
+                    const duration = Date.now() - startedAt;
+                    const blob = new Blob(chunks, { type: MIME });
+                    if (duration < MIN_MS) { finish(new Error('说话时间太短，请按住说完整句子。')); return; }
+                    if (blob.size < MIN_BYTES) { releaseMic(); finish(new Error('没录上，请再说一次')); return; }
+                    finish(null, blob);
+                };
+                recorder.start();
+            } catch (err) { sceneHolding = false; finish(err); }
+        };
+        button.addEventListener('pointerdown', down);
+        button.addEventListener('pointerup', up);
+        button.addEventListener('pointercancel', cancel);
+        button.addEventListener('pointermove', move);
+        button.addEventListener('contextmenu', noMenu);
+        sceneCaptureCancel = cancel;
+        if (initialEvent) down(initialEvent);
+    });
+}
+async function checkSceneSpeech(blob, w) {
+    const fd = new FormData();
+    fd.append('audio', blob, MIME.includes('mp4') ? 'scene.m4a' : 'scene.webm');
+    fd.append('word_id', w.id);
+    fd.append('session_id', sid);
+    return post('/api/scene/check', fd);
+}
 const holdIdle = () => { holdBtn.className = ''; holdBtn.textContent = '按住 说话'; $('#rec').hidden = true; $('#rec').classList.remove('cancel'); };
 holdBtn.addEventListener('pointerdown', async e => {
     if (state !== 'test') return;

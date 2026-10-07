@@ -244,20 +244,110 @@
             const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
             ctlBox.append(hint, again);
 
-            let wrong = 0, picking = true, successAudio = null;
-            const chosen = await new Promise(res => items.forEach(b => b.onclick = () => {
-                if (!picking || b.disabled) return;
-                if (b.dataset.ok) {
+            let wrong = 0, successAudio = null, answerMode = 'say';
+            const sentenceFor = item => fill(request.say, {
+                pt: item.pt_word, zh: item.cn_meaning || '', art: artOf(item, template), emoji: emojiOf(item)
+            });
+            const fallbackWords = template.foodOnly
+                ? ['sopa', 'café', 'pão', 'água', 'arroz'].map((pt_word, i) => ({ pt_word, cn_meaning: ['汤', '咖啡', '面包', '水', '米饭'][i], gender: ['f', 'm', 'm', 'f', 'm'][i], scene_confirmed: true }))
+                : ['livro', 'mala', 'chave', 'cadeira', 'copo'].map((pt_word, i) => ({ pt_word, cn_meaning: ['书', '包', '钥匙', '椅子', '杯子'][i], gender: ['m', 'f', 'f', 'f', 'm'][i], scene_confirmed: true }));
+            const sentenceItems = shuffle([w, ...pool.filter(x => x.id !== w.id && (!template.foodOnly || isFood(x))), ...fallbackWords]
+                .filter((x, i, a) => a.findIndex(y => norm(y.pt_word) === norm(x.pt_word)) === i))
+                .slice(0, 3).map(x => ({ text: sentenceFor(x), ok: x.id === w.id }));
+            // 确保正确句子始终在选项内，即使候选池数据异常。
+            if (!sentenceItems.some(x => x.ok)) sentenceItems[0] = { text: sentenceFor(w), ok: true };
+            const chosen = await new Promise(res => {
+                let picking = true;
+                const finish = () => {
+                    if (!picking) return;
                     picking = false;
-                    if (ctx.speakText) successAudio = ctx.speakText(choose.success, b);
-                    res(b); return;
-                }
-                wrong++; b.disabled = true; b.classList.add('shake', 'bad');
-                say(choose.who, choose.feedback, choose.feedbackZh, false);
-                if (ctx.speakText) ctx.speakText(choose.feedback, b).then(() => speakWord(null));
-                else speakWord(null);
-                if (wrong >= 2) items.find(x => x.dataset.ok).classList.add('hint');
-            }));
+                    if (ctx.speakText) successAudio = ctx.speakText(choose.success);
+                    res(items.find(x => x.dataset.ok));
+                };
+                const wrongAnswer = btn => {
+                    btn.classList.add('shake', 'bad');
+                    say(choose.who, choose.feedback, choose.feedbackZh, false);
+                    if (ctx.speakText) ctx.speakText(choose.feedback, btn).then(() => speakWord(null));
+                    else speakWord(null);
+                    if (wrong >= 2) items.find(x => x.dataset.ok).classList.add('hint');
+                };
+                const tabs = el('div', 'sc-mode-tabs');
+                const renderAnswerMode = () => {
+                    ctlBox.textContent = '';
+                    tabs.textContent = '';
+                    items.forEach(btn => { btn.onclick = null; });
+                    [['say', '🎤 说'], ['choose', '🗨️ 选一句'], ['listen', '👀 看和听']].forEach(([id, label]) => {
+                        const tab = el('button', 'sc-mode' + (answerMode === id ? ' active' : ''), label); tab.type = 'button';
+                        tab.onclick = () => { answerMode = id; renderAnswerMode(); };
+                        tabs.append(tab);
+                    });
+                    ctlBox.append(tabs);
+                    if (answerMode === 'listen') {
+                        ctlBox.append(el('div', 'sc-hint', location.hint));
+                        const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
+                        ctlBox.append(again);
+                        items.forEach(btn => btn.onclick = () => {
+                            if (!picking || btn.disabled) return;
+                            if (btn.dataset.ok) { finish(); return; }
+                            wrong++; btn.disabled = true; btn.classList.add('shake', 'bad'); wrongAnswer(btn);
+                        });
+                    } else if (answerMode === 'choose') {
+                        ctlBox.append(el('div', 'sc-hint', '选出朋友说的那句话，答错可以再选。'));
+                        sentenceItems.forEach(option => {
+                            const btn = el('button', 'sc-sentence-option', option.text); btn.type = 'button';
+                            btn.onclick = () => {
+                                if (!picking || btn.disabled) return;
+                                if (option.ok) { finish(); return; }
+                                wrong++; btn.classList.add('shake', 'bad'); wrongAnswer(btn);
+                            };
+                            ctlBox.append(btn);
+                        });
+                    } else {
+                        ctlBox.append(el('div', 'sc-hint', '跟着朋友说出这句话：'));
+                        ctlBox.append(el('div', 'sc-say-prompt', sentenceFor(w)));
+                        const hear = el('button', 'alt', '🔊 听朋友说'); hear.type = 'button';
+                        hear.onclick = () => ctx.speakSceneSentence ? ctx.speakSceneSentence(w, template.id, hear) : speakWord(hear);
+                        ctlBox.append(hear);
+                        const hold = el('button', 'sc-hold', '🎤 按住说话'); hold.type = 'button'; ctlBox.append(hold);
+                        const fallback = el('button', 'sc-fallback', '现在不方便说话？选一句'); fallback.type = 'button';
+                        fallback.onclick = () => { answerMode = 'choose'; renderAnswerMode(); };
+                        ctlBox.append(fallback);
+                        if (ctx.captureAudio && ctx.checkSpeech) {
+                            hold.addEventListener('pointerdown', async e => {
+                                e.preventDefault(); if (hold.classList.contains('busy')) return;
+                                try {
+                                    hold.classList.add('busy');
+                                    const blob = await ctx.captureAudio(hold, e);
+                                    hold.classList.remove('busy');
+                                    if (!blob || !picking) { hold.disabled = false; return; }
+                                    hold.textContent = '识别中…';
+                                    const result = await ctx.checkSpeech(blob, w);
+                                    if (result.passed) finish();
+                                    else {
+                                        wrong++;
+                                        ctlBox.querySelector('.sc-hint').textContent = (result.recognized_text ? `听到“${result.recognized_text}”。` : '') + '再慢一点试试，或切换到选句。';
+                                        hold.disabled = false; hold.textContent = '🎤 按住说话';
+                                    }
+                                } catch (err) {
+                                    hold.classList.remove('busy');
+                                    const noMic = ['NotAllowedError', 'NotFoundError', 'SecurityError', 'NotSupportedError'].includes(err.name);
+                                    if (noMic) {
+                                        answerMode = 'choose'; renderAnswerMode();
+                                        if (ctx.notify) ctx.notify('无法使用麦克风，已切换到选句。');
+                                    } else {
+                                        ctlBox.querySelector('.sc-hint').textContent = err.message || '录音失败，请重试或切换到选句。';
+                                        hold.disabled = false; hold.textContent = '🎤 按住说话';
+                                    }
+                                }
+                            });
+                        } else {
+                            hold.disabled = true;
+                            fallback.click();
+                        }
+                    }
+                };
+                renderAnswerMode();
+            });
             guard();
 
             const vr = view.getBoundingClientRect(), ir = chosen.getBoundingClientRect(), br = basket.getBoundingClientRect();
@@ -292,7 +382,7 @@
         }
         const done = run().then(() => alive, e => { if (e !== CANCEL) console.error(e); return false; })
             .then(ok => ok ? true : new Promise(() => {}));
-        return { root, done, cancel: () => { alive = false; } };
+        return { root, done, cancel: () => { alive = false; if (ctx.cancelAudio) ctx.cancelAudio(); } };
     }
 
     window.Scene = { canPlay, play, emojiOf };

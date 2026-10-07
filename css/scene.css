@@ -50,6 +50,22 @@
 .template-find .sc-shelf{top:18%;background:rgba(255,255,255,.82);border-color:#a3b3c5}
 .template-find .sc-item{box-shadow:0 3px 12px rgba(30,41,59,.14)}
 
+/* 三种场景答题方式：预习默认跟读，无法开口时可选句或继续看听。 */
+.sc-mode-tabs{display:flex;justify-content:center;gap:6px;flex-wrap:wrap}
+.sc-mode,.sc-fallback{border:1px solid rgba(100,116,139,.3);border-radius:999px;background:#fff;color:var(--tx);padding:7px 12px;font-size:14px}
+.sc-mode.active{background:var(--blue);border-color:var(--blue);color:#fff}
+.sc-say-prompt{padding:10px 14px;border-radius:14px;background:#fff;color:var(--tx);font-size:17px;font-weight:700;text-align:center;line-height:1.45}
+.sc-sentence-option{width:100%;padding:10px 12px;border:2px solid rgba(100,116,139,.2);border-radius:14px;background:#fff;color:var(--tx);font-size:15px;line-height:1.4;text-align:left;touch-action:manipulation}
+.sc-sentence-option.bad{opacity:.55;background:#f3f4f6}
+.sc-hold{align-self:center;min-width:190px;min-height:50px;padding:10px 20px;border:0;border-radius:999px;background:var(--blue);color:#fff;font-size:17px;font-weight:700;touch-action:none;user-select:none;-webkit-user-select:none}
+.sc-hold.rec{background:#dc2626;transform:scale(1.03)}
+.sc-hold.cancel{background:#64748b}
+.sc-hold.busy{opacity:.8}
+.sc-fallback{align-self:center}
+.sc-ctl .sc-mode{flex:0 1 auto;min-height:40px;padding:0 12px}
+.sc-ctl .sc-sentence-option{flex:1 1 100%;min-height:48px}
+.sc-ctl .sc-hold{flex:0 1 auto;touch-action:none}
+
 /* 篮子跟着“你”走；买到东西后才出现 */
 .sc-basket{position:absolute;z-index:3;left:calc(14% + 46px);bottom:16%;font-size:26px;line-height:1;opacity:0;transition:opacity .2s}
 .sc-basket.has{opacity:1}
