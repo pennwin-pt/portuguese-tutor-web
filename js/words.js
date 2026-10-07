@@ -79,11 +79,15 @@ function speakText(text, btn) {                     // 场景固定台词：失�
     if (c.provider === 'edge' && c.voice) q.set('tts_voice', c.voice);
     player.src = `${API}/api/tts?${q}`;
     return new Promise(resolve => {
-        const finish = () => { player.removeEventListener('ended', finish); player.removeEventListener('error', finish); resolve(true); };
+        const finish = () => {
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish);
+            resolve(true);
+        };
         player.addEventListener('ended', finish);
         player.addEventListener('error', finish);
+        player.addEventListener('pause', finish);
         player.play().then(() => spkBtn?.classList.add('play')).catch(() => {
-            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); resolve(false);
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish); resolve(false);
         });
     });
 }
