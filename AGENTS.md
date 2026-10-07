@@ -51,8 +51,8 @@ sounds/success.wav, fail.wav                                         答对/答�
 - 预习有两种展示：`scene`（场景，默认）和 `preview`（列表）。入口统一走 `enterPreview()`：学完当天任务后的"预习明天的词"先进场景；列表页顶部有「🎬 用场景练习这些词」；场景页底部「📋 看列表」随时切回列表。**周日首页的"只看列表"仍直接进列表。**
 - 结束统一走 `previewDone()`（场景走完 / 列表点"看完了"），去向和原来一致。场景只算预习：**不评分、不写进度、不调 `/words/*` 的任何写接口**。
 - `scene.js` 独立：对外只有 `Scene.canPlay(w)`、`Scene.play(w, ctx)`（返回 `{root, done, cancel}`）、`Scene.emojiOf(w)`；不依赖 words.js 的全局，朗读、来源按钮都由 `ctx` 传入。
-- 场景模板由 `scene.js` 的 `TEMPLATES` 数据驱动：商店购物、餐厅点单、帮朋友找东西；只对确认且 `scene_ok` 的名词启用，旧接口缺少场景字段时保留商店模板。台词经 `{pt}`、`{zh}`、`{art}`、`{emoji}` 占位符填充；固定台词通过 `ctx.speakText(text, btn)` 请求 `/api/tts`，只在用户点击时触发，合成失败静默保留文字。
-- 场景词字段由后端随 `/api/words/today` 的 `words` / `preview` 返回：`emoji`（单个 emoji）、`pos`（`noun` / `verb` / `adjective` / `other`；目前只支持名词场景）、`gender`（`m` / `f`）、`number`（`singular` / `plural`，可选）、`scene_ok`（布尔值）、`scene_confirmed`（布尔值）。只在 `scene_confirmed === true` 时使用这些字段；这时仅 `pos === "noun"` 且 `scene_ok === true` 的词进入场景，其他词留在列表。旧接口完全不带这些字段时保持旧行为。
+- 场景模板由 `scene.js` 的 `TEMPLATES` 数据驱动：商店购物、餐厅点单、帮朋友找东西；只对确认且 `scene_ok` 的名词启用。管理端可通过 `scene_template` 指定 `shop` / `restaurant` / `find`，未指定时自动轮换；旧接口缺少场景字段时保留商店模板。台词经 `{pt}`、`{zh}`、`{art}`、`{emoji}` 占位符填充；固定台词通过 `ctx.speakText(text, btn)` 请求 `/api/tts`，只在用户点击时触发，合成失败静默保留文字。
+- 场景词字段由后端随 `/api/words/today` 的 `words` / `preview` 返回：`emoji`（单个 emoji）、`pos`（`noun` / `verb` / `adjective` / `other`；目前只支持名词场景）、`gender`（`m` / `f`）、`number`（`singular` / `plural`，可选）、`scene_ok`（布尔值）、`scene_confirmed`（布尔值）、`scene_template`（`shop` / `restaurant` / `find` 或 null）。只在 `scene_confirmed === true` 时使用这些字段；这时仅 `pos === "noun"` 且 `scene_ok === true` 的词进入场景，其他词留在列表。旧接口完全不带这些字段时保持旧行为。
 - 台词：只有场景字段已确认且 `gender` 为 `m` / `f` 时才加不定冠词；`number` 为 `singular` / `plural`，缺省按单数，分别使用 `um/uma/uns/umas`。字段未确认或缺少性别时保留旧台词。
 - 动画只用 CSS `transform/opacity`，并支持 `prefers-reduced-motion`；SVG 人物里只拼颜色常量，词和中文一律 `textContent`。
 
@@ -78,7 +78,7 @@ sounds/success.wav, fail.wav                                         答对/答�
 | `DELETE /api/session/{session_id}` | 清空历史 |
 | `POST /api/user/bind` | JSON `{username}`（前端没有 PIN 界面） → profile |
 | `GET /api/user/{u}` · `POST …/theme` · `…/background`(FormData file ≤5MB) · `…/tts` · `…/persona` | 主题/背景/音色/人设同步 |
-| `GET /api/words/today?session_id=` | `{words,preview,meta,completed}`；词带 `kind`，mode 3 带 `cloze`，可能带 `ex`；可选场景字段 `emoji,pos,gender,number,scene_ok,scene_confirmed`，其约定见上文 |
+| `GET /api/words/today?session_id=` | `{words,preview,meta,completed}`；词带 `kind`，mode 3 带 `cloze`，可能带 `ex`；可选场景字段 `emoji,pos,gender,number,scene_ok,scene_confirmed,scene_template`，其约定见上文 |
 | `POST /api/words/run` | JSON `{session_id,restart?}` → `{run_id,batch_number,round_score}` |
 | `POST /api/words/evaluate` | FormData：audio, word_id, mode(1-4), session_id?, run_id? → `{passed,recognized_text,comment}`；mode 4 另带 `corrected`；422 没听清 |
 | `POST /api/words/complete` · `record_error` · `mark_mastered` | 均为 **JSON** |

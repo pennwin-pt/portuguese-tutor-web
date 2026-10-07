@@ -40,7 +40,7 @@
     for (const k of Object.keys(RAW)) ITEM_EMOJI[norm(k)] = RAW[k];
     const GENERIC_EMOJI = [...new Set(Object.values(ITEM_EMOJI))];
     const GENERIC_ZH = ['苹果', '牛奶', '面包', '水', '书', '钥匙', '雨伞', '帽子', '鞋子', '手机', '鸡蛋', '花'];   // 没有 emoji 时的通用干扰项
-    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed'];
+    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
     function emojiOf(w) {
         if (!w) return '';
@@ -140,14 +140,16 @@
     const fill = (text, values) => String(text || '').replace(/\{(pt|zh|art|emoji)\}/g, (_, key) => values[key] || '');
     function chooseTemplate(w) {
         if (!hasSceneData(w)) return TEMPLATES[0];       // 旧数据保留原商店演练体验
+        const selected = TEMPLATES.find(t => t.id === w.scene_template);
+        if (selected) return selected;
         const available = TEMPLATES.filter(t => !t.foodOnly || isFood(w));
-        let selected = available.find(t => t.id === TEMPLATES[templateCursor].id);
-        while (!selected) {
+        let automatic = available.find(t => t.id === TEMPLATES[templateCursor].id);
+        while (!automatic) {
             templateCursor = (templateCursor + 1) % TEMPLATES.length;
-            selected = available.find(t => t.id === TEMPLATES[templateCursor].id);
+            automatic = available.find(t => t.id === TEMPLATES[templateCursor].id);
         }
         templateCursor = (templateCursor + 1) % TEMPLATES.length;
-        return selected;
+        return automatic;
     }
 
     function play(w, ctx) {
