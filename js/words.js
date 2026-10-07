@@ -139,6 +139,7 @@ sourceDialog.addEventListener('click', e => { if (e.target === sourceDialog) sou
    state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示 | preview 预习明天的词（不评分）
           | done 今日已完成（刚通关，或打开页面时服务器记录显示今天早已完成；都可以“重新学习”） */
 let state = 'loading';
+let sceneIdx = 0, sceneWords = [], sceneCur = null;     // 场景演练（预习）：当前第几个词 / 可做成场景的词 / 正在播放的场景
 let today = null;           // GET /api/words/today 的结果：{date, words, completed}
 let summary = null;         // done 页展示的成绩：{rounds,total,first_pass,attempts,times?,completed_at?, fresh}
 let todoList = [];          // 当前轮次待测（cur 已经从里面 shift 出来）
@@ -314,11 +315,39 @@ function viewResult() {
     c.append(mb);
     return c;
 }
+/* ---------- 场景演练（预习）：每个词一个小场景，走完所有词 = 预习完成；任何时候都能切回列表 ---------- */
+function enterPreview() {                           // 预习的统一入口：有能做成场景的词就先走场景，否则直接显示列表
+    sceneCur?.cancel(); sceneCur = null;
+    sceneWords = window.Scene ? today.preview.filter(Scene.canPlay) : [];
+    sceneIdx = 0; state = sceneWords.length ? 'scene' : 'preview'; render();
+}
+function previewDone() {                            // 预习结束（场景走完 / 列表点“看完了”）：和原来“看完了”的去向一致
+    sceneCur?.cancel(); sceneCur = null;
+    if (summary) showDone(summary, true); else { state = 'idle'; render(); }
+}
+function viewScene() {
+    const w = sceneWords[sceneIdx];
+    if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
+    sceneCur?.cancel();
+    const last = sceneIdx >= sceneWords.length - 1;
+    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: last, speak, extra: sourceButton });
+    sceneCur = { idx: sceneIdx, root: s.root, cancel: s.cancel };
+    s.done.then(() => {
+        if (sceneCur?.root !== s.root) return;                                // 已经切到别处了
+        if (last) previewDone(); else { sceneIdx++; sceneCur = null; render(); }
+    });
+    return s.root;
+}
 function viewPreview() {                            // 预习：只看、只听，不评分、不改进度
     const c = el('div', 'wcard');
     const wk = isSunday();
     c.append(el('div', 'term', wk ? `👀 本周单词（共 ${today.preview.length} 个）` : '👀 预习明天的词'),
         el('p', 'intro', wk ? '周一开始记。先混个脸熟：点喇叭听读音，看看例句。这里不测试。' : '先混个脸熟：点喇叭听读音，看看例句。这里不测试。'));
+    if (window.Scene && today.preview.some(Scene.canPlay)) {
+        const sb = el('button', 'sbtn', '🎬 用场景练习这些词'); sb.type = 'button';
+        sb.onclick = () => { unlock(); enterPreview(); };
+        c.append(sb);
+    }
     const list = el('div', 'plist');
     for (const w of today.preview) {
         const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
@@ -375,10 +404,10 @@ function render() {
     $('#reveal').disabled = state === 'judging';
     $('#skip').hidden = !canSkip();
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
-    act.hidden = testing || state === 'loading';
+    act.hidden = testing || state === 'loading' || state === 'scene';
     const sunIdle = state === 'idle' && previewOnly();
-    $('#act2').hidden = !(state === 'done' || sunIdle);          // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
-    $('#act2').textContent = sunIdle ? '👀 只看列表' : '返回聊天';
+    $('#act2').hidden = !(state === 'done' || sunIdle || state === 'scene');          // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
+    $('#act2').textContent = sunIdle ? '👀 只看列表' : state === 'scene' ? '📋 看列表' : '返回聊天';
     const ss = sunIdle ? sunSaved() : null;
     const resultLabel = !lastRes ? '' : (!lastRes.passed && !sunGaveUp()) ? '🔁 再试一次'            // 没答对：停在这个词
         : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测
@@ -386,11 +415,12 @@ function render() {
     act.textContent = { idle: idleLabel, result: resultLabel, reveal: '🎤 开始说',
         preview: summary ? '预习完成' : '看完了', done: sunMode ? '🔄 再测一遍' : '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
-    $('#prog').textContent = testing || state === 'result' || state === 'reveal' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
-    $('#bar i').style.width = sunMode ? (sunPct() * 100) + '%' : total ? (passed.size / total * 100) + '%' : '0';
-    stage.classList.toggle('top', state === 'preview' || (state === 'done' && !!summary?.sun && summary.weak.length > 0));   // 预习 / 待巩固列表可能很长，从顶部开始排，不居中
+    $('#prog').textContent = state === 'scene' ? `预习 ${sceneIdx + 1}/${sceneWords.length}` : testing || state === 'result' || state === 'reveal' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
+    $('#bar i').style.width = state === 'scene' ? (sceneIdx / sceneWords.length * 100) + '%' : sunMode ? (sunPct() * 100) + '%' : total ? (passed.size / total * 100) + '%' : '0';
+    $('#app').classList.toggle('in-scene', state === 'scene');
+    stage.classList.toggle('top', state === 'preview' || state === 'scene' || (state === 'done' && !!summary?.sun && summary.weak.length > 0));   // 预习 / 待巩固列表可能很长，从顶部开始排，不居中
     stage.innerHTML = '';
-    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, reveal: viewReveal, result: viewResult, preview: viewPreview, done: viewDone }[state]());
+    stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, reveal: viewReveal, result: viewResult, preview: viewPreview, scene: viewScene, done: viewDone }[state]());
 }
 
 /* ---------- 流程 ---------- */
@@ -456,7 +486,7 @@ function finish() {                                 // 所有单词都通过：�
         showDone(summary, true); return;
     }
     cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, round_score: roundScore, fresh: true };
-    if (today?.preview?.length && !today.completed) { state = 'preview'; render(); }    // 重新学习时不再预习
+    if (today?.preview?.length && !today.completed) enterPreview();    // 重新学习时不再预习
     else showDone(summary, true);
     post('/api/words/complete', { session_id: sid, run_id: runId, rounds: round, first_pass: firstPass, attempts, outcomes: Object.values(outcomes) })
         .then(d => {
@@ -582,15 +612,16 @@ $('#act').onclick = () => {
     if (state === 'idle') start();
     else if (state === 'reveal') { unlock(); state = 'test'; render(); }       // 周日：看完答案，盖住开始说
     else if (state === 'result') { if (lastRes?.passed || sunGaveUp()) next(); else retry(); }
-    else if (state === 'preview') { if (summary) showDone(summary, true); else { state = 'idle'; render(); } }   // 纯浏览：看完回到首页
+    else if (state === 'preview') previewDone();   // 纯浏览：看完回到首页
     else if (state === 'done') restart();
 };
 $('#act2').onclick = () => {
+    if (state === 'scene') { sceneCur?.cancel(); sceneCur = null; state = 'preview'; render(); return; }      // 场景 -> 列表
     if (state === 'idle' && previewOnly()) { unlock(); state = 'preview'; render(); return; }     // 周日首页的“只看列表”
     location.href = 'index.html';
 };
 $('#back').onclick = () => {
-    if (!sunMode && !['loading', 'idle', 'preview', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
+    if (!sunMode && !['loading', 'idle', 'preview', 'scene', 'done'].includes(state) && !confirm('任务还没完成，现在退出进度不会保留，确定返回聊天？')) return;
     location.href = 'index.html';
 };
 

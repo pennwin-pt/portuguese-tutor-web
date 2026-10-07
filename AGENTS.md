@@ -12,6 +12,7 @@
 ```
 index.html  css/index.css  css/touch-protection.css  js/index.js     聊天页
 words.html  css/words.css  js/words.js                              单词任务页（复用 index.css）
+css/scene.css  js/scene.js                                           预习用的场景演练（words.html 里先于 words.js 引入）
 sounds/success.wav, fail.wav                                         答对/答错音效（缺文件静默不播）
 ```
 - `words.css` 只补单词页独有样式；单词页标题栏放大等覆盖写在 `words.css` 里（`#app > header`），**不要为单词页改 `index.css`**（聊天页共用）。
@@ -45,6 +46,15 @@ sounds/success.wav, fail.wav                                         答对/答�
 - `KIND_LABEL`：🆕新词 / 🔁复习 / 📅本周回顾 / 💪周六加练。进度只在内存，中途退出弹确认且不保留。
 - 顶部 `#points` 读 `GET /api/admin/points`（累计 / 今日 / 余额 / 本轮得分）。
 - words.js 里有一小段从 index.js 精简拷贝的 `NAME_RE` / guestSid / 主题 / `ttsCfg()`，改这些要两个 JS 一起改。
+
+## 场景演练（预习，scene.*）
+- 预习有两种展示：`scene`（场景，默认）和 `preview`（列表）。入口统一走 `enterPreview()`：学完当天任务后的"预习明天的词"先进场景；列表页顶部有「🎬 用场景练习这些词」；场景页底部「📋 看列表」随时切回列表。**周日首页的"只看列表"仍直接进列表。**
+- 结束统一走 `previewDone()`（场景走完 / 列表点"看完了"），去向和原来一致。场景只算预习：**不评分、不写进度、不调 `/words/*` 的任何写接口**。
+- `scene.js` 独立：对外只有 `Scene.canPlay(w)`、`Scene.play(w, ctx)`（返回 `{root, done, cancel}`）、`Scene.emojiOf(w)`；不依赖 words.js 的全局，朗读、来源按钮都由 `ctx` 传入。
+- 目前只有一个模板"帮朋友去商店买东西"：朋友求助（播放单词音频）→ 去商店 → 点货架上对的东西（错了抖一下，错 2 次对的会发光）→ 带回去 → 结果卡。台词是固定文案，只有目标词有语音；**没有按文本朗读的接口，别在前端偷偷加。**
+- 词 → emoji 在 `scene.js` 的 `RAW` 表里（没有 emoji 的词退化成"中文意思卡片"）；词数据里有 `emoji` 字段时优先用它。
+- 台词里不带冠词（`Preciso de… {pt_word}!`），因为词表没有词性/阴阳性字段；有了再改成带冠词的完整句。
+- 动画只用 CSS `transform/opacity`，并支持 `prefers-reduced-motion`；SVG 人物里只拼颜色常量，词和中文一律 `textContent`。
 
 ## 录音与音频（iOS/安卓踩过的坑）
 - 录音手势：按住录、松开发、上滑取消；iOS 优先 `audio/mp4`。
