@@ -382,7 +382,7 @@ function viewScene() {
 }
 function viewAssessmentScene() {
     const w = cur;
-    if (!w || !Scene?.canPlay(w)) { showCurrentTest(); return el('div'); }
+    if (!canUseAssessmentScene(w)) { showCurrentTest(); return el('div'); }
     if (sceneCur && sceneCur.wordId === w.id) return sceneCur.root;
     sceneCur?.cancel();
     const pool = (today?.words || []).filter(x => x.id !== w.id && Scene.canPlay(x));
@@ -395,6 +395,9 @@ function viewAssessmentScene() {
         sceneCur = null; showCurrentTest();
     });
     return s.root;
+}
+function canUseAssessmentScene(w) {
+    return !!(w && w.scene_confirmed === true && w.pos === 'noun' && w.scene_ok === true && Scene?.canPlay(w));
 }
 function viewPreview() {                            // 预习：只看、只听，不评分、不改进度
     const c = el('div', 'wcard');
@@ -570,7 +573,7 @@ function next() {                                   // 取下一个待测词；�
     if (sunMode) sunSave(false);                     // 断点：每个词开始前存一次（此刻 cur 还没取出，待测队列里含即将出的这个词）
     cur = todoList.shift(); curMissed = false; curRevealed = false; aiWrong = 0; lastRes = null;
     if (sunMode && round === 1) { state = 'reveal'; render(); speak(cur, 'word', $('#stage .spk')); return; }   // 周日第 1 轮：先揭示答案（自动朗读），再考
-    if (round === 1 && ['new', 'review'].includes(cur.kind) && Scene?.canPlay(cur) && !sceneSeen.has(cur.id)) {
+    if (round === 1 && ['new', 'review'].includes(cur.kind) && canUseAssessmentScene(cur) && !sceneSeen.has(cur.id)) {
         sceneSeen.add(cur.id); scenePurpose = 'assessment'; state = 'scene'; render(); return;
     }
     showCurrentTest();

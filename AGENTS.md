@@ -49,7 +49,7 @@ sounds/success.wav, fail.wav                                         答对/答�
 
 ## 场景演练（预习与正式测验，scene.*）
 - 预习有两种展示：`scene`（场景，默认）和 `preview`（列表）。入口统一走 `enterPreview()`：学完当天任务后的"预习明天的词"先进场景；列表页顶部有「🎬 用场景练习这些词」；场景页底部「📋 看列表」随时切回列表。**周日首页的"只看列表"仍直接进列表。**预习跟读只调无写入的 `/api/scene/check`。
-- 正式测验仅在第一轮 `new` / `review` 原题前给已确认启用的名词增加一次场景测验；`weekly`、`extra` 不增加场景。答错计入 `attempts`、标记本轮错词，并影响原题答对后的 `hard` 结果；答对不代替原题，仍需完成原测试。错词重测不会重复场景。
+- 正式测验仅在第一轮 `new` / `review` 原题前给 `scene_confirmed === true && pos === "noun" && scene_ok === true` 的词增加一次场景测验；不带场景字段的旧词也必须跳过正式测验场景。`Scene.canPlay()` 对旧数据的兼容只用于预习。`weekly`、`extra` 不增加场景。答错计入 `attempts`、标记本轮错词，并影响原题答对后的 `hard` 结果；答对不代替原题，仍需完成原测试。错词重测不会重复场景。
 - 学习/复习场景答对可按现有 `WordQuizAward` 发分，同一 run 的同一个单词最多一分；原题答对仍照常请求发分，唯一键避免重复得分。场景不单独结算进度；每天仍按原计划 mode 对每词结算一条 outcome。
 - 预习场景完成走 `previewDone()`。正式测验场景完成或跳过则返回当前词的原测试，不调用 `next()`；跳过场景本身不记错，之前已经发生的错误保留。
 - `scene.js` 独立：对外只有 `Scene.canPlay(w)`、`Scene.play(w, ctx)`（返回 `{root, done, cancel}`）、`Scene.emojiOf(w)`；不依赖 words.js 的全局，朗读、来源按钮都由 `ctx` 传入。
