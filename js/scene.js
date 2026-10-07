@@ -233,16 +233,20 @@
             await ctl(intro.button, intro.speech, true); guard();
 
             bubble.textContent = em || zh; bubble.classList.toggle('txt', !em); bubble.classList.add('show');
-            sayBeat(request, true); speakWord(sayBox.querySelector('.spk')); talk(friend);
+            if (ctx.speechMode === 'recall') {
+                say('朋友', '需要什么？', fill(request.zh, values), false); talk(friend);
+            } else {
+                sayBeat(request, true); speakWord(sayBox.querySelector('.spk')); talk(friend);
+            }
             await ctl(request.button, request.clickSpeech || location.speech); guard();
 
             root.classList.add('walking', 'at-place'); if (template.id === 'shop') root.classList.add('at-shop');
             await wait(1500); root.classList.remove('walking');
             sayBeat(location); talk(helper);
             ctlBox.textContent = '';
-            const hint = el('div', 'sc-hint', location.hint);
             const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
-            ctlBox.append(hint, again);
+            ctlBox.append(el('div', 'sc-hint', ctx.speechMode === 'recall' ? `回忆葡语：${zh}` : location.hint));
+            if (ctx.speechMode !== 'recall') ctlBox.append(again);
 
             let wrong = 0, successAudio = null, answerMode = 'say';
             const sentenceFor = item => fill(request.say, {
@@ -257,7 +261,7 @@
             // 确保正确句子始终在选项内，即使候选池数据异常。
             if (!sentenceItems.some(x => x.ok)) sentenceItems[0] = { text: sentenceFor(w), ok: true };
             const chosen = await new Promise(res => {
-                let picking = true;
+                let picking = true, grading = false;
                 const finish = () => {
                     if (!picking) return;
                     picking = false;
@@ -267,9 +271,28 @@
                 const wrongAnswer = btn => {
                     btn.classList.add('shake', 'bad');
                     say(choose.who, choose.feedback, choose.feedbackZh, false);
-                    if (ctx.speakText) ctx.speakText(choose.feedback, btn).then(() => speakWord(null));
-                    else speakWord(null);
+                    if (ctx.speakText) ctx.speakText(choose.feedback, btn).then(() => { if (ctx.speechMode !== 'recall') speakWord(null); });
+                    else if (ctx.speechMode !== 'recall') speakWord(null);
                     if (wrong >= 2) items.find(x => x.dataset.ok).classList.add('hint');
+                };
+                const gradeChoice = async (btn, selectedId, correct) => {
+                    if (!picking || grading || btn.disabled) return;
+                    if (!ctx.evaluateChoice) {
+                        if (correct) finish();
+                        else { wrong++; btn.disabled = true; wrongAnswer(btn); }
+                        return;
+                    }
+                    grading = true; btn.disabled = true;
+                    try {
+                        const result = await ctx.evaluateChoice(w, selectedId);
+                        grading = false;
+                        if (result.passed) { finish(); return; }
+                        wrong++; wrongAnswer(btn);
+                    } catch (err) {
+                        grading = false; btn.disabled = false;
+                        const hint = ctlBox.querySelector('.sc-hint');
+                        if (hint) hint.textContent = err.message || '提交失败，请重试。';
+                    }
                 };
                 const tabs = el('div', 'sc-mode-tabs');
                 const renderAnswerMode = () => {
@@ -284,30 +307,28 @@
                     ctlBox.append(tabs);
                     if (answerMode === 'listen') {
                         ctlBox.append(el('div', 'sc-hint', location.hint));
-                        const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
-                        ctlBox.append(again);
+                        if (ctx.speechMode !== 'recall') {
+                            const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
+                            ctlBox.append(again);
+                        }
                         items.forEach(btn => btn.onclick = () => {
-                            if (!picking || btn.disabled) return;
-                            if (btn.dataset.ok) { finish(); return; }
-                            wrong++; btn.disabled = true; btn.classList.add('shake', 'bad'); wrongAnswer(btn);
+                            gradeChoice(btn, btn.dataset.ok ? w.id : -1, !!btn.dataset.ok);
                         });
                     } else if (answerMode === 'choose') {
                         ctlBox.append(el('div', 'sc-hint', '选出朋友说的那句话，答错可以再选。'));
                         sentenceItems.forEach(option => {
                             const btn = el('button', 'sc-sentence-option', option.text); btn.type = 'button';
-                            btn.onclick = () => {
-                                if (!picking || btn.disabled) return;
-                                if (option.ok) { finish(); return; }
-                                wrong++; btn.classList.add('shake', 'bad'); wrongAnswer(btn);
-                            };
+                            btn.onclick = () => gradeChoice(btn, option.ok ? w.id : -1, !!option.ok);
                             ctlBox.append(btn);
                         });
                     } else {
-                        ctlBox.append(el('div', 'sc-hint', '跟着朋友说出这句话：'));
-                        ctlBox.append(el('div', 'sc-say-prompt', sentenceFor(w)));
-                        const hear = el('button', 'alt', '🔊 听朋友说'); hear.type = 'button';
-                        hear.onclick = () => ctx.speakSceneSentence ? ctx.speakSceneSentence(w, template.id, hear) : speakWord(hear);
-                        ctlBox.append(hear);
+                        ctlBox.append(el('div', 'sc-hint', ctx.speechMode === 'recall' ? `请用葡语说出「${zh}」。` : '跟着朋友说出这句话：'));
+                        if (ctx.speechMode !== 'recall') {
+                            ctlBox.append(el('div', 'sc-say-prompt', sentenceFor(w)));
+                            const hear = el('button', 'alt', '🔊 听朋友说'); hear.type = 'button';
+                            hear.onclick = () => ctx.speakSceneSentence ? ctx.speakSceneSentence(w, template.id, hear) : speakWord(hear);
+                            ctlBox.append(hear);
+                        }
                         const hold = el('button', 'sc-hold', '🎤 按住说话'); hold.type = 'button'; ctlBox.append(hold);
                         const fallback = el('button', 'sc-fallback', '现在不方便说话？选一句'); fallback.type = 'button';
                         fallback.onclick = () => { answerMode = 'choose'; renderAnswerMode(); };
@@ -377,7 +398,7 @@
             card.append(row, el('div', 'sc-zh2', zh));
             if (w.pt_sentence) card.append(el('div', 'sc-sen', w.pt_sentence), el('div', 'sc-zh2', w.cn_sentence || ''));
             sayBox.append(card);
-            const next = ['next', ctx.isLast ? '完成 ✓' : '下一个词 ›'];
+            const next = ['next', ctx.afterLabel || (ctx.isLast ? '完成 ✓' : '下一个词 ›')];
             await ctl(next); guard();
         }
         const done = run().then(() => alive, e => { if (e !== CANCEL) console.error(e); return false; })
