@@ -40,7 +40,8 @@
     for (const k of Object.keys(RAW)) ITEM_EMOJI[norm(k)] = RAW[k];
     const GENERIC_EMOJI = [...new Set(Object.values(ITEM_EMOJI))];
     const GENERIC_ZH = ['苹果', '牛奶', '面包', '水', '书', '钥匙', '雨伞', '帽子', '鞋子', '手机', '鸡蛋', '花'];   // 没有 emoji 时的通用干扰项
-    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template'];
+    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template',
+        'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
     function emojiOf(w) {
         if (!w) return '';
@@ -50,7 +51,15 @@
     }
     const canPlay = w => {
         if (!w || !w.pt_word) return false;
-        if (hasSceneData(w) && !(w.scene_confirmed === true && w.pos === 'noun' && w.scene_ok === true)) return false;
+        if (hasSceneData(w)) {
+            if (w.scene_confirmed !== true || w.scene_ok !== true) return false;
+            if (w.pos === 'noun') return w.scene_template !== 'describe' && !!(emojiOf(w) || w.cn_meaning);
+            if (w.pos === 'adjective') return (w.scene_template == null || w.scene_template === 'describe') &&
+                ['adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural']
+                    .every(key => typeof w[key] === 'string' && w[key].trim()) && !!(emojiOf(w) || w.cn_meaning);
+            return false;
+        }
+        if (w.pos === 'adjective') return false;
         return !!(emojiOf(w) || w.cn_meaning);
     };
     /* ---------- 人物：内联 SVG（只拼颜色常量，没有任何用户数据） ---------- */
@@ -78,7 +87,9 @@
     const FOOD_ZH = ['苹果', '牛奶', '面包', '水', '鸡蛋', '奶酪', '香蕉', '鱼', '米饭', '蛋糕', '汤', '果汁'];
     function buildOptions(w, pool, template) {
         const em = emojiOf(w), key = em ? 'emoji' : 'text', mine = em || w.cn_meaning;
-        const words = template.foodOnly ? pool.filter(isFood) : pool;
+        const words = template.foodOnly ? pool.filter(isFood)
+            : template.adjectiveOnly ? pool.filter(x => x.pos === 'adjective' && canPlay(x))
+                : pool.filter(x => x.pos !== 'adjective');
         const genericEmoji = template.foodOnly ? [...FOOD_EMOJI] : GENERIC_EMOJI;
         const genericText = template.foodOnly ? FOOD_ZH : GENERIC_ZH;
         const cand = em ? [...words.map(emojiOf), ...genericEmoji] : [...words.map(p => p.cn_meaning), ...genericText];
@@ -127,22 +138,45 @@
                 { action: 'return', button: ['back', '✅ 把东西交给朋友'], speech: 'Obrigado!' },
                 { action: 'thanks', who: '朋友', say: 'Obrigado!', zh: '谢谢你！' },
             ]
+        },
+        {
+            id: 'describe', rootClass: 'template-find', bg: { location: 'search-place' }, foodOnly: false, adjectiveOnly: true,
+            carrier: '🖌️', cast: { friend: ['#a78bfa', '#312e81'], helper: ['#22c55e', '#7c2d12'] },
+            beats: [
+                { action: 'intro', who: '朋友', say: 'Olá! Ajudas-me a escolher?', zh: '你好！能帮我挑一个吗？', speech: 'Olá! Ajudas-me a escolher?', button: ['listen', '👂 听听朋友的请求'] },
+                { action: 'request', who: '朋友', say: 'Quero {art} {noun} {adj}, por favor.', zh: '帮朋友找一个{zh}的{nounZh}。', button: ['walk', '🖌️ 去帮朋友挑选'], clickSpeech: 'Vamos escolher!' },
+                { action: 'location', who: '朋友', say: 'Vamos escolher!', zh: '我们来挑选吧！', speech: 'Vamos escolher!', hint: '👆 选出符合描述的特征' },
+                { action: 'choose', who: '朋友', feedback: 'Não é isso…', feedbackZh: '这个特征不对，再试一次', success: 'É mesmo este!', successZh: '就是这个！' },
+                { action: 'return', button: ['back', '✅ 把选择告诉朋友'], speech: 'Obrigado!' },
+                { action: 'thanks', who: '朋友', say: 'Obrigado!', zh: '谢谢你！' },
+            ]
         }
     ];
     let showZh = false, templateCursor = 0;       // 中文字幕状态沿用；模板轮换，便于不同单词体验不同场景
     const beat = (template, action) => template.beats.find(x => x.action === action);
+    const adjectiveContexts = [
+        { noun: 'copo', nounZh: '杯子', article: 'um', gender: 'm', number: 'singular' },
+        { noun: 'casa', nounZh: '房子', article: 'uma', gender: 'f', number: 'singular' },
+        { noun: 'livros', nounZh: '书', article: 'uns', gender: 'm', number: 'plural' },
+        { noun: 'casas', nounZh: '房子', article: 'umas', gender: 'f', number: 'plural' },
+    ];
+    function adjectiveContext(w) { return adjectiveContexts[(Number(w.id) || 0) % adjectiveContexts.length]; }
+    function adjectiveForm(w, context) {
+        return w[`adjective_${context.gender}_${context.number}`] || w.pt_word || '';
+    }
     const artOf = (w, template) => {
         const gender = String(w.gender || '').toLowerCase(), number = String(w.number || 'singular').toLowerCase();
         const articles = { m: { singular: 'um', plural: 'uns' }, f: { singular: 'uma', plural: 'umas' } };
         const article = w.scene_confirmed === true ? articles[gender]?.[number] : null;
         return article ? ' ' + article + ' ' : template.id === 'shop' ? '… ' : '';
     };
-    const fill = (text, values) => String(text || '').replace(/\{(pt|zh|art|emoji)\}/g, (_, key) => values[key] || '');
+    const fill = (text, values) => String(text || '').replace(/\{(pt|zh|art|emoji|noun|nounZh|adj)\}/g, (_, key) => values[key] || '');
     function chooseTemplate(w) {
         if (!hasSceneData(w)) return TEMPLATES[0];       // 旧数据保留原商店演练体验
         const selected = TEMPLATES.find(t => t.id === w.scene_template);
         if (selected) return selected;
-        const available = TEMPLATES.filter(t => !t.foodOnly || isFood(w));
+        if (w.pos === 'adjective') return TEMPLATES.find(t => t.id === 'describe');
+        const available = TEMPLATES.filter(t => !t.adjectiveOnly && (!t.foodOnly || isFood(w)));
         let automatic = available.find(t => t.id === TEMPLATES[templateCursor].id);
         while (!automatic) {
             templateCursor = (templateCursor + 1) % TEMPLATES.length;
@@ -155,7 +189,10 @@
     function play(w, ctx) {
         ctx = ctx || {};
         const template = chooseTemplate(w), pool = ctx.pool || [], zh = w.cn_meaning || '', em = emojiOf(w), CANCEL = {};
-        const values = { pt: w.pt_word || '', zh, art: artOf(w, template), emoji: em };
+        const adjContext = template.adjectiveOnly ? adjectiveContext(w) : null;
+        const values = { pt: w.pt_word || '', zh, art: adjContext ? adjContext.article : artOf(w, template), emoji: em,
+            noun: adjContext ? adjContext.noun : '', nounZh: adjContext ? adjContext.nounZh : '',
+            adj: adjContext ? adjectiveForm(w, adjContext) : '' };
         let alive = true;
         const guard = () => { if (!alive) throw CANCEL; };
         const wait = async ms => { await sleep(ms); guard(); };
@@ -249,13 +286,25 @@
             if (ctx.speechMode !== 'recall') ctlBox.append(again);
 
             let wrong = 0, successAudio = null, answerMode = 'say';
-            const sentenceFor = item => fill(request.say, {
-                pt: item.pt_word, zh: item.cn_meaning || '', art: artOf(item, template), emoji: emojiOf(item)
-            });
+            const sentenceFor = item => fill(request.say, template.adjectiveOnly ? {
+                pt: item.pt_word, zh: item.cn_meaning || '', art: adjContext.article, emoji: emojiOf(item),
+                noun: adjContext.noun, nounZh: adjContext.nounZh, adj: adjectiveForm(item, adjContext)
+            } : { pt: item.pt_word, zh: item.cn_meaning || '', art: artOf(item, template), emoji: emojiOf(item) });
             const fallbackWords = template.foodOnly
                 ? ['sopa', 'café', 'pão', 'água', 'arroz'].map((pt_word, i) => ({ pt_word, cn_meaning: ['汤', '咖啡', '面包', '水', '米饭'][i], gender: ['f', 'm', 'm', 'f', 'm'][i], scene_confirmed: true }))
-                : ['livro', 'mala', 'chave', 'cadeira', 'copo'].map((pt_word, i) => ({ pt_word, cn_meaning: ['书', '包', '钥匙', '椅子', '杯子'][i], gender: ['m', 'f', 'f', 'f', 'm'][i], scene_confirmed: true }));
-            const sentenceItems = shuffle([w, ...pool.filter(x => x.id !== w.id && (!template.foodOnly || isFood(x))), ...fallbackWords]
+                : template.adjectiveOnly
+                    ? [
+                        ['grande', 'grande', 'grande', 'grandes', '大的', '🔎'],
+                        ['pequeno', 'pequena', 'pequenos', 'pequenas', '小的', '🔹'],
+                        ['bonito', 'bonita', 'bonitos', 'bonitas', '漂亮的', '✨'],
+                    ].map(([pt_word, adjective_f_singular, adjective_m_plural, adjective_f_plural, cn_meaning, emoji]) => ({
+                        pt_word, cn_meaning, emoji, adjective_m_singular: pt_word, adjective_f_singular,
+                        adjective_m_plural, adjective_f_plural, scene_confirmed: true, pos: 'adjective', scene_ok: true
+                    }))
+                    : ['livro', 'mala', 'chave', 'cadeira', 'copo'].map((pt_word, i) => ({ pt_word, cn_meaning: ['书', '包', '钥匙', '椅子', '杯子'][i], gender: ['m', 'f', 'f', 'f', 'm'][i], scene_confirmed: true }));
+            const sentencePool = pool.filter(x => x.id !== w.id && (template.adjectiveOnly
+                ? x.pos === 'adjective' && canPlay(x) : x.pos !== 'adjective' && (!template.foodOnly || isFood(x))));
+            const sentenceItems = shuffle([w, ...sentencePool, ...fallbackWords]
                 .filter((x, i, a) => a.findIndex(y => norm(y.pt_word) === norm(x.pt_word)) === i))
                 .slice(0, 3).map(x => ({ text: sentenceFor(x), ok: x.id === w.id }));
             // 确保正确句子始终在选项内，即使候选池数据异常。

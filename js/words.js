@@ -397,7 +397,8 @@ function viewAssessmentScene() {
     return s.root;
 }
 function canUseAssessmentScene(w) {
-    return !!(w && w.scene_confirmed === true && w.pos === 'noun' && w.scene_ok === true && Scene?.canPlay(w));
+    return !!(w && w.scene_confirmed === true && ['noun', 'adjective'].includes(w.pos) &&
+        w.scene_ok === true && Scene?.canPlay(w));
 }
 function viewPreview() {                            // 预习：只看、只听，不评分、不改进度
     const c = el('div', 'wcard');
