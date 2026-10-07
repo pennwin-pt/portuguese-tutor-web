@@ -73,8 +73,26 @@ function speak(w, kind, btn) {                     // kind: 'word' | 'sentence'�
     player.src = `${API}/api/words/${w.id}/audio?${q}`;
     player.play().then(() => spkBtn?.classList.add('play')).catch(() => toast('朗读失败，点喇叭重试'));
 }
+function speakText(text, btn) {                     // 场景固定台词：失败时只保留文字，不弹错误
+    spkBtn?.classList.remove('play'); spkBtn = btn || null;
+    const c = ttsCfg(), q = new URLSearchParams({ text, tts_provider: c.provider });
+    if (c.provider === 'edge' && c.voice) q.set('tts_voice', c.voice);
+    player.src = `${API}/api/tts?${q}`;
+    return new Promise(resolve => {
+        const finish = () => { player.removeEventListener('ended', finish); player.removeEventListener('error', finish); resolve(true); };
+        player.addEventListener('ended', finish);
+        player.addEventListener('error', finish);
+        player.play().then(() => spkBtn?.classList.add('play')).catch(() => {
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); resolve(false);
+        });
+    });
+}
 player.onended = player.onpause = () => spkBtn?.classList.remove('play');
-player.onerror = () => { spkBtn?.classList.remove('play'); if (!player.currentSrc.startsWith('data:')) toast('朗读失败，点喇叭重试'); };
+player.onerror = () => {
+    spkBtn?.classList.remove('play');
+    const src = player.currentSrc || player.src;
+    if (!src.startsWith('data:') && !src.includes('/api/tts?')) toast('朗读失败，点喇叭重试');
+};
 /* ---------- 音效：答对 / 答错 ----------
    文件放在前端目录的 sounds/ 下（nginx 里是 html/portuguese-tutor-web/sounds/），想换格式只改这里的文件名。
    文件缺失或加载失败时静默不播，不影响答题。用独立的 Audio 对象，不占用朗读的 #player。 */
@@ -330,7 +348,7 @@ function viewScene() {
     if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
     sceneCur?.cancel();
     const last = sceneIdx >= sceneWords.length - 1;
-    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: last, speak, extra: sourceButton });
+    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: last, speak, speakText, extra: sourceButton });
     sceneCur = { idx: sceneIdx, root: s.root, cancel: s.cancel };
     s.done.then(() => {
         if (sceneCur?.root !== s.root) return;                                // 已经切到别处了

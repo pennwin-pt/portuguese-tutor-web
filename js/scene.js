@@ -2,7 +2,8 @@
    不引入任何库：人物是内联 SVG，动画全是 CSS；对外只有 Scene.canPlay(w) 和 Scene.play(w, ctx)。
 
    ctx = {
-     speak(w, kind, btn)   朗读（沿用 words.js 的 speak，后端按 word_id 合成，这里不传文本）
+     speak(w, kind, btn)   朗读单词（后端按 word_id 合成）
+     speakText(text, btn)  朗读场景固定台词（后端白名单接口，失败静默）
      pool: [w, ...]        同一批预习里的其它词（用来做货架上的干扰项）
      isLast: boolean       最后一个词时，结尾按钮显示“完成”
      extra(w): Node|null   可选，结果卡上附加的控件（words.js 传 sourceButton）
@@ -149,11 +150,21 @@
             sayBox.append(el('div', 'sc-who', who), line);
             if (zhText) sayBox.append(el('div', 'sc-zh', zhText));
         };
-        const ctl = (...defs) => new Promise(res => {          // 底部按钮，点哪个就 resolve 哪个 id
+        const ctl = (...defs) => new Promise(res => {          // 在用户点击底部按钮时启动下一句固定台词朗读
             ctlBox.textContent = '';
             defs.forEach(([id, label, alt]) => {
                 const b = el('button', alt ? 'alt' : '', label); b.type = 'button';
-                b.onclick = () => { ctlBox.textContent = ''; res(id); };
+                b.onclick = () => {
+                    ctlBox.textContent = '';
+                    const line = id === 'listen' ? 'Olá! Preciso de ajuda!'
+                        : id === 'walk' ? 'Bom dia! Em que posso ajudar?'
+                            : id === 'back' ? 'Obrigado!' : '';
+                    if (line && ctx.speakText) {
+                        const audio = ctx.speakText(line, b);
+                        if (id === 'listen') { audio.then(() => res(id)); return; }
+                    }
+                    res(id);
+                };
                 ctlBox.append(b);
             });
         });
@@ -185,9 +196,15 @@
             let wrong = 0, picking = true;                                 // 选对才往下走；错了不扣分，只是抖一下
             const chosen = await new Promise(res => items.forEach(b => b.onclick = () => {
                 if (!picking || b.disabled) return;
-                if (b.dataset.ok) { picking = false; res(b); return; }
+                if (b.dataset.ok) {
+                    picking = false;
+                    if (ctx.speakText) ctx.speakText('Aqui tem!', b);
+                    res(b); return;
+                }
                 wrong++; b.disabled = true; b.classList.add('shake', 'bad');
-                say0('售货员', 'Não é isso…', '不是这个……再听听朋友要什么'); speakWord(null);
+                say0('售货员', 'Não é isso…', '不是这个……再听听朋友要什么');
+                if (ctx.speakText) ctx.speakText('Não é isso…', b).then(() => speakWord(null));
+                else speakWord(null);
                 if (wrong >= 2) items.find(x => x.dataset.ok).classList.add('hint');
             }));
             guard();
