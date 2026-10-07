@@ -52,8 +52,8 @@ sounds/success.wav, fail.wav                                         答对/答�
 - 结束统一走 `previewDone()`（场景走完 / 列表点"看完了"），去向和原来一致。场景只算预习：**不评分、不写进度、不调 `/words/*` 的任何写接口**。
 - `scene.js` 独立：对外只有 `Scene.canPlay(w)`、`Scene.play(w, ctx)`（返回 `{root, done, cancel}`）、`Scene.emojiOf(w)`；不依赖 words.js 的全局，朗读、来源按钮都由 `ctx` 传入。
 - 目前只有一个模板"帮朋友去商店买东西"：朋友求助（播放单词音频）→ 去商店 → 点货架上对的东西（错了抖一下，错 2 次对的会发光）→ 带回去 → 结果卡。台词是固定文案，只有目标词有语音；**没有按文本朗读的接口，别在前端偷偷加。**
-- 词 → emoji 在 `scene.js` 的 `RAW` 表里（没有 emoji 的词退化成"中文意思卡片"）；词数据里有 `emoji` 字段时优先用它。
-- 台词里不带冠词（`Preciso de… {pt_word}!`），因为词表没有词性/阴阳性字段；有了再改成带冠词的完整句。
+- 场景词字段由后端随 `/api/words/today` 的 `words` / `preview` 返回：`emoji`（单个 emoji）、`pos`（`noun` / `verb` / `adjective` / `other`；目前只支持名词场景）、`gender`（`m` / `f`）、`number`（`singular` / `plural`，可选）、`scene_ok`（布尔值）、`scene_confirmed`（布尔值）。只在 `scene_confirmed === true` 时使用这些字段；这时仅 `pos === "noun"` 且 `scene_ok === true` 的词进入场景，其他词留在列表。旧接口完全不带这些字段时保持旧行为。
+- 台词：只有场景字段已确认且 `gender` 为 `m` / `f` 时才加不定冠词；`number` 为 `singular` / `plural`，缺省按单数，分别使用 `um/uma/uns/umas`。字段未确认或缺少性别时保留旧台词。
 - 动画只用 CSS `transform/opacity`，并支持 `prefers-reduced-motion`；SVG 人物里只拼颜色常量，词和中文一律 `textContent`。
 
 ## 录音与音频（iOS/安卓踩过的坑）
@@ -78,7 +78,7 @@ sounds/success.wav, fail.wav                                         答对/答�
 | `DELETE /api/session/{session_id}` | 清空历史 |
 | `POST /api/user/bind` | JSON `{username}`（前端没有 PIN 界面） → profile |
 | `GET /api/user/{u}` · `POST …/theme` · `…/background`(FormData file ≤5MB) · `…/tts` · `…/persona` | 主题/背景/音色/人设同步 |
-| `GET /api/words/today?session_id=` | `{words,preview,meta,completed}`；词带 `kind`，mode 3 带 `cloze`，可能带 `ex` |
+| `GET /api/words/today?session_id=` | `{words,preview,meta,completed}`；词带 `kind`，mode 3 带 `cloze`，可能带 `ex`；可选场景字段 `emoji,pos,gender,number,scene_ok,scene_confirmed`，其约定见上文 |
 | `POST /api/words/run` | JSON `{session_id,restart?}` → `{run_id,batch_number,round_score}` |
 | `POST /api/words/evaluate` | FormData：audio, word_id, mode(1-4), session_id?, run_id? → `{passed,recognized_text,comment}`；mode 4 另带 `corrected`；422 没听清 |
 | `POST /api/words/complete` · `record_error` · `mark_mastered` | 均为 **JSON** |

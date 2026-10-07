@@ -39,13 +39,30 @@
     for (const k of Object.keys(RAW)) ITEM_EMOJI[norm(k)] = RAW[k];
     const GENERIC_EMOJI = [...new Set(Object.values(ITEM_EMOJI))];
     const GENERIC_ZH = ['苹果', '牛奶', '面包', '水', '书', '钥匙', '雨伞', '帽子', '鞋子', '手机', '鸡蛋', '花'];   // 没有 emoji 时，货架上的干扰项
+    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed'];
+    const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
     function emojiOf(w) {
         if (!w) return '';
-        if (typeof w.emoji === 'string' && w.emoji.trim()) return w.emoji.trim();
+        if (w.scene_confirmed === true && typeof w.emoji === 'string' && w.emoji.trim()) return w.emoji.trim();
         const k = norm(w.pt_word);
         return ITEM_EMOJI[k] || (k.endsWith('s') && ITEM_EMOJI[k.slice(0, -1)]) || (k.endsWith('es') && ITEM_EMOJI[k.slice(0, -2)]) || '';
     }
-    const canPlay = w => !!(w && w.pt_word && (emojiOf(w) || w.cn_meaning));
+    const canPlay = w => {
+        if (!w || !w.pt_word) return false;
+        if (hasSceneData(w) && !(w.scene_confirmed === true && w.pos === 'noun' && w.scene_ok === true)) return false;
+        return !!(emojiOf(w) || w.cn_meaning);
+    };
+    function requestLine(w) {
+        if (w.scene_confirmed !== true) return `Preciso de… ${w.pt_word}! Podes ir comprar?`;
+        const gender = String(w.gender || '').toLowerCase();
+        const number = String(w.number || 'singular').toLowerCase();
+        const articles = {
+            m: { singular: 'um', plural: 'uns' },
+            f: { singular: 'uma', plural: 'umas' }
+        };
+        const article = articles[gender]?.[number];
+        return article ? `Preciso de ${article} ${w.pt_word}! Podes ir comprar?` : `Preciso de… ${w.pt_word}! Podes ir comprar?`;
+    }
 
     /* ---------- 人物：内联 SVG（只拼颜色常量，没有任何用户数据） ---------- */
     const person = (shirt, hair) =>
@@ -152,7 +169,7 @@
             guard();
 
             bubble.textContent = em || zh; bubble.classList.toggle('txt', !em); bubble.classList.add('show');
-            say('朋友', `Preciso de… ${w.pt_word}! Podes ir comprar?`, `我需要……${zh}！你能去买吗？`, true);
+            say('朋友', requestLine(w), `我需要……${zh}！你能去买吗？`, true);
             speakWord(sayBox.querySelector('.spk')); talk(friend);
             await ctl(['walk', '🚶 去商店帮他买']);
             guard();

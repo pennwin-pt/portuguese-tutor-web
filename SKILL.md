@@ -235,6 +235,9 @@ WordMemorizer.Core/
 | `PUT /weeks/current/from_newwords` | body `{new_word_ids:[…]}`:生词本 → 本周计划,**单事务**(校验 → 删旧计划 → 建新计划 → 复制词 → 标记已录入 → 重置调度);已录入的 422,不存在的 404;返回同覆盖 |
 | `DELETE /weeks/current` | → `{deleted_plans,reset}`;只删计划,`Words` 保留(`word_progress` 可能还引用) |
 | `GET /words/{id}` | 单个词,404 = 不存在 |
+| `GET /words/scene-metadata/pending?limit=100` | AI 已生成但未确认的词，最多 200 条 |
+| `POST /words/scene-metadata/generate` | body `{word_ids:[1~40 个 Words.Id]}` → `{generated_ids,skipped_ids,pending_confirmation}`;只补尚无候选的词，AI 候选始终设 `scene_confirmed=false` |
+| `PUT /words/{id}/scene-metadata` | `{emoji?,pos,gender?,number?,scene_ok,scene_confirmed}`;管理端人工修正/确认；非名词会强制 `scene_ok=false` |
 | `POST /scores` | `{batch_number,word_id,record_time?,is_correct,audio_path?,notes?,is_portuguese}` → `{id}`;`batch_number` 必须是 14 位 `yyyyMMddHHmmss`;词不存在 404 |
 | `GET /scores/batches` | 本周批次号(倒序);`GET /scores/batches/{batch}` 该批次记录,每条内嵌 `word`(C# `ScoreRecord.Word` 从这里反序列化) |
 | `PUT /scores/{id}/result` | `{is_correct,notes?}`,改对 / 改错 |
@@ -292,7 +295,7 @@ WordMemorizer.Core/
 | `GET /api/background/{name}` | 白名单正则,`Cache-Control: immutable` |
 | `POST /api/vocab` | **JSON body** {session_id,items:[...]} 批量加入单词库 |
 | `GET /api/vocab?session_id=&limit=500` | 单词库列表,按插入时间倒序 |
-| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex)],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,round_score,times,completed_at}` |
+| `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex)],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;词可选场景字段 `emoji,pos(noun/verb/adjective/other),gender(m/f),number(singular/plural),scene_ok,scene_confirmed`，只使用已确认字段（详见 AGENTS.md）；未生成过候选的旧词不返回这些字段；completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,round_score,times,completed_at}` |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3/4),session_id?,run_id? → `{word_id,mode,passed,recognized_text,comment}`;mode 4 另带 `corrected`;带 run_id 且通过时并入 `earned`/`round_score`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,run_id?,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
@@ -326,6 +329,7 @@ WordMemorizer.Core/
 
 ## 存储(SQLite)
 - `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak`/`used_count`/`last_used_on`、`word_task_done.round_score` 同理。这些都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
+- `Words` 新增 `SceneEmoji` / `ScenePos` / `SceneGender` / `SceneNumber` / `SceneOk` / `SceneConfirmed`；旧记录列保持 NULL，所以 `/today` 不返回场景字段、前端维持旧行为。AI 生成只写候选并保持未确认，只有管理端 PUT 明确确认后前端才使用。
 - `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
 - `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
 - 陪练自身的 `messages`、`users`、`word_*` 等表与 WordMemorizer 的 `Words`、`WeeklyPlans`、`WeeklyPlanWords`、`ScoreRecord`、`ConsumeLog`、`NewWords` 六张表共用同一个 `SQLITE_PATH` 数据库。后六张表保留 PascalCase 表名，由 FastAPI 的 `wm_manager` 管理(另有 `WordQuizRun`/`WordQuizAward` 两张测验积分表也在 `wm_manager.SCHEMA` 里)；WordMemorizer 通过 `/api/admin/*` 读写，陪练的 `word_source.py`(只读)和 `newword_manager.py`(写生词)按 `WORD_DB_PATH`(默认 = `SQLITE_PATH`)访问同一个库。WAL 默认开启，备份必须使用 `tools/backup_db.py`(SQLite backup API)，**不要直接复制 `.db` 文件**，详见"备份与 WAL"一节。
