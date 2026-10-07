@@ -2,7 +2,7 @@
 .sc{display:flex;flex-direction:column;gap:12px;width:100%}
 
 /* ---------- 舞台：一条横向的“轨道”，左边是街道、右边是商店，镜头平移 = 走路 ---------- */
-.sc-view{position:relative;height:270px;border-radius:20px;overflow:hidden;background:linear-gradient(#dff1ff,#f4fbff 62%);box-shadow:0 6px 24px rgba(0,0,0,.08)}
+.sc-view{position:relative;height:360px;border-radius:20px;overflow:hidden;background:linear-gradient(#dff1ff,#f4fbff 62%);box-shadow:0 6px 24px rgba(0,0,0,.08)}
 .sc-track{position:absolute;inset:0;width:200%;display:flex;transition:transform 1.4s cubic-bezier(.45,.05,.3,1)}
 .sc.at-shop .sc-track{transform:translateX(-50%)}
 .sc.at-place .sc-track{transform:translateX(-50%)}
@@ -35,6 +35,17 @@
 .sc-bubble.txt{font-size:16px;font-weight:600;line-height:1.3}
 .sc-bubble.show{transform:scale(1)}
 .sc-bubble::after{content:"";position:absolute;left:22px;bottom:-7px;width:14px;height:14px;background:#fff;border-radius:2px;transform:rotate(45deg)}
+.sc-dialogue-bubble{position:absolute;z-index:5;top:8%;max-width:68%;padding:9px 13px;border-radius:16px;background:#fff;color:var(--tx);box-shadow:0 4px 14px rgba(15,23,42,.18);font-size:14px;font-weight:650;line-height:1.35;overflow-wrap:anywhere;opacity:0;transform:translateY(5px);transition:opacity .18s ease,transform .18s ease;pointer-events:auto}
+.sc-dialogue-bubble.visible{opacity:1;transform:translateY(0)}
+.sc-dialogue-bubble.friend{left:48%;max-width:46%}
+.sc-dialogue-bubble.helper{right:2%}
+.sc-dialogue-bubble.sc-dialogue-summary{left:5%;right:5%;max-width:none}
+.sc-dialogue-text{display:inline}
+.sc-dialogue-zh{margin-top:4px;font-size:12px;font-weight:500;color:var(--sub)}
+.sc-dialogue-bubble .spk{display:inline-flex;vertical-align:middle;width:30px;height:30px;margin-left:6px;align-items:center;justify-content:center;border:1px solid #bfdbfe;border-radius:50%;background:#eff6ff;color:var(--blue);font-size:16px}
+.sc-dialogue-bubble::after{content:"";position:absolute;bottom:-6px;width:12px;height:12px;background:#fff;transform:rotate(45deg)}
+.sc-dialogue-bubble.friend::after{left:18px}
+.sc-dialogue-bubble.helper::after{right:18px}
 
 /* 新模板：餐厅菜单与寻找物品的室内场景，共用舞台和人物动画。 */
 .template-restaurant .sc-place{background:linear-gradient(#fff7ed,#ffedd5 60%,#fed7aa)}
@@ -48,23 +59,8 @@
 .sc-find-art{position:absolute;inset:0 2% 0 2%;display:flex;align-items:center;justify-content:center;opacity:.9}
 .sc-find-art svg{width:100%;height:90%}
 .template-find .sc-shelf{top:18%;background:rgba(255,255,255,.82);border-color:#a3b3c5}
+.template-find.at-place .sc-shelf{top:34%}
 .template-find .sc-item{box-shadow:0 3px 12px rgba(30,41,59,.14)}
-
-/* 三种场景答题方式：预习默认跟读，无法开口时可选句或继续看听。 */
-.sc-mode-tabs{display:flex;justify-content:center;gap:6px;flex-wrap:wrap}
-.sc-mode,.sc-fallback{border:1px solid rgba(100,116,139,.3);border-radius:999px;background:#fff;color:var(--tx);padding:7px 12px;font-size:14px}
-.sc-mode.active{background:var(--blue);border-color:var(--blue);color:#fff}
-.sc-say-prompt{padding:10px 14px;border-radius:14px;background:#fff;color:var(--tx);font-size:17px;font-weight:700;text-align:center;line-height:1.45}
-.sc-sentence-option{width:100%;padding:10px 12px;border:2px solid rgba(100,116,139,.2);border-radius:14px;background:#fff;color:var(--tx);font-size:15px;line-height:1.4;text-align:left;touch-action:manipulation}
-.sc-sentence-option.bad{opacity:.55;background:#f3f4f6}
-.sc-hold{align-self:center;min-width:190px;min-height:50px;padding:10px 20px;border:0;border-radius:999px;background:var(--blue);color:#fff;font-size:17px;font-weight:700;touch-action:none;user-select:none;-webkit-user-select:none}
-.sc-hold.rec{background:#dc2626;transform:scale(1.03)}
-.sc-hold.cancel{background:#64748b}
-.sc-hold.busy{opacity:.8}
-.sc-fallback{align-self:center}
-.sc-ctl .sc-mode{flex:0 1 auto;min-height:40px;padding:0 12px}
-.sc-ctl .sc-sentence-option{flex:1 1 100%;min-height:48px}
-.sc-ctl .sc-hold{flex:0 1 auto;touch-action:none}
 
 /* 篮子跟着“你”走；买到东西后才出现 */
 .sc-basket{position:absolute;z-index:3;left:calc(14% + 46px);bottom:16%;font-size:26px;line-height:1;opacity:0;transition:opacity .2s}
@@ -76,7 +72,6 @@
 .sc-spark{position:absolute;font-size:18px;opacity:0;animation:sc-spark 1.1s ease-out forwards}
 
 /* ---------- 对话区 / 按钮 ---------- */
-.sc-say{min-height:96px;padding:12px 14px;border-radius:16px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.05);text-align:left}
 .sc-who{margin-bottom:2px;font-size:12px;font-weight:600;color:var(--blue)}
 .sc-line{display:flex;align-items:center;gap:10px}
 .sc-pt{flex:1;min-width:0;font-size:19px;font-weight:600;line-height:1.45;word-break:break-word}
@@ -84,19 +79,15 @@
 .show-zh .sc-zh{display:block}
 .sc-zhbtn{flex:none;width:32px;height:32px;padding:0;border:1.5px solid #d1d5db;border-radius:50%;background:#fff;color:var(--sub);font-size:13px;touch-action:manipulation}
 .show-zh .sc-zhbtn{border-color:var(--blue);color:var(--blue)}
-.sc-ctl{display:flex;flex-wrap:wrap;gap:10px;min-height:48px}
+.sc-ctl:empty{display:none}
+.sc-ctl{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:0;padding:8px;box-sizing:border-box;border-radius:18px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.08)}
 .sc-ctl button{flex:1;min-height:48px;padding:0 16px;border:0;border-radius:24px;background:var(--blue);color:#fff;font-size:16px;font-weight:600;touch-action:manipulation}
 .sc-ctl button.alt{flex:none;border:1.5px solid var(--blue);background:#fff;color:var(--blue)}
-.sc-hint{flex:1 1 100%;font-size:14px;color:var(--sub);text-align:center}
-.sc-hint + button.alt{flex:1 1 100%}
-
+.sc-ctl button.sc-exit{flex:1 1 100%;min-height:36px;border:1.5px solid rgba(61,155,233,.45);background:#fff;color:var(--blue);font-size:13px}
 /* 结果卡 */
 .sc-sum .sc-term{flex:1;min-width:0;font-size:26px;font-weight:700;word-break:break-word}
 .sc-zh2{margin-top:2px;font-size:14px;color:var(--sub)}
 .sc-sen{margin-top:10px;font-size:17px;font-weight:500}
-
-/* 场景页里底部只剩“看列表”，让它占满一行 */
-.in-scene #act2{flex:1}
 
 @keyframes sc-hop{50%{transform:translateY(-8px)}}
 @keyframes sc-cheer{50%{transform:translateY(-16px) scale(1.08)}}

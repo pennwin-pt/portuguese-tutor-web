@@ -356,11 +356,19 @@ function viewResult() {
     c.append(mb);
     return c;
 }
-/* ---------- 场景演练（预习）：每个词一个小场景，走完所有词 = 预习完成；任何时候都能切回列表 ---------- */
-function enterPreview() {                           // 预习的统一入口：有能做成场景的词就先走场景，否则直接显示列表
+/* ---------- 场景演练（预习）：先展示单词列表，用户可逐词主动打开场景 ---------- */
+function enterPreview() {
     sceneCur?.cancel(); sceneCur = null;
     sceneWords = window.Scene ? today.preview.filter(Scene.canPlay) : [];
-    sceneIdx = 0; state = sceneWords.length ? 'scene' : 'preview'; render();
+    sceneIdx = -1; scenePurpose = 'preview'; state = 'preview'; render();
+}
+function startPreviewScene(w) {
+    if (!window.Scene || !Scene.canPlay(w)) return;
+    sceneCur?.cancel(); sceneCur = null;
+    sceneWords = today.preview.filter(Scene.canPlay);
+    sceneIdx = sceneWords.findIndex(x => x.id === w.id);
+    if (sceneIdx < 0) return;
+    scenePurpose = 'preview'; state = 'scene'; render();
 }
 function previewDone() {                            // 预习结束（场景走完 / 列表点“看完了”）：和原来“看完了”的去向一致
     sceneCur?.cancel(); sceneCur = null;
@@ -370,13 +378,13 @@ function viewScene() {
     const w = sceneWords[sceneIdx];
     if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
     sceneCur?.cancel();
-    const last = sceneIdx >= sceneWords.length - 1;
-    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: last, speak, speakText, speakSceneSentence, extra: sourceButton,
+    const s = Scene.play(w, { pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakText, speakSceneSentence, extra: sourceButton,
+        exitLabel: '📋 看单词列表', onExit: () => { sceneCur?.cancel(); sceneCur = null; state = 'preview'; render(); },
         captureAudio: recordSceneAudio, cancelAudio: cancelSceneAudio, checkSpeech: checkSceneSpeech, notify: toast });
     sceneCur = { idx: sceneIdx, root: s.root, cancel: s.cancel };
     s.done.then(() => {
         if (sceneCur?.root !== s.root) return;                                // 已经切到别处了
-        if (last) previewDone(); else { sceneIdx++; sceneCur = null; render(); }
+        sceneCur = null; state = 'preview'; render();
     });
     return s.root;
 }
@@ -387,6 +395,7 @@ function viewAssessmentScene() {
     sceneCur?.cancel();
     const pool = (today?.words || []).filter(x => x.id !== w.id && Scene.canPlay(x));
     const s = Scene.play(w, { pool, isLast: false, afterLabel: '进入原测试', speechMode: 'recall', speak, speakText, speakSceneSentence,
+        exitLabel: '跳过场景，进入测试', onExit: () => { sceneCur?.cancel(); sceneCur = null; showCurrentTest(); },
         extra: sourceButton, captureAudio: recordSceneAudio, cancelAudio: cancelSceneAudio,
         checkSpeech: evaluateSceneSpeech, evaluateChoice: evaluateSceneChoice, notify: toast });
     sceneCur = { wordId: w.id, root: s.root, cancel: s.cancel };
@@ -405,18 +414,21 @@ function viewPreview() {                            // 预习：只看、只听�
     const wk = isSunday();
     c.append(el('div', 'term', wk ? `👀 本周单词（共 ${today.preview.length} 个）` : '👀 预习明天的词'),
         el('p', 'intro', wk ? '周一开始记。先混个脸熟：点喇叭听读音，看看例句。这里不测试。' : '先混个脸熟：点喇叭听读音，看看例句。这里不测试。'));
-    if (window.Scene && today.preview.some(Scene.canPlay)) {
-        const sb = el('button', 'sbtn', '🎬 用场景练习这些词'); sb.type = 'button';
-        sb.onclick = () => { unlock(); enterPreview(); };
-        c.append(sb);
-    }
     const list = el('div', 'plist');
     for (const w of today.preview) {
-        const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow');
+        const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow'), actions = el('div', 'preview-actions');
         tx.append(el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
         if (w.pt_sentence) tx.append(el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
-        r1.append(tx); const sb = sourceButton(w); if (sb) r1.append(sb); r1.append(spk(w, 'word'));
-        row.append(r1); list.append(row);
+        r1.append(tx);
+        const sb = sourceButton(w); if (sb) actions.append(sb);
+        if (window.Scene && Scene.canPlay(w)) {
+            const sceneButton = el('button', 'source-btn scene-preview-btn', '🎬 预习场景');
+            sceneButton.type = 'button';
+            sceneButton.onclick = () => { unlock(); startPreviewScene(w); };
+            actions.append(sceneButton);
+        }
+        actions.append(spk(w, 'word'));
+        row.append(r1, actions); list.append(row);
     }
     c.append(list);
     return c;
@@ -465,6 +477,7 @@ function viewDone() {
 function render() {
     const hold = $('#hold'), act = $('#act'), stage = $('#stage');
     const testing = state === 'test' || state === 'judging';
+    $('footer').hidden = state === 'scene';
     hold.hidden = !testing;
     hold.disabled = state === 'judging';
     $('#reveal').hidden = !testing;                              // 测试中随时可以“公布答案”
@@ -474,8 +487,8 @@ function render() {
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
     act.hidden = testing || state === 'loading' || state === 'scene';
     const sunIdle = state === 'idle' && previewOnly();
-    $('#act2').hidden = !(state === 'done' || sunIdle || state === 'scene');          // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
-    $('#act2').textContent = sunIdle ? '👀 只看列表' : state === 'scene' ? (scenePurpose === 'assessment' ? '跳过场景，进入测试' : '📋 看列表') : '返回聊天';
+    $('#act2').hidden = !(state === 'done' || sunIdle);                              // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
+    $('#act2').textContent = sunIdle ? '👀 只看列表' : '返回聊天';
     const ss = sunIdle ? sunSaved() : null;
     const resultLabel = !lastRes ? '' : (!lastRes.passed && !sunGaveUp()) ? '🔁 再试一次'            // 没答对：停在这个词
         : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测

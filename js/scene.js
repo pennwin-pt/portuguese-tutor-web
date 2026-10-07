@@ -39,7 +39,7 @@
     const ITEM_EMOJI = {};
     for (const k of Object.keys(RAW)) ITEM_EMOJI[norm(k)] = RAW[k];
     const GENERIC_EMOJI = [...new Set(Object.values(ITEM_EMOJI))];
-    const GENERIC_ZH = ['苹果', '牛奶', '面包', '水', '书', '钥匙', '雨伞', '帽子', '鞋子', '手机', '鸡蛋', '花'];   // 没有 emoji 时的通用干扰项
+    const GENERIC_PT = ['maçã', 'leite', 'pão', 'água', 'livro', 'chave', 'guarda-chuva', 'chapéu', 'sapato', 'telemóvel', 'ovo', 'flor'];
     const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
@@ -84,15 +84,16 @@
     const FOOD_WORDS = new Set(['maçã', 'pão', 'leite', 'água', 'café', 'chá', 'queijo', 'ovo', 'arroz', 'peixe', 'carne', 'frango', 'banana', 'laranja', 'uva', 'morango', 'limão', 'tomate', 'batata', 'cenoura', 'cebola', 'alface', 'milho', 'cereja', 'pêra', 'melancia', 'ananás', 'pêssego', 'abacate', 'sumo', 'vinho', 'cerveja', 'bolo', 'gelado', 'chocolate', 'sopa', 'sal', 'mel', 'pizza', 'sandes', 'hambúrguer', 'batatas fritas'].map(norm));
     const FOOD_EMOJI = new Set([...FOOD_WORDS].map(k => ITEM_EMOJI[k]).filter(Boolean));
     const isFood = w => FOOD_WORDS.has(norm(w && w.pt_word)) || FOOD_EMOJI.has(emojiOf(w));
-    const FOOD_ZH = ['苹果', '牛奶', '面包', '水', '鸡蛋', '奶酪', '香蕉', '鱼', '米饭', '蛋糕', '汤', '果汁'];
+    const FOOD_PT = ['maçã', 'leite', 'pão', 'água', 'ovo', 'queijo', 'banana', 'peixe', 'arroz', 'bolo', 'sopa', 'sumo'];
     function buildOptions(w, pool, template) {
-        const em = emojiOf(w), key = em ? 'emoji' : 'text', mine = em || w.cn_meaning;
+        const em = emojiOf(w), key = em ? 'emoji' : 'text';
+        const mine = em || w.pt_word;
         const words = template.foodOnly ? pool.filter(isFood)
             : template.adjectiveOnly ? pool.filter(x => x.pos === 'adjective' && canPlay(x))
                 : pool.filter(x => x.pos !== 'adjective');
         const genericEmoji = template.foodOnly ? [...FOOD_EMOJI] : GENERIC_EMOJI;
-        const genericText = template.foodOnly ? FOOD_ZH : GENERIC_ZH;
-        const cand = em ? [...words.map(emojiOf), ...genericEmoji] : [...words.map(p => p.cn_meaning), ...genericText];
+        const genericText = template.foodOnly ? FOOD_PT : GENERIC_PT;
+        const cand = em ? [...words.map(emojiOf), ...genericEmoji] : [...words.map(p => p.pt_word), ...genericText];
         const seen = new Set([mine]), others = [];
         for (const v of shuffle(cand)) {
             if (!v || seen.has(v)) continue;
@@ -107,10 +108,10 @@
             id: 'shop', rootClass: 'template-shop', bg: { location: 'shop' }, foodOnly: false,
             carrier: '🧺', cast: { friend: ['#f59e0b', '#1f2937'], helper: ['#22c55e', '#7c2d12'] },
             beats: [
-                { action: 'intro', who: '朋友', say: 'Olá! Preciso de ajuda!', zh: '你好！我需要帮忙！', speech: 'Olá! Preciso de ajuda!', button: ['listen', '👂 听听他要什么'] },
+                { action: 'intro', who: '朋友', say: 'Olá! Preciso de ajuda!', zh: '你好！我需要帮忙！', speech: 'Olá! Preciso de ajuda!', button: ['listen', '▶️ 继续'] },
                 { action: 'request', who: '朋友', say: 'Preciso de{art}{pt}! Podes ir comprar?', zh: '我需要……{zh}！你能去买吗？', button: ['walk', '🚶 去商店帮他买'] },
                 { action: 'location', who: '售货员', say: 'Bom dia! Em que posso ajudar?', zh: '早上好！需要什么？', speech: 'Bom dia! Em que posso ajudar?', hint: '👆 点货架上朋友要的东西' },
-                { action: 'choose', who: '售货员', feedback: 'Não é isso…', feedbackZh: '不是这个……再听听朋友要什么', success: 'Aqui tem!', successZh: '给你！' },
+                { action: 'choose', who: '售货员', feedback: 'Não é isso…', feedbackZh: '不是这个……再看看朋友需要什么', success: 'Aqui tem!', successZh: '给你！' },
                 { action: 'return', button: ['back', '🚶 带回去给朋友'], speech: 'Obrigado!' },
                 { action: 'thanks', who: '朋友', say: 'Obrigado!', zh: '谢谢你！' },
             ]
@@ -119,10 +120,10 @@
             id: 'restaurant', rootClass: 'template-restaurant', bg: { location: 'restaurant' }, foodOnly: true,
             carrier: '🍽️', cast: { friend: ['#fb923c', '#431407'], helper: ['#0f766e', '#164e63'] },
             beats: [
-                { action: 'intro', who: '朋友', say: 'Olá! Tenho fome!', zh: '你好！我饿了！', speech: 'Olá! Tenho fome!', button: ['listen', '👂 听听朋友想吃什么'] },
+                { action: 'intro', who: '朋友', say: 'Olá! Tenho fome!', zh: '你好！我饿了！', speech: 'Olá! Tenho fome!', button: ['listen', '▶️ 继续'] },
                 { action: 'request', who: '朋友', say: 'Podes pedir{art}{pt} para mim, por favor?', zh: '可以帮我点{zh}吗？', button: ['walk', '🚶 去餐厅点单'] },
                 { action: 'location', who: '服务员', say: 'Bom dia! Em que posso ajudar?', zh: '早上好！需要点什么？', speech: 'Bom dia! Em que posso ajudar?', hint: '👆 从菜单里选朋友想吃的东西' },
-                { action: 'choose', who: '服务员', feedback: 'Não é isso…', feedbackZh: '不是这个……再看看菜单', success: 'Aqui tem!', successZh: '餐点准备好了！' },
+                { action: 'choose', who: '服务员', feedback: 'Não é isso…', feedbackZh: '不是这个……再看看朋友想吃什么', success: 'Aqui tem!', successZh: '餐点准备好了！' },
                 { action: 'return', button: ['back', '🚶 把餐点带给朋友'], speech: 'Obrigado!' },
                 { action: 'thanks', who: '朋友', say: 'Obrigado!', zh: '谢谢你！' },
             ]
@@ -131,7 +132,7 @@
             id: 'find', rootClass: 'template-find', bg: { location: 'search-place' }, foodOnly: false,
             carrier: '🔎', cast: { friend: ['#a78bfa', '#312e81'], helper: ['#22c55e', '#7c2d12'] },
             beats: [
-                { action: 'intro', who: '朋友', say: 'Olá! Preciso de ajuda!', zh: '你好！我需要帮忙！', speech: 'Olá! Preciso de ajuda!', button: ['listen', '👂 听听他要什么'] },
+                { action: 'intro', who: '朋友', say: 'Olá! Preciso de ajuda!', zh: '你好！我需要帮忙！', speech: 'Olá! Preciso de ajuda!', button: ['listen', '▶️ 继续'] },
                 { action: 'request', who: '朋友', say: 'Não encontro{art}{pt}. Podes ajudar-me?', zh: '我找不到{zh}，可以帮我找吗？', button: ['walk', '🔎 去帮朋友找找'], clickSpeech: 'Vamos procurar!' },
                 { action: 'location', who: '朋友', say: 'Vamos procurar!', zh: '我们一起找找看！', speech: 'Vamos procurar!', hint: '👆 选出朋友在找的东西' },
                 { action: 'choose', who: '朋友', feedback: 'Não é isso…', feedbackZh: '不是这个……再找找看', success: 'Encontrei!', successZh: '找到了！' },
@@ -143,7 +144,7 @@
             id: 'describe', rootClass: 'template-find', bg: { location: 'search-place' }, foodOnly: false, adjectiveOnly: true,
             carrier: '🖌️', cast: { friend: ['#a78bfa', '#312e81'], helper: ['#22c55e', '#7c2d12'] },
             beats: [
-                { action: 'intro', who: '朋友', say: 'Olá! Ajudas-me a escolher?', zh: '你好！能帮我挑一个吗？', speech: 'Olá! Ajudas-me a escolher?', button: ['listen', '👂 听听朋友的请求'] },
+                { action: 'intro', who: '朋友', say: 'Olá! Ajudas-me a escolher?', zh: '你好！能帮我挑一个吗？', speech: 'Olá! Ajudas-me a escolher?', button: ['listen', '▶️ 继续'] },
                 { action: 'request', who: '朋友', say: 'Quero {art} {noun} {adj}, por favor.', zh: '帮朋友找一个{zh}的{nounZh}。', button: ['walk', '🖌️ 去帮朋友挑选'], clickSpeech: 'Vamos escolher!' },
                 { action: 'location', who: '朋友', say: 'Vamos escolher!', zh: '我们来挑选吧！', speech: 'Vamos escolher!', hint: '👆 选出符合描述的特征' },
                 { action: 'choose', who: '朋友', feedback: 'Não é isso…', feedbackZh: '这个特征不对，再试一次', success: 'É mesmo este!', successZh: '就是这个！' },
@@ -193,6 +194,8 @@
         const values = { pt: w.pt_word || '', zh, art: adjContext ? adjContext.article : artOf(w, template), emoji: em,
             noun: adjContext ? adjContext.noun : '', nounZh: adjContext ? adjContext.nounZh : '',
             adj: adjContext ? adjectiveForm(w, adjContext) : '' };
+        const promptValues = { ...values, pt: ' ______', adj: '______' };
+        if (!template.adjectiveOnly) promptValues.art = '';
         let alive = true;
         const guard = () => { if (!alive) throw CANCEL; };
         const wait = async ms => { await sleep(ms); guard(); };
@@ -228,27 +231,20 @@
 
         const me = mkPerson('sc-me', 'var(--blue)', '#3b2a20');
         const basket = el('div', 'sc-basket'), bItem = el('span', 'b-item'); basket.append(bItem, el('span', '', template.carrier));
-        view.append(track, me, basket);
-
-        const sayBox = el('div', 'sc-say'), ctlBox = el('div', 'sc-ctl');
-        root.append(view, sayBox, ctlBox);
+        const dialogueBubble = el('div', 'sc-dialogue-bubble'), ctlBox = el('div', 'sc-ctl');
+        view.append(track, me, basket, dialogueBubble);
+        root.append(view, ctlBox);
 
         /* --- 通用台词与动作 --- */
         const talk = p => { p.classList.add('talk'); setTimeout(() => p.classList.remove('talk'), 1800); };
-        const say = (who, pt, zhText, withSpk) => {
-            sayBox.textContent = '';
-            const line = el('div', 'sc-line');
-            line.append(el('div', 'sc-pt', pt));
-            if (withSpk) { const b = el('button', 'spk', '🔊'); b.type = 'button'; b.setAttribute('aria-label', '朗读单词'); b.onclick = () => ctx.speak && ctx.speak(w, 'word', b); line.append(b); }
-            if (zhText) {
-                const z = el('button', 'sc-zhbtn', '中'); z.type = 'button'; z.setAttribute('aria-label', '显示或隐藏中文');
-                z.onclick = () => { showZh = !showZh; root.classList.toggle('show-zh', showZh); };
-                line.append(z);
-            }
-            sayBox.append(el('div', 'sc-who', who), line);
-            if (zhText) sayBox.append(el('div', 'sc-zh', zhText));
+        const say = (who, pt, zhText, speaker) => {
+            const owner = speaker || (who === '朋友' ? friend : helper);
+            dialogueBubble.className = 'sc-dialogue-bubble visible ' + (owner === friend ? 'friend' : 'helper');
+            dialogueBubble.textContent = '';
+            dialogueBubble.append(el('div', 'sc-dialogue-text', pt));
+            if (zhText) dialogueBubble.append(el('div', 'sc-dialogue-zh', `${who}：${zhText}`));
         };
-        const sayBeat = (b, withSpk) => say(b.who, fill(b.say, values), fill(b.zh, values), withSpk);
+        const sayBeat = (b, speaker) => say(b.who, fill(b.say, values), fill(b.zh, values), speaker);
         const ctl = (button, speech, waitForSpeech) => new Promise(res => {
             ctlBox.textContent = '';
             const [id, label, alt] = button;
@@ -260,7 +256,15 @@
                 res(id);
             };
             ctlBox.append(b);
+            appendExitButton();
         });
+        const appendExitButton = () => {
+            if (!ctx.onExit) return;
+            const b = el('button', 'sc-exit', ctx.exitLabel || '退出场景');
+            b.type = 'button';
+            b.onclick = () => ctx.onExit();
+            ctlBox.append(b);
+        };
         const speakWord = btn => { if (ctx.speak) ctx.speak(w, 'word', btn || null); };
 
         async function run() {
@@ -269,46 +273,15 @@
             sayBeat(intro); await wait(60); root.classList.add('go'); await wait(950);
             await ctl(intro.button, intro.speech, true); guard();
 
-            bubble.textContent = em || zh; bubble.classList.toggle('txt', !em); bubble.classList.add('show');
-            if (ctx.speechMode === 'recall') {
-                say('朋友', '需要什么？', fill(request.zh, values), false); talk(friend);
-            } else {
-                sayBeat(request, true); speakWord(sayBox.querySelector('.spk')); talk(friend);
-            }
+            bubble.textContent = zh; bubble.classList.add('txt', 'show');
+            say(request.who, fill(request.say, promptValues), fill(request.zh, values), friend); talk(friend);
             await ctl(request.button, request.clickSpeech || location.speech); guard();
 
             root.classList.add('walking', 'at-place'); if (template.id === 'shop') root.classList.add('at-shop');
             await wait(1500); root.classList.remove('walking');
-            sayBeat(location); talk(helper);
+            sayBeat(location, helper); talk(helper);
             ctlBox.textContent = '';
-            const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
-            ctlBox.append(el('div', 'sc-hint', ctx.speechMode === 'recall' ? `回忆葡语：${zh}` : location.hint));
-            if (ctx.speechMode !== 'recall') ctlBox.append(again);
-
-            let wrong = 0, successAudio = null, answerMode = 'say';
-            const sentenceFor = item => fill(request.say, template.adjectiveOnly ? {
-                pt: item.pt_word, zh: item.cn_meaning || '', art: adjContext.article, emoji: emojiOf(item),
-                noun: adjContext.noun, nounZh: adjContext.nounZh, adj: adjectiveForm(item, adjContext)
-            } : { pt: item.pt_word, zh: item.cn_meaning || '', art: artOf(item, template), emoji: emojiOf(item) });
-            const fallbackWords = template.foodOnly
-                ? ['sopa', 'café', 'pão', 'água', 'arroz'].map((pt_word, i) => ({ pt_word, cn_meaning: ['汤', '咖啡', '面包', '水', '米饭'][i], gender: ['f', 'm', 'm', 'f', 'm'][i], scene_confirmed: true }))
-                : template.adjectiveOnly
-                    ? [
-                        ['grande', 'grande', 'grande', 'grandes', '大的', '🔎'],
-                        ['pequeno', 'pequena', 'pequenos', 'pequenas', '小的', '🔹'],
-                        ['bonito', 'bonita', 'bonitos', 'bonitas', '漂亮的', '✨'],
-                    ].map(([pt_word, adjective_f_singular, adjective_m_plural, adjective_f_plural, cn_meaning, emoji]) => ({
-                        pt_word, cn_meaning, emoji, adjective_m_singular: pt_word, adjective_f_singular,
-                        adjective_m_plural, adjective_f_plural, scene_confirmed: true, pos: 'adjective', scene_ok: true
-                    }))
-                    : ['livro', 'mala', 'chave', 'cadeira', 'copo'].map((pt_word, i) => ({ pt_word, cn_meaning: ['书', '包', '钥匙', '椅子', '杯子'][i], gender: ['m', 'f', 'f', 'f', 'm'][i], scene_confirmed: true }));
-            const sentencePool = pool.filter(x => x.id !== w.id && (template.adjectiveOnly
-                ? x.pos === 'adjective' && canPlay(x) : x.pos !== 'adjective' && (!template.foodOnly || isFood(x))));
-            const sentenceItems = shuffle([w, ...sentencePool, ...fallbackWords]
-                .filter((x, i, a) => a.findIndex(y => norm(y.pt_word) === norm(x.pt_word)) === i))
-                .slice(0, 3).map(x => ({ text: sentenceFor(x), ok: x.id === w.id }));
-            // 确保正确句子始终在选项内，即使候选池数据异常。
-            if (!sentenceItems.some(x => x.ok)) sentenceItems[0] = { text: sentenceFor(w), ok: true };
+            let wrong = 0, successAudio = null;
             const chosen = await new Promise(res => {
                 let picking = true, grading = false;
                 const finish = () => {
@@ -319,9 +292,7 @@
                 };
                 const wrongAnswer = btn => {
                     btn.classList.add('shake', 'bad');
-                    say(choose.who, choose.feedback, choose.feedbackZh, false);
-                    if (ctx.speakText) ctx.speakText(choose.feedback, btn).then(() => { if (ctx.speechMode !== 'recall') speakWord(null); });
-                    else if (ctx.speechMode !== 'recall') speakWord(null);
+                    say(choose.who, choose.feedback, choose.feedbackZh, helper);
                     if (wrong >= 2) items.find(x => x.dataset.ok).classList.add('hint');
                 };
                 const gradeChoice = async (btn, selectedId, correct) => {
@@ -339,82 +310,19 @@
                         wrong++; wrongAnswer(btn);
                     } catch (err) {
                         grading = false; btn.disabled = false;
-                        const hint = ctlBox.querySelector('.sc-hint');
-                        if (hint) hint.textContent = err.message || '提交失败，请重试。';
+                        dialogueBubble.append(el('div', 'sc-dialogue-zh', err.message || '提交失败，请重试。'));
                     }
                 };
-                const tabs = el('div', 'sc-mode-tabs');
                 const renderAnswerMode = () => {
                     ctlBox.textContent = '';
-                    tabs.textContent = '';
                     items.forEach(btn => { btn.onclick = null; });
-                    [['say', '🎤 说'], ['choose', '🗨️ 选一句'], ['listen', '👀 看和听']].forEach(([id, label]) => {
-                        const tab = el('button', 'sc-mode' + (answerMode === id ? ' active' : ''), label); tab.type = 'button';
-                        tab.onclick = () => { answerMode = id; renderAnswerMode(); };
-                        tabs.append(tab);
-                    });
-                    ctlBox.append(tabs);
-                    if (answerMode === 'listen') {
-                        ctlBox.append(el('div', 'sc-hint', location.hint));
-                        if (ctx.speechMode !== 'recall') {
-                            const again = el('button', 'alt', '🔊 再听一遍'); again.type = 'button'; again.onclick = () => speakWord(again);
-                            ctlBox.append(again);
-                        }
-                        items.forEach(btn => btn.onclick = () => {
-                            gradeChoice(btn, btn.dataset.ok ? w.id : -1, !!btn.dataset.ok);
-                        });
-                    } else if (answerMode === 'choose') {
-                        ctlBox.append(el('div', 'sc-hint', '选出朋友说的那句话，答错可以再选。'));
-                        sentenceItems.forEach(option => {
-                            const btn = el('button', 'sc-sentence-option', option.text); btn.type = 'button';
-                            btn.onclick = () => gradeChoice(btn, option.ok ? w.id : -1, !!option.ok);
-                            ctlBox.append(btn);
-                        });
-                    } else {
-                        ctlBox.append(el('div', 'sc-hint', ctx.speechMode === 'recall' ? `请用葡语说出「${zh}」。` : '跟着朋友说出这句话：'));
-                        if (ctx.speechMode !== 'recall') {
-                            ctlBox.append(el('div', 'sc-say-prompt', sentenceFor(w)));
-                            const hear = el('button', 'alt', '🔊 听朋友说'); hear.type = 'button';
-                            hear.onclick = () => ctx.speakSceneSentence ? ctx.speakSceneSentence(w, template.id, hear) : speakWord(hear);
-                            ctlBox.append(hear);
-                        }
-                        const hold = el('button', 'sc-hold', '🎤 按住说话'); hold.type = 'button'; ctlBox.append(hold);
-                        const fallback = el('button', 'sc-fallback', '现在不方便说话？选一句'); fallback.type = 'button';
-                        fallback.onclick = () => { answerMode = 'choose'; renderAnswerMode(); };
-                        ctlBox.append(fallback);
-                        if (ctx.captureAudio && ctx.checkSpeech) {
-                            hold.addEventListener('pointerdown', async e => {
-                                e.preventDefault(); if (hold.classList.contains('busy')) return;
-                                try {
-                                    hold.classList.add('busy');
-                                    const blob = await ctx.captureAudio(hold, e);
-                                    hold.classList.remove('busy');
-                                    if (!blob || !picking) { hold.disabled = false; return; }
-                                    hold.textContent = '识别中…';
-                                    const result = await ctx.checkSpeech(blob, w);
-                                    if (result.passed) finish();
-                                    else {
-                                        wrong++;
-                                        ctlBox.querySelector('.sc-hint').textContent = (result.recognized_text ? `听到“${result.recognized_text}”。` : '') + '再慢一点试试，或切换到选句。';
-                                        hold.disabled = false; hold.textContent = '🎤 按住说话';
-                                    }
-                                } catch (err) {
-                                    hold.classList.remove('busy');
-                                    const noMic = ['NotAllowedError', 'NotFoundError', 'SecurityError', 'NotSupportedError'].includes(err.name);
-                                    if (noMic) {
-                                        answerMode = 'choose'; renderAnswerMode();
-                                        if (ctx.notify) ctx.notify('无法使用麦克风，已切换到选句。');
-                                    } else {
-                                        ctlBox.querySelector('.sc-hint').textContent = err.message || '录音失败，请重试或切换到选句。';
-                                        hold.disabled = false; hold.textContent = '🎤 按住说话';
-                                    }
-                                }
-                            });
-                        } else {
-                            hold.disabled = true;
-                            fallback.click();
-                        }
-                    }
+                    dialogueBubble.className = 'sc-dialogue-bubble visible helper';
+                    dialogueBubble.textContent = '';
+                    dialogueBubble.append(el('div', 'sc-dialogue-text', fill(request.say, promptValues)),
+                        el('div', 'sc-dialogue-zh', fill(request.zh, values)),
+                        el('div', 'sc-dialogue-zh', '点选场景里的正确选项。'));
+                    items.forEach(btn => btn.onclick = () => gradeChoice(btn, btn.dataset.ok ? w.id : -1, !!btn.dataset.ok));
+                    appendExitButton();
                 };
                 renderAnswerMode();
             });
@@ -425,7 +333,7 @@
             Object.assign(fly.style, { left: (ir.left - vr.left) + 'px', top: (ir.top - vr.top) + 'px', width: ir.width + 'px', height: ir.height + 'px' });
             view.append(fly); chosen.style.visibility = 'hidden'; fly.getBoundingClientRect();
             fly.style.transform = `translate(${br.left - ir.left}px, ${br.top - ir.top}px) scale(.5)`; fly.style.opacity = '.9';
-            say(choose.who, choose.success, choose.successZh, false); talk(helper);
+            say(choose.who, choose.success, choose.successZh, helper); talk(helper);
             if (successAudio) successAudio.then(() => speakWord(null)); else speakWord(null);
             await wait(850); bItem.textContent = em || '📦'; basket.classList.add('has'); fly.remove();
             await ctl(returnBeat.button, returnBeat.speech); guard();
@@ -439,14 +347,16 @@
             }
             await wait(1400);
 
-            sayBox.textContent = '';
+            dialogueBubble.classList.remove('visible');
+            dialogueBubble.textContent = '';
             const card = el('div', 'sc-sum'), row = el('div', 'sc-line');
             row.append(el('div', 'sc-term', w.pt_word));
             const sp = el('button', 'spk', '🔊'); sp.type = 'button'; sp.setAttribute('aria-label', '朗读单词'); sp.onclick = () => speakWord(sp); row.append(sp);
             const extra = ctx.extra && ctx.extra(w); if (extra) row.append(extra);
             card.append(row, el('div', 'sc-zh2', zh));
             if (w.pt_sentence) card.append(el('div', 'sc-sen', w.pt_sentence), el('div', 'sc-zh2', w.cn_sentence || ''));
-            sayBox.append(card);
+            dialogueBubble.className = 'sc-dialogue-bubble visible helper sc-dialogue-summary';
+            dialogueBubble.append(card);
             const next = ['next', ctx.afterLabel || (ctx.isLast ? '完成 ✓' : '下一个词 ›')];
             await ctl(next); guard();
         }
