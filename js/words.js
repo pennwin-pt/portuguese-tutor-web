@@ -453,6 +453,12 @@ function viewDone() {
     c.append(el('div', 'term', s.fresh ? '🎉 今日任务完成' : '✅ 今日任务已完成'),
         el('div', 'stat', lines.join('\n')),
         el('p', 'intro', '想再巩固一遍？点下面的“重新学习”。'));
+    if (today?.preview?.length) {
+        const previewButton = el('button', 'sbtn', '👀 重新预习明天的单词');
+        previewButton.type = 'button';
+        previewButton.onclick = () => { unlock(); enterPreview(); };
+        c.append(previewButton);
+    }
     return c;
 }
 
