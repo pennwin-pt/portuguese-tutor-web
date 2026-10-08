@@ -111,7 +111,22 @@
 @keyframes sc-glow{50%{box-shadow:0 0 0 4px rgba(22,163,74,.55)}}
 @keyframes sc-spark{0%{opacity:0;transform:translateY(8px) scale(.6)}30%{opacity:1}100%{opacity:0;transform:translateY(-34px) scale(1.2)}}
 
+@media (max-width:420px){
+    .sc-view{height:320px}
+    .sc .sc-dialogue-bubble{top:3%;max-width:78%;font-size:13px}
+    .sc .sc-dialogue-bubble.friend{left:36%;max-width:60%}
+    .sc .sc-dialogue-bubble.helper{right:2%;max-width:70%}
+    .sc .sc-shelf{top:32%;left:3%;right:3%;gap:6px;padding:6px}
+    .template-shop .sc-shelf,.template-restaurant .sc-shelf,.template-room .sc-shelf{top:32%}
+    .template-find .sc-shelf{top:32%}
+    .template-find.at-place .sc-shelf{top:36%}
+    .sc .sc-shelf .sc-item{flex:0 1 calc(50% - 6px);min-width:44px;max-width:calc(50% - 6px);min-height:52px;padding:4px;font-size:26px}
+    .sc .sc-shelf .sc-item.hot{min-height:52px}
+    .sc .sc-item .em{font-size:22px}
+    .sc .sc-item .lb{font-size:11px}
+    .sc .sc-item.txt{font-size:13px}
+}
+
 @media (prefers-reduced-motion:reduce){
-    .sc *{animation:none!important}
-    .sc-track,.sc-friend,.sc-fly,.sc-bubble{transition-duration:.01s!important}
+    .sc *, .sc *::before, .sc *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 }

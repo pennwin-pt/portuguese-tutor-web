@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f3f7fb">
+  <title>场景模板预览 · 葡语陪练</title>
+  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="css/scene.css">
+  <style>
+    body{margin:0;padding:16px;background:#f3f7fb;color:#1f2937;font-family:system-ui,"Microsoft YaHei",sans-serif}
+    .lab{max-width:920px;margin:0 auto}
+    .lab h1{font-size:22px;margin:0 0 12px}
+    .lab-card{padding:14px;margin-bottom:12px;border-radius:16px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.07)}
+    .lab-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .lab-field{display:flex;flex-direction:column;gap:4px;font-size:13px}
+    .lab-field input,.lab-field select{box-sizing:border-box;width:100%;min-height:40px;padding:7px 9px;border:1px solid #cbd5e1;border-radius:9px;font:inherit}
+    .lab-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:12px}
+    .lab-actions button{min-height:42px;padding:8px 14px;border:0;border-radius:22px;background:var(--blue,#5875aa);color:#fff;font:inherit;font-weight:650}
+    #lab-status{min-height:22px;margin-top:8px;color:#64748b;font-size:13px;overflow-wrap:anywhere}
+    #scene-host{margin-top:12px}
+    #scene-host .sc{width:100%}
+    #lab-player{display:none}
+    @media(max-width:560px){body{padding:10px}.lab h1{font-size:19px}.lab-fields{grid-template-columns:repeat(2,minmax(0,1fr))}.lab-card{padding:11px}}
+    @media(max-width:360px){.lab-fields{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="lab">
+    <h1>场景模板预览</h1>
+    <section class="lab-card">
+      <div class="lab-fields">
+        <label class="lab-field">场景模板<select id="lab-template"></select></label>
+        <label class="lab-field">模式<select id="lab-mode"><option value="preview">预习</option><option value="assessment">测验预览</option></select></label>
+        <label class="lab-field">葡语单词<input id="lab-pt" autocomplete="off"></label>
+        <label class="lab-field">中文释义<input id="lab-zh" autocomplete="off"></label>
+        <label class="lab-field">Emoji<input id="lab-emoji" autocomplete="off"></label>
+        <label class="lab-field">词性<select id="lab-pos"><option value="noun">名词</option><option value="adjective">形容词</option></select></label>
+        <label class="lab-field">性别<select id="lab-gender"><option value="m">阳性</option><option value="f">阴性</option></select></label>
+        <label class="lab-field">数<select id="lab-number"><option value="singular">单数</option><option value="plural">复数</option></select></label>
+        <label class="lab-field">阳性单数<input id="lab-adj-ms"></label>
+        <label class="lab-field">阴性单数<input id="lab-adj-fs"></label>
+        <label class="lab-field">阳性复数<input id="lab-adj-mp"></label>
+        <label class="lab-field">阴性复数<input id="lab-adj-fp"></label>
+      </div>
+      <div class="lab-actions"><button id="lab-start" type="button">开始 / 重新开始</button></div>
+      <div id="lab-status" role="status"></div>
+    </section>
+    <div id="scene-host"></div>
+    <audio id="lab-player" preload="none"></audio>
+  </main>
+  <script defer src="js/scene.js"></script>
+  <script defer src="js/scene-lab.js"></script>
+</body>
+</html>

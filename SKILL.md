@@ -17,6 +17,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   index.html / css/index.css / css/touch-protection.css / js/index.js      聊天页
   words.html / css/words.css / js/words.js                                单词任务页(复用 index.css;聊天页 header 的 📚 进入)
   sounds/success.wav, sounds/fail.wav                                      单词页答对/答错音效(缺文件静默不播)
+  scene-lab.html / js/scene-lab.js                                          场景模板调试预览页（复用已发布模板，测验预览不提交判分）
 后端:
   main.py                  FastAPI入口,挂聊天/用户/单词/管理 API 路由 + startup 初始化各 manager(SQLite)
   run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
@@ -33,7 +34,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   memory/newword_manager.py       聊天拆词后加生词:写入 NewWords(与 WordMemorizer 共用服务端库)
   memory/word_source.py           单词任务数据源:只读服务端 SQLite 中的 Words / WeeklyPlans(WORD_DB_PATH 默认与 SQLITE_PATH 相同)
   memory/wm_manager.py            WordMemorizer 六张管理表的建表与读写(与陪练共用 sessions.db)
-  api/admin_routes.py             WordMemorizer 管理 API:/api/admin/*(23 个接口,契约见下文)
+  api/admin_routes.py             WordMemorizer 管理 API:/api/admin/*(24 个接口,契约见下文)
   memory/wm_calendar.py           WordMemorizer 的日期/周/批次号工具(周日起算、时间归一化),wm_manager 用
   memory/word_planner.py          ★调度算法(纯函数,不碰数据库):Leitner盒子+工作日间隔+周六加练;另有 pick_chat_focus(聊天联动选目标词)
   memory/word_progress_manager.py ★进度存储:word_progress/word_week/word_daily_plan/word_outcomes 四张表;另有 get_latest_week_ids / credit_chat_use(聊天加分)
@@ -235,6 +236,7 @@ WordMemorizer.Core/
 | `PUT /weeks/current/from_newwords` | body `{new_word_ids:[…]}`:生词本 → 本周计划,**单事务**(校验 → 删旧计划 → 建新计划 → 复制词 → 标记已录入 → 重置调度);已录入的 422,不存在的 404;返回同覆盖 |
 | `DELETE /weeks/current` | → `{deleted_plans,reset}`;只删计划,`Words` 保留(`word_progress` 可能还引用) |
 | `GET /words/{id}` | 单个词,404 = 不存在 |
+| `GET /scenes` | 已发布场景模板元数据 `[{id,title,status,applies_to}]`，供管理端动态选择和筛选词性 |
 | `GET /words/scene-metadata/pending?limit=100` | AI 已生成但未确认的词，最多 200 条 |
 | `POST /words/scene-metadata/generate` | body `{word_ids:[1~40 个 Words.Id]}` → `{generated_ids,skipped_ids,pending_confirmation}`;只补尚无候选的词，AI 候选始终设 `scene_confirmed=false` |
 | `PUT /words/{id}/scene-metadata` | `{emoji?,pos,gender?,number?,scene_ok,scene_confirmed}`;管理端人工修正/确认；非名词会强制 `scene_ok=false` |
@@ -306,7 +308,7 @@ WordMemorizer.Core/
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
 | `POST /api/words/mark_mastered` | **JSON** {session_id,word_id},手动标记已掌握 |
 | `POST /api/words/run` | **JSON** {session_id,restart?} → `{run_id,batch_number,round_score}`;取当天未完成的测验批次或新建(见"单词测验积分") |
-| `/api/admin/*` | WordMemorizer 管理 API(23 个接口),契约见"WordMemorizer 管理端与 Admin API"一节;单词页只用其中的 `GET /api/admin/points`,其余是管理端专用 |
+| `/api/admin/*` | WordMemorizer 管理 API(24 个接口),契约见"WordMemorizer 管理端与 Admin API"一节;单词页只用其中的 `GET /api/admin/points`,其余是管理端专用 |
 | `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=&ex=` | 朗读单词/例句;`ex`(≥0,默认 0)仅 `kind=sentence` 有效:读第 ex 条生成例句,不存在/已停用 404,负数 422 |
 | `WS /ws/chat/{session_id}` | **简化骨架**,整段收发,**不落库** orig/msg_uid/audio_file,与 `/chat/*` 不对齐;有意的过渡状态,不要顺手统一 |
 
