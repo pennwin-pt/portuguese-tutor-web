@@ -12,12 +12,18 @@
 .shop{background:linear-gradient(#fff7e6,#fff1d0)}
 .awning{position:absolute;left:0;right:0;top:0;height:14%;border-radius:0 0 12px 12px;background:repeating-linear-gradient(90deg,#ef4444 0 24px,#fff 24px 48px)}
 .counter{position:absolute;z-index:2;left:0;right:0;bottom:0;height:26%;background:#b9824a;border-top:5px solid #a06a38}
-.sc-shelf{position:absolute;z-index:1;left:5%;right:5%;top:18%;display:flex;justify-content:space-around;gap:8px;padding:8px 6px;border-bottom:6px solid #c8a876;border-radius:10px;background:#e9d5b5}
+.sc-shelf{position:absolute;z-index:1;left:5%;right:5%;top:18%;display:flex;flex-wrap:wrap;justify-content:space-around;gap:8px;padding:8px 6px;border-bottom:6px solid #c8a876;border-radius:10px;background:#e9d5b5}
 .sc-item{min-width:64px;min-height:64px;max-width:34%;padding:4px 6px;border:2px solid transparent;border-radius:14px;background:#fff;color:var(--tx);font-size:34px;line-height:1.1;touch-action:manipulation}
 .sc-item.txt{font-size:15px;font-weight:600;word-break:break-word}
+.sc-item.both,.sc-item.hot{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.sc-item .em{display:block;font-size:30px;line-height:1.1}
+.sc-item .lb{display:block;font-size:12px;font-weight:600;line-height:1.2;word-break:break-word}
+.sc-item.hot{min-width:72px;min-height:72px}
+.sc-item.open{border-color:#16a34a;transform:scale(1.1);transition:transform .3s}
 .sc-item.bad{opacity:.45;background:#f3f4f6}
 .sc-item.hint{animation:sc-glow 1s ease-in-out infinite}
 .sc-item.shake{animation:sc-shake .35s}
+.template-shop .sc-shelf{top:30%}
 
 /* ---------- 人物：外层负责站位和进出场，内层负责蹦跳 ---------- */
 .sc-person{position:absolute;width:48px;height:76px}
@@ -52,10 +58,14 @@
 .template-restaurant .awning{background:repeating-linear-gradient(90deg,#0f766e 0 24px,#ecfeff 24px 48px)}
 .template-restaurant .counter{background:#9a6b4f;border-color:#7c4a35}
 .sc-place-sign{position:absolute;z-index:1;top:16%;left:50%;transform:translateX(-50%);padding:3px 18px;border-radius:5px;background:#7c2d12;color:#fff7ed;font-size:14px;font-weight:800;letter-spacing:3px}
-.template-restaurant .sc-shelf{top:35%;right:24%}
+.template-restaurant .sc-shelf{top:30%;right:24%}
 .template-restaurant .sc-item{min-width:52px}
 .search-place{overflow:hidden;background:linear-gradient(#dbeafe,#eff6ff 60%,#d1fae5)}
-.search-place .awning,.search-place .counter{display:none}
+.search-place .awning,.search-place .counter,.sc-place.room .awning,.sc-place.room .counter{display:none}
+.sc-place.room{background:linear-gradient(#fff4d6 0 62%,#d9b98a 62%)}
+.sc-place.room::before{content:"";position:absolute;left:8%;top:8%;width:22%;height:20%;border:5px solid #a16207;border-radius:6px;background:#dbeafe}
+.template-room .sc-shelf{top:32%;background:rgba(255,255,255,.7);border-bottom-color:#b99a68}
+.template-room .sc-clerk{z-index:3;right:6%;bottom:14%}
 .sc-find-art{position:absolute;inset:0 2% 0 2%;display:flex;align-items:center;justify-content:center;opacity:.9}
 .sc-find-art svg{width:100%;height:90%}
 .template-find .sc-shelf{top:18%;background:rgba(255,255,255,.82);border-color:#a3b3c5}
@@ -83,6 +93,7 @@
 .sc-ctl{display:flex;flex-wrap:wrap;gap:6px;width:100%;margin-top:0;padding:8px;box-sizing:border-box;border-radius:18px;background:#fff;box-shadow:0 4px 16px rgba(0,0,0,.08)}
 .sc-ctl button{flex:1;min-height:48px;padding:0 16px;border:0;border-radius:24px;background:var(--blue);color:#fff;font-size:16px;font-weight:600;touch-action:manipulation}
 .sc-ctl button.alt{flex:none;border:1.5px solid var(--blue);background:#fff;color:var(--blue)}
+.sc-ctl button.sc-exit.attn{border-color:var(--blue);background:var(--blue);color:#fff}
 .sc-ctl button.sc-exit{flex:1 1 100%;min-height:36px;border:1.5px solid rgba(61,155,233,.45);background:#fff;color:var(--blue);font-size:13px}
 /* 结果卡 */
 .sc-sum .sc-term{flex:1;min-width:0;font-size:26px;font-weight:700;word-break:break-word}
