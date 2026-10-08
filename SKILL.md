@@ -296,6 +296,9 @@ WordMemorizer.Core/
 | `POST /api/vocab` | **JSON body** {session_id,items:[...]} 批量加入单词库 |
 | `GET /api/vocab?session_id=&limit=500` | 单词库列表,按插入时间倒序 |
 | `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex)],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;词可选场景字段 `emoji,pos(noun/verb/adjective/other),gender(m/f),number(singular/plural),scene_ok,scene_confirmed`，只使用已确认字段（详见 AGENTS.md）；未生成过候选的旧词不返回这些字段；completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,round_score,times,completed_at}` |
+| `POST /api/words/scene/evaluate` | FormData: `selected_word_id,word_id,session_id,run_id` → `{word_id,passed,recognized_text,comment,earned,round_score?}`；只支持场景选项点选判分，答对时按现有规则尝试发放积分 |
+| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 按服务端确认过的场景词和模板合成跟读句；`describe` 的名词性数语境来自 `scenes/describe.json` |
+| `GET /api/tts?text=&tts_provider=&tts_voice=` | 只允许场景固定台词；按白名单校验、限速并缓存 |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3/4),session_id?,run_id? → `{word_id,mode,passed,recognized_text,comment}`;mode 4 另带 `corrected`;带 run_id 且通过时并入 `earned`/`round_score`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,run_id?,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
@@ -306,6 +309,8 @@ WordMemorizer.Core/
 | `WS /ws/chat/{session_id}` | **简化骨架**,整段收发,**不落库** orig/msg_uid/audio_file,与 `/chat/*` 不对齐;有意的过渡状态,不要顺手统一 |
 
 统一错误格式:`HTTPException(status, "中文错误信息")`,前端 `errMsg()` 读 `detail`(string 或 `[{msg}]`)或 `message`。响应体用 `{status,data}` 或扁平对象均可,前端 `req()` 用 `j.data || j` 兼容。**新增接口遵循这套约定。**
+
+场景点选流程不使用录音判分；旧的 `POST /api/scene/check` 已删除，`POST /api/words/scene/evaluate` 不再接受 `audio`。
 
 ## 安全模式(涉及文件/用户输入的新功能照此写)
 - **服务端生成文件名,绝不用用户输入拼路径**:回复音频 `msg_{uuid12}.{wav|mp3}`,背景图 `bg_{uuid32}.{ext}`,单词朗读缓存 `piper_{sha1[:16]}.wav`。
