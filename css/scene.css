@@ -1,5 +1,9 @@
 /* 场景演练（预习）：只补 scene.js 用到的样式，颜色沿用 index.css 的主题变量 */
 .sc{display:flex;flex-direction:column;gap:12px;width:100%}
+.sc-loading,.sc-load-error{min-height:180px;align-items:center;justify-content:center;text-align:center}
+.sc-load-error{padding:16px;border-radius:18px;background:#fff;color:var(--tx)}
+.sc-load-message{line-height:1.5;overflow-wrap:anywhere}
+.sc-load-error .sc-exit{min-height:44px;padding:8px 16px;border:1.5px solid rgba(61,155,233,.45);border-radius:24px;background:#fff;color:var(--blue)}
 
 /* ---------- 舞台：一条横向的“轨道”，左边是街道、右边是商店，镜头平移 = 走路 ---------- */
 .sc-view{position:relative;height:360px;border-radius:20px;overflow:hidden;background:linear-gradient(#dff1ff,#f4fbff 62%);box-shadow:0 6px 24px rgba(0,0,0,.08)}

@@ -91,6 +91,23 @@ function speakText(text, btn) {                     // 场景固定台词：失�
         });
     });
 }
+function speakLine(sceneId, nodeId, variant, btn) {   // 场景台词只传注册表中的模板和节点 ID，不发送任意文本
+    spkBtn?.classList.remove('play'); spkBtn = btn || null;
+    const c = ttsCfg(), q = new URLSearchParams({ scene_id: sceneId, node_id: nodeId, tts_provider: c.provider });
+    if (variant != null) q.set('variant', String(variant));
+    if (c.provider === 'edge' && c.voice) q.set('tts_voice', c.voice);
+    player.src = `${API}/api/scene/line-audio?${q}`;
+    return new Promise(resolve => {
+        const finish = () => {
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish);
+            resolve(true);
+        };
+        player.addEventListener('ended', finish); player.addEventListener('error', finish); player.addEventListener('pause', finish);
+        player.play().then(() => spkBtn?.classList.add('play')).catch(() => {
+            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish); resolve(false);
+        });
+    });
+}
 function speakSceneSentence(w, template, btn) {
     spkBtn?.classList.remove('play'); spkBtn = btn || null;
     const c = ttsCfg(), q = new URLSearchParams({ word_id: String(w.id), scene_template: template, tts_provider: c.provider });
@@ -378,10 +395,10 @@ function viewScene() {
     const w = sceneWords[sceneIdx];
     if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
     sceneCur?.cancel();
-    const s = Scene.play(w, { mode: 'preview', pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakText, speakSceneSentence, extra: sourceButton,
+    const s = Scene.play(w, { mode: 'preview', pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakText, speakLine, speakSceneSentence, extra: sourceButton,
         exitLabel: '📋 看单词列表', onExit: () => { sceneCur?.cancel(); sceneCur = null; state = 'preview'; render(); },
         cancelAudio: stopSceneAudio });
-    sceneCur = { idx: sceneIdx, root: s.root, cancel: s.cancel };
+    sceneCur = { idx: sceneIdx, get root() { return s.root; }, cancel: s.cancel };
     s.done.then(() => {
         if (sceneCur?.root !== s.root) return;                                // 已经切到别处了
         sceneCur = null; state = 'preview'; render();
@@ -394,10 +411,10 @@ function viewAssessmentScene() {
     if (sceneCur && sceneCur.wordId === w.id) return sceneCur.root;
     sceneCur?.cancel();
     const pool = (today?.words || []).filter(x => x.id !== w.id && Scene.canPlay(x));
-    const s = Scene.play(w, { mode: 'assessment', pool, isLast: false, afterLabel: '进入原测试', speak, speakText, speakSceneSentence,
+    const s = Scene.play(w, { mode: 'assessment', pool, isLast: false, afterLabel: '进入原测试', speak, speakText, speakLine, speakSceneSentence,
         exitLabel: '跳过场景，进入测试', onExit: () => { sceneCur?.cancel(); sceneCur = null; showCurrentTest(); },
         extra: sourceButton, cancelAudio: stopSceneAudio, evaluateChoice: evaluateSceneChoice });
-    sceneCur = { wordId: w.id, root: s.root, cancel: s.cancel };
+    sceneCur = { wordId: w.id, get root() { return s.root; }, cancel: s.cancel };
     s.done.then(() => {
         if (sceneCur?.root !== s.root || state !== 'scene' || scenePurpose !== 'assessment' || cur !== w) return;
         sceneCur = null; showCurrentTest();

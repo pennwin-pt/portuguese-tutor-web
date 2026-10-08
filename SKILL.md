@@ -297,8 +297,10 @@ WordMemorizer.Core/
 | `GET /api/vocab?session_id=&limit=500` | 单词库列表,按插入时间倒序 |
 | `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex)],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;词可选场景字段 `emoji,pos(noun/verb/adjective/other),gender(m/f),number(singular/plural),scene_ok,scene_confirmed`，只使用已确认字段（详见 AGENTS.md）；未生成过候选的旧词不返回这些字段；completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,round_score,times,completed_at}` |
 | `POST /api/words/scene/evaluate` | FormData: `selected_word_id,word_id,session_id,run_id` → `{word_id,passed,recognized_text,comment,earned,round_score?}`；只支持场景选项点选判分，答对时按现有规则尝试发放积分 |
-| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 按服务端确认过的场景词和模板合成跟读句；`describe` 的名词性数语境来自 `scenes/describe.json` |
-| `GET /api/tts?text=&tts_provider=&tts_voice=` | 只允许场景固定台词；按白名单校验、限速并缓存 |
+| `GET /api/scene/templates` | 返回场景注册表中 `published` 模板；响应带 `ETag`，支持 `If-None-Match` / 304 |
+| `GET /api/scene/line-audio?scene_id=&node_id=&variant=&tts_provider=&tts_voice=` | 只合成已发布模板中 `speech=auto/on_tap` 的节点台词；`describe` 的 `variant` 是 `noun_contexts` 索引（0–3）；复用场景语音限速与缓存 |
+| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 按服务端确认过的场景词和已注册模板合成跟读句；模板适用词性由注册表校验，`describe` 的名词性数语境来自 `scenes/describe.json` |
+| `GET /api/tts?text=&tts_provider=&tts_voice=` | 兼容保留的旧固定台词接口；文本白名单由已发布模板派生，并记录弃用日志；新场景代码使用 `/api/scene/line-audio` |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3/4),session_id?,run_id? → `{word_id,mode,passed,recognized_text,comment}`;mode 4 另带 `corrected`;带 run_id 且通过时并入 `earned`/`round_score`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,run_id?,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
@@ -310,7 +312,7 @@ WordMemorizer.Core/
 
 统一错误格式:`HTTPException(status, "中文错误信息")`,前端 `errMsg()` 读 `detail`(string 或 `[{msg}]`)或 `message`。响应体用 `{status,data}` 或扁平对象均可,前端 `req()` 用 `j.data || j` 兼容。**新增接口遵循这套约定。**
 
-场景点选流程不使用录音判分；旧的 `POST /api/scene/check` 已删除，`POST /api/words/scene/evaluate` 不再接受 `audio`。
+场景点选流程不使用录音判分；旧的 `POST /api/scene/check` 已删除，`POST /api/words/scene/evaluate` 不再接受 `audio`。 前端场景模板只从 `/api/scene/templates` 加载，不含内置副本或回退；模板请求失败会显示错误并允许退出。固定台词通过 `/api/scene/line-audio` 按模板/节点 ID 获取，浏览器不传台词文本。
 
 ## 安全模式(涉及文件/用户输入的新功能照此写)
 - **服务端生成文件名,绝不用用户输入拼路径**:回复音频 `msg_{uuid12}.{wav|mp3}`,背景图 `bg_{uuid32}.{ext}`,单词朗读缓存 `piper_{sha1[:16]}.wav`。

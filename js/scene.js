@@ -4,7 +4,7 @@
    ctx = {
      mode: 'preview' | 'assessment'   缺省：有 evaluateChoice 就是 assessment，否则 preview
      speak(w, kind, btn)   朗读单词（后端按 word_id 合成）
-     speakText(text, btn)  朗读场景固定台词（后端白名单接口，失败静默，返回 Promise）
+     speakLine(sceneId, nodeId, variant, btn)  按注册表节点 ID 朗读固定台词，失败静默
      pool: [w, ...]        同一批里的其它词（用作干扰项来源）
      isLast: boolean       最后一个词时，结尾按钮显示“完成”
      afterLabel / exitLabel / onExit   结尾按钮文案 / “退出场景”按钮的文案与回调
@@ -110,96 +110,48 @@
         ['novo', 'nova', 'novos', 'novas'], ['velho', 'velha', 'velhos', 'velhas'], ['caro', 'cara', 'caros', 'caras'], ['barato', 'barata', 'baratos', 'baratas'],
         ['alto', 'alta', 'altos', 'altas'], ['baixo', 'baixa', 'baixos', 'baixas'], ['limpo', 'limpa', 'limpos', 'limpas'], ['sujo', 'suja', 'sujos', 'sujas'],
         ['feliz', 'feliz', 'felizes', 'felizes'], ['triste', 'triste', 'tristes', 'tristes'], ['bom', 'boa', 'bons', 'boas']];
-    const adjectiveContexts = [
-        { noun: 'copo', nounZh: '杯子', article: 'um', gender: 'm', number: 'singular' },
-        { noun: 'casa', nounZh: '房子', article: 'uma', gender: 'f', number: 'singular' },
-        { noun: 'livros', nounZh: '书', article: 'uns', gender: 'm', number: 'plural' },
-        { noun: 'casas', nounZh: '房子', article: 'umas', gender: 'f', number: 'plural' },
-    ];
-    const adjectiveContext = w => adjectiveContexts[(Number(w.id) || 0) % adjectiveContexts.length];
+    const adjectiveContext = (w, tpl) => {
+        const contexts = tpl.noun_contexts || [];
+        const index = contexts.length ? (Number(w.id) || 0) % contexts.length : 0;
+        const context = contexts[index] || {};
+        return { ...context, nounZh: context.noun_zh || context.nounZh || '', index };
+    };
     const adjectiveForm = (w, c) => w[`adjective_${c.gender}_${c.number}`] || w.pt_word || '';
     const adjectiveIdx = c => (c.gender === 'm' ? 0 : 1) + (c.number === 'singular' ? 0 : 2);
 
-    /* ---------- 模板（纯数据）：「去某处取东西带回给朋友」类共用一个构造函数 ---------- */
-    const carry = p => ({
-        id: p.id, root: p.root, scenery: p.scenery, carrier: p.carrier, foodOnly: !!p.foodOnly, adjectiveOnly: !!p.adjectiveOnly,
-        cast: p.cast, helperName: p.helperName, start: 'intro',
-        nodes: {
-            intro: { type: 'dialogue', modes: ['preview'], speaker: 'friend', pt: p.intro[0], zh: p.intro[1], speech: 'auto',
-                effects: ['enter:friend', 'talk:friend'], button: '▶️ 继续', next: 'request' },
-            request: { type: 'dialogue', speaker: 'friend', request: true, pt: p.ask[0], zh: p.ask[1], speech: 'none',
-                effects: ['enter:friend', 'talk:friend', 'bubble_target'], button: p.goBtn, next: 'arrive' },
-            arrive: { type: 'dialogue', speaker: p.helperSpeaker || 'helper', side: 'helper', location: 'place', pt: p.greet[0], zh: p.greet[1], speech: 'auto',
-                effects: ['talk:helper'], delay_ms: 900, next: 'choose' },
-            choose: { type: 'word_choice', prompt_zh: '点选场景里朋友要的东西。', display: { preview: p.display || 'emoji_pt', assessment: 'pt' },
-                on_correct: 'success', on_wrong: 'wrong' },
-            wrong: { type: 'feedback', speaker: p.helperSpeaker || 'helper', side: 'helper', pt: 'Não é isso…', zh: p.wrongZh, speech: 'none', delay_ms: 700, next: 'choose' },
-            success: { type: 'dialogue', speaker: p.helperSpeaker || 'helper', side: 'helper', pt: p.ok[0], zh: p.ok[1], speech: 'auto',
-                effects: ['speak_target', 'fly_correct', 'basket_add_target', 'talk:helper'], button: p.backBtn, next: 'thanks' },
-            thanks: { type: 'dialogue', speaker: 'friend', location: 'street', pt: 'Obrigado!', zh: '谢谢你！', speech: 'auto',
-                effects: ['bubble_happy', 'cheer:friend', 'sparkle'], delay_ms: 1400, next: 'done' },
-            done: { type: 'complete', reveal_pt: '{target}', reveal_speech: 'word' },
-        },
-    });
-    const TEMPLATES = [
-        carry({ id: 'shop', root: 'template-shop', scenery: 'shop', carrier: '🧺', helperName: '售货员',
-            cast: { friend: ['#f59e0b', '#1f2937'], helper: ['#22c55e', '#7c2d12'] },
-            intro: ['Olá! Preciso de ajuda!', '你好！我需要帮忙！'], ask: ['Preciso de {blank}! Podes ir comprar?', '我需要……{target_zh}！你能去买吗？'], goBtn: '🚶 去商店帮他买',
-            greet: ['Bom dia! Em que posso ajudar?', '早上好！需要什么？'], wrongZh: '不是这个……再看看朋友需要什么', ok: ['Aqui tem!', '给你！'], backBtn: '🚶 带回去给朋友' }),
-        carry({ id: 'restaurant', root: 'template-restaurant', scenery: 'restaurant', carrier: '🍽️', helperName: '服务员', foodOnly: true,
-            cast: { friend: ['#fb923c', '#431407'], helper: ['#0f766e', '#164e63'] },
-            intro: ['Olá! Tenho fome!', '你好！我饿了！'], ask: ['Podes pedir {blank} para mim, por favor?', '可以帮我点{target_zh}吗？'], goBtn: '🚶 去餐厅点单',
-            greet: ['Bom dia! Em que posso ajudar?', '早上好！需要点什么？'], wrongZh: '不是这个……再看看朋友想吃什么', ok: ['Aqui tem!', '餐点准备好了！'], backBtn: '🚶 把餐点带给朋友' }),
-        carry({ id: 'find', root: 'template-find', scenery: 'search-place', carrier: '🔎', helperName: '朋友', helperSpeaker: 'friend',
-            cast: { friend: ['#a78bfa', '#312e81'], helper: ['#22c55e', '#7c2d12'] },
-            intro: ['Olá! Preciso de ajuda!', '你好！我需要帮忙！'], ask: ['Não encontro {blank}. Podes ajudar-me?', '我找不到{target_zh}，可以帮我找吗？'], goBtn: '🔎 去帮朋友找找',
-            greet: ['Vamos procurar!', '我们一起找找看！'], wrongZh: '不是这个……再找找看', ok: ['Encontrei!', '找到了！'], backBtn: '✅ 把东西交给朋友' }),
-        carry({ id: 'describe', root: 'template-find', scenery: 'search-place', carrier: '🖌️', helperName: '朋友', helperSpeaker: 'friend', adjectiveOnly: true, display: 'pt',
-            cast: { friend: ['#a78bfa', '#312e81'], helper: ['#22c55e', '#7c2d12'] },
-            intro: ['Olá! Ajudas-me a escolher?', '你好！能帮我挑一个吗？'], ask: ['Quero {art} {noun} {blank}, por favor.', '帮朋友找一个{target_zh}的{noun_zh}。'], goBtn: '🖌️ 去帮朋友挑选',
-            greet: ['Vamos escolher!', '我们来挑选吧！'], wrongZh: '这个特征不对，再试一次', ok: ['É mesmo este!', '就是这个！'], backBtn: '✅ 把选择告诉朋友' }),
-        {   // 房间里找东西：先选在哪找（探索，不计错），再从里面的物品里选（才提交评判）
-            id: 'find_room', root: 'template-room', scenery: 'room', carrier: '🧺', roomOnly: true, helperName: '朋友',
-            cast: { friend: ['#a78bfa', '#312e81'], helper: ['#a78bfa', '#312e81'] }, start: 'friend_intro',
-            hotspots: [{ id: 'desk', icon: '🪑', pt: 'mesa', zh: '桌子' }, { id: 'shelf', icon: '🗄️', pt: 'estante', zh: '书架' }, { id: 'bag', icon: '🎒', pt: 'mochila', zh: '背包' }],
-            nodes: {
-                friend_intro: { type: 'dialogue', modes: ['preview'], speaker: 'friend', pt: 'Olá! Preciso de ajuda!', zh: '你好！我需要帮忙！', speech: 'auto',
-                    effects: ['talk:friend'], button: '▶️ 继续', next: 'friend_request' },
-                friend_request: { type: 'dialogue', speaker: 'friend', request: true, pt: 'Não encontro {blank}. Podes ajudar-me?', zh: '我找不到{target_zh}，可以帮我找找吗？', speech: 'none',
-                    effects: ['talk:friend'], button: '🔎 去帮朋友找找', next: 'choose_place' },
-                choose_place: { type: 'hotspot_choice', hotspots: ['desk', 'shelf', 'bag'], prompt_zh: '先去哪里找？', on_target: 'open_target', on_decoy: 'decoy_feedback' },
-                decoy_feedback: { type: 'feedback', speaker: 'friend', pt: 'Não está aqui.', zh: '这里没有，换个地方看看。', hint_zh: '朋友说：好像不在这里附近……', hint_after: 1,
-                    speech: 'auto', effects: ['shake:$last_hotspot'], delay_ms: 1300, next: 'choose_place' },
-                open_target: { type: 'dialogue', speaker: 'friend', pt: 'Vamos ver!', zh: '我们看看！', speech: 'auto', effects: ['open:$last_hotspot'], delay_ms: 600, next: 'choose_item' },
-                choose_item: { type: 'word_choice', prompt_zh: '哪一个是{target_zh}？', display: { preview: 'emoji_pt', assessment: 'pt' }, on_correct: 'found', on_wrong: 'item_wrong' },
-                item_wrong: { type: 'feedback', speaker: 'friend', pt: 'Não é isso…', zh: '不是这个……再看看朋友要什么。', speech: 'auto', delay_ms: 900, next: 'choose_item' },
-                found: { type: 'dialogue', speaker: 'friend', pt: 'Encontrei!', zh: '找到了！', speech: 'auto',
-                    effects: ['speak_target', 'fly_correct', 'basket_add_target', 'sparkle', 'cheer:friend'], delay_ms: 1000, next: 'done' },
-                done: { type: 'complete', reveal_pt: '{target}', reveal_speech: 'word' },
-            },
-        },
-    ];
-    let templateCursor = 0;                // 名词没指定模板时轮换，不同单词体验不同场景（模块级状态，页面不刷新就持续轮换）
-    function chooseTemplate(w) {
-        if (!hasSceneData(w)) return TEMPLATES[0];       // 旧数据保留原商店演练体验
-        const selected = TEMPLATES.find(t => t.id === w.scene_template);
-        if (selected) return selected;
-        if (w.pos === 'adjective') return TEMPLATES.find(t => t.id === 'describe');
-        const available = TEMPLATES.filter(t => !t.adjectiveOnly && (!t.foodOnly || isFood(w)));
-        let automatic = available.find(t => t.id === TEMPLATES[templateCursor].id);
-        while (!automatic) {
-            templateCursor = (templateCursor + 1) % TEMPLATES.length;
-            automatic = available.find(t => t.id === TEMPLATES[templateCursor].id);
+    let templateRequest = null;
+    function loadTemplates() {
+        if (!templateRequest) templateRequest = fetch('/api/scene/templates', { credentials: 'same-origin' })
+            .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json(); })
+            .then(data => {
+                if (!data || !Array.isArray(data.templates) || !data.templates.length) throw new Error('没有可用的已发布模板');
+                return data.templates;
+            }).catch(error => { templateRequest = null; throw error; });
+        return templateRequest;
+    }
+    let templateCursor = 0;                // 名词没指定模板时轮换，体验不同场景
+    function chooseTemplate(w, templates) {
+        if (w.scene_template) {
+            const selected = templates.find(t => t.id === w.scene_template);
+            if (!selected) throw new Error(`场景模板 ${w.scene_template} 当前不可用`);
+            return selected;
         }
-        templateCursor = (templateCursor + 1) % TEMPLATES.length;
+        const pos = w.pos === 'adjective' ? 'adjective' : 'noun';
+        const available = templates.filter(t => (t.applies_to?.pos || []).includes(pos)
+            && (!t.foodOnly || isFood(w)));
+        if (!available.length) throw new Error(`没有适用于${pos === 'adjective' ? '形容词' : '名词'}的已发布场景模板`);
+        if (!hasSceneData(w)) return available.find(t => t.id === 'shop') || available[0];
+        if (pos === 'adjective') return available[0];
+        const automatic = available[templateCursor % available.length];
+        templateCursor = (templateCursor + 1) % available.length;
         return automatic;
     }
 
-    function play(w, ctx) {
+    function playTemplate(w, ctx, tpl) {
         ctx = ctx || {};
         const mode = ctx.mode === 'assessment' || ctx.mode === 'preview' ? ctx.mode : (ctx.evaluateChoice ? 'assessment' : 'preview');
-        const tpl = chooseTemplate(w), pool = ctx.pool || [], zh = w.cn_meaning || '', em = emojiOf(w), CANCEL = {};
-        const nounCtx = tpl.adjectiveOnly ? adjectiveContext(w) : { noun: '', nounZh: '', article: '' };
+        const pool = ctx.pool || [], zh = w.cn_meaning || '', em = emojiOf(w), CANCEL = {};
+        const nounCtx = tpl.adjectiveOnly ? adjectiveContext(w, tpl) : { noun: '', nounZh: '', article: '', index: 0 };
         let alive = true;
         const guard = () => { if (!alive) throw CANCEL; };
         const wait = async ms => { await sleep(ms); guard(); };
@@ -246,9 +198,9 @@
         const st = { visits: {}, opts: {}, req: null, lastSpeech: null, chosen: null, last: null, target: null, tried: new Set(), decoys: 0, note: '', skipAttn: false, entered: false };
         const hotspots = new Map((tpl.hotspots || []).map(h => [h.id, h]));
         const actorEl = id => id === 'friend' ? friendEl : helperEl;
-        const speakLine = (text, btn) => {
-            if (!ctx.speakText) return null;
-            try { return Promise.resolve(ctx.speakText(text, btn)).catch(() => false); } catch (e) { return null; }
+        const speakNode = (nodeId, btn) => {
+            if (!ctx.speakLine) return null;
+            try { return Promise.resolve(ctx.speakLine(tpl.id, nodeId, tpl.id === 'describe' ? nounCtx.index : undefined, btn)).catch(() => false); } catch (e) { return null; }
         };
         const speakWord = btn => { if (ctx.speak) ctx.speak(w, 'word', btn || null); };
 
@@ -269,7 +221,7 @@
         }
 
         /* --- 台词气泡 --- */
-        function say(n, ptText, zhText, speechTap) {
+        function say(nodeId, n, ptText, zhText, speechTap) {
             const side = n.side || (n.speaker === 'friend' && !tpl.roomOnly ? 'friend' : 'helper');
             const who = n.speaker === 'friend' ? '朋友' : tpl.helperName;
             dialogueBubble.className = 'sc-dialogue-bubble visible ' + side;
@@ -277,7 +229,7 @@
             const line = el('div', 'sc-dialogue-text', ptText);
             if (speechTap) {
                 const sp = el('button', 'spk', '🔊'); sp.type = 'button'; sp.setAttribute('aria-label', '朗读这句');
-                sp.onclick = () => speakLine(ptText, sp); line.append(sp);
+                sp.onclick = () => speakNode(nodeId, sp); line.append(sp);
             }
             dialogueBubble.append(line);
             if (zhText) dialogueBubble.append(el('div', 'sc-dialogue-zh', `${who}：${zhText}`));
@@ -349,13 +301,13 @@
             if (/\{blank\}/.test(n.pt || '')) speech = 'none';
             else if (leaks(pt)) { console.warn('scene leak', id); pt = '______'; speech = 'none'; }
             const zhText = fillZh(n.zh);
-            say(n, pt, zhText, speech === 'on_tap');
+            say(id, n, pt, zhText, speech === 'on_tap');
             if (n.request) st.req = { pt, zh: zhText };
             if (n.type === 'feedback') {
                 if (n.hint_zh && st.decoys >= (n.hint_after || 1)) addZhLine(n.hint_zh);
                 if (st.note) { addZhLine(st.note); st.note = ''; }
             }
-            st.lastSpeech = speech === 'auto' ? speakLine(pt) : null;
+            st.lastSpeech = speech === 'auto' ? speakNode(id) : null;
             setCtl(null);
             await runEffects(n);
             const p = setCtl(n.button || null);
@@ -497,6 +449,30 @@
         const done = run().then(() => alive, e => { if (e !== CANCEL) console.error(e); return false; })
             .then(ok => ok ? true : new Promise(() => {}));
         return { root, done, cancel: () => { alive = false; if (ctx.cancelAudio) ctx.cancelAudio(); } };
+    }
+
+    function play(w, ctx) {
+        ctx = ctx || {};
+        const root = el('div', 'sc sc-loading', '正在加载场景模板…');
+        let alive = true, child = null;
+        const done = loadTemplates().then(templates => {
+            if (!alive) return new Promise(() => {});
+            const tpl = chooseTemplate(w, templates);
+            child = playTemplate(w, ctx, tpl);
+            if (root.parentNode) root.replaceWith(child.root);
+            return child.done;
+        }).catch(error => {
+            if (!alive) return new Promise(() => {});
+            console.error('scene template load failed', error);
+            root.className = 'sc sc-load-error'; root.textContent = '';
+            root.append(el('div', 'sc-load-message', `场景模板加载失败：${error.message}`));
+            if (ctx.onExit) {
+                const exit = el('button', 'sc-exit', ctx.exitLabel || '退出场景');
+                exit.type = 'button'; exit.onclick = () => ctx.onExit(); root.append(exit);
+            }
+            return new Promise(() => {});
+        });
+        return { get root() { return child?.root || root; }, done, cancel: () => { alive = false; child?.cancel(); if (ctx.cancelAudio) ctx.cancelAudio(); } };
     }
 
     window.Scene = { canPlay, play, emojiOf };
