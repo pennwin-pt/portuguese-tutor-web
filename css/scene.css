@@ -40,6 +40,13 @@
 .cheer .sc-inner{animation:sc-cheer .5s ease-in-out 3}
 .sc.walking .sc-me .sc-inner{animation:sc-bob .35s ease-in-out infinite}
 
+/* 点人物（actor_tap）：人物发光 + 小手指提示，透明按钮盖在人物上，点击区不小于 44px */
+.sc-person.tap{z-index:4}
+.sc-person.tap .sc-inner{filter:drop-shadow(0 0 7px rgba(61,155,233,.95));animation:sc-hop .9s ease-in-out infinite}
+.sc-tap{position:absolute;inset:-8px;min-width:44px;min-height:44px;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer;touch-action:manipulation}
+.sc-tap::after{content:"👆";position:absolute;top:-16px;left:50%;font-size:20px;line-height:1;transform:translateX(-50%);animation:sc-bob .8s ease-in-out infinite}
+.sc-tap:focus-visible{outline:3px solid var(--blue)}
+
 /* 朋友头上的气泡：要买的东西（emoji，没有 emoji 的词显示中文意思） */
 .sc-bubble{position:absolute;left:calc(52% - 18px);bottom:49%;min-width:56px;max-width:44%;padding:8px 12px;border-radius:18px;background:#fff;box-shadow:0 3px 10px rgba(0,0,0,.12);font-size:34px;line-height:1.1;text-align:center;transform:scale(0);transform-origin:20% 100%;transition:transform .25s}
 .sc-bubble.txt{font-size:16px;font-weight:600;line-height:1.3}

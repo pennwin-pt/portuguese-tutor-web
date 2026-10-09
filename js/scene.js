@@ -19,9 +19,11 @@
    节点公共字段：type、modes（['preview'] / ['assessment']，当前模式不在列表里就跳过）、location（'street'|'place'，镜头先走过去）、effects（见 FX）
    dialogue / feedback：speaker(friend|helper)、side?、pt、zh、speech(auto|on_tap|none)、button?（没有就等 delay_ms 自动往下）、next、request?(true=这句是“请求”，后面选择环节会重复显示)
    hotspot_choice：hotspots、prompt_zh、on_target、on_decoy         点场景里的物件探索，不提交评判、不计错
+   actor_tap：actors(friend|helper)、prompt_zh、on_tap_<人物id>、next、hint_for   点画面里的人物问线索，不提交评判、不计错；
+                 next 是被 modes 跳过时的后继；hint_for 指向后面的 hotspot_choice，让 {hotspot_zh} 提前有值
    word_choice：prompt_zh、display{preview,assessment}、on_correct、on_wrong   从 4 个词里选，正式测验在这里提交评判
    complete：reveal_pt（{target}）                                    结果卡
-   占位符：pt 里 {blank}→______、{art} {noun}（形容词示例名词）；zh 里 {target_zh} {noun_zh}；含 {blank} 的台词一律不朗读。
+   占位符：pt 里 {blank}→______、{art} {noun}（形容词示例名词）；zh 里 {target_zh} {noun_zh} {hotspot_zh}（目标热点的中文名，仅 zh/hint_zh）；含 {blank} 的台词一律不朗读。
    目标词泄露保护：任何要显示/朗读的固定葡语，若整词命中目标词（含形容词四个词形）→ 换成 ______ 并不朗读；热点标签命中 → 只留图标。 */
 (function () {
     'use strict';
@@ -164,7 +166,7 @@
         }
         const leaks = text => { const s = ' ' + norm(text).replace(/\s+/g, ' ') + ' '; for (const f of forms) if (s.includes(' ' + f + ' ')) return true; return false; };
         const fillPt = s => String(s || '').replace(/\{(blank|art|noun)\}/g, (_, k) => k === 'blank' ? '______' : k === 'art' ? nounCtx.article : nounCtx.noun);
-        const fillZh = s => String(s || '').replace(/\{(target_zh|noun_zh)\}/g, (_, k) => k === 'target_zh' ? zh : nounCtx.nounZh);
+        const fillZh = s => String(s || '').replace(/\{(target_zh|noun_zh|hotspot_zh)\}/g, (_, k) => k === 'target_zh' ? zh : k === 'noun_zh' ? nounCtx.nounZh : hotspotZh());
 
         /* --- 依模板搭舞台；色块 SVG 是静态素材，不包含单词或用户数据 --- */
         const root = el('div', `sc ${tpl.root}`);
@@ -198,6 +200,14 @@
         const st = { visits: {}, opts: {}, req: null, lastSpeech: null, chosen: null, last: null, target: null, tried: new Set(), decoys: 0, note: '', skipAttn: false, entered: false };
         const hotspots = new Map((tpl.hotspots || []).map(h => [h.id, h]));
         const actorEl = id => id === 'friend' ? friendEl : helperEl;
+        const hotspotZh = () => { const h = hotspots.get(st.target); if (!h) console.warn('scene: {hotspot_zh} 还没有目标热点'); return h ? (h.zh || '') : ''; };
+        /* 目标热点：点人物（hint_for）和选地点共用，同一次进入内保持不变 */
+        function ensureTarget(nodeId) {
+            const hn = tpl.nodes[nodeId];
+            const hs = ((hn && hn.hotspots) || []).map(x => hotspots.get(x)).filter(Boolean);
+            if (hs.length >= 2 && (!st.target || !hs.some(h => h.id === st.target))) st.target = hs[Math.floor(Math.random() * hs.length)].id;
+            return hs;
+        }
         const speakNode = (nodeId, btn) => {
             if (!ctx.speakLine) return null;
             try { return Promise.resolve(ctx.speakLine(tpl.id, nodeId, tpl.id === 'describe' ? nounCtx.index : undefined, btn)).catch(() => false); } catch (e) { return null; }
@@ -315,11 +325,32 @@
             return n.next;
         }
 
+        /* --- 节点：actor_tap（点画面里的人物问线索：不提交、不计错） --- */
+        async function doActorTap(id, n) {
+            ensureTarget(n.hint_for);
+            // 朋友只在街道画面（房间场景里和帮手是同一个人）；帮手只在“place”画面
+            const visible = a => a === 'friend' ? (tpl.roomOnly || (loc === 'street' && st.entered)) : loc === 'place';
+            const list = [...new Set(n.actors || [])].filter(a => (a === 'friend' || a === 'helper') && visible(a));
+            if (!list.length) { console.warn('scene: 画面里没有可点的人物', id); return n.next; }
+            showPrompt(n.prompt_zh);
+            setCtl(null);
+            const undo = [];
+            const picked = await new Promise(res => list.forEach(a => {
+                const host = actorEl(a), b = el('button', 'sc-tap');
+                b.type = 'button'; b.setAttribute('aria-label', a === 'friend' ? '朋友' : tpl.helperName);
+                b.onclick = () => res(a);
+                host.classList.add('tap'); host.append(b);
+                undo.push(() => { host.classList.remove('tap'); b.remove(); });
+            }));
+            guard();
+            undo.forEach(f => f());
+            return n['on_tap_' + picked] || n.next;
+        }
+
         /* --- 节点：hotspot_choice（探索：点错不提交、不计错） --- */
         async function doHotspots(id, n) {
-            const hs = (n.hotspots || []).map(x => hotspots.get(x)).filter(Boolean);
+            const hs = ensureTarget(id);
             if (hs.length < 2) { console.error('scene: 热点不足', id); return n.on_target; }
-            if (!st.target || !hs.some(h => h.id === st.target)) st.target = hs[Math.floor(Math.random() * hs.length)].id;
             shelf.textContent = ''; shelf.style.pointerEvents = '';
             const btns = hs.map(h => {
                 const b = el('button', 'sc-item hot'); b.type = 'button'; b.dataset.id = h.id; b.setAttribute('aria-label', h.zh || h.pt);
@@ -430,7 +461,7 @@
         }
 
         /* --- 主循环 --- */
-        const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, hotspot_choice: doHotspots, word_choice: doChoice, complete: doComplete };
+        const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, actor_tap: doActorTap, hotspot_choice: doHotspots, word_choice: doChoice, complete: doComplete };
         const completeId = Object.keys(tpl.nodes).find(k => tpl.nodes[k].type === 'complete');
         async function run() {
             let id = tpl.start, steps = 0;
