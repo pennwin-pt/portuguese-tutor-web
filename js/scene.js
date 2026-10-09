@@ -205,7 +205,11 @@
         function ensureTarget(nodeId) {
             const hn = tpl.nodes[nodeId];
             const hs = ((hn && hn.hotspots) || []).map(x => hotspots.get(x)).filter(Boolean);
-            if (hs.length >= 2 && (!st.target || !hs.some(h => h.id === st.target))) st.target = hs[Math.floor(Math.random() * hs.length)].id;
+            if (hs.length >= 2 && (!st.target || !hs.some(h => h.id === st.target))) {
+                // assign_target:noun_context（describe）：目标热点 = 本词名词语境对应的那个，不随机
+                const forced = hn.assign_target === 'noun_context' ? hs.find(h => h.context === nounCtx.index) : null;
+                st.target = (forced || hs[Math.floor(Math.random() * hs.length)]).id;
+            }
             return hs;
         }
         const speakNode = (nodeId, btn) => {
