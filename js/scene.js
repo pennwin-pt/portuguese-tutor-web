@@ -72,9 +72,11 @@
             if (w.pos === 'adjective') return (w.scene_template == null || w.scene_template === 'describe') &&
                 ['adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural']
                     .every(key => typeof w[key] === 'string' && w[key].trim()) && !!(emojiOf(w) || w.cn_meaning);
+            if (w.pos === 'verb') return (w.scene_template == null ||
+                (typeof w.scene_template === 'string' && w.scene_template.startsWith('verb_'))) && !!(emojiOf(w) || w.cn_meaning);
             return false;
         }
-        if (w.pos === 'adjective') return false;
+        if (w.pos === 'adjective' || w.pos === 'verb') return false;
         return !!(emojiOf(w) || w.cn_meaning);
     };
     /* ---------- 人物：内联 SVG（只拼颜色常量，没有任何用户数据） ---------- */
@@ -112,6 +114,10 @@
         ['novo', 'nova', 'novos', 'novas'], ['velho', 'velha', 'velhos', 'velhas'], ['caro', 'cara', 'caros', 'caras'], ['barato', 'barata', 'baratos', 'baratas'],
         ['alto', 'alta', 'altos', 'altas'], ['baixo', 'baixa', 'baixos', 'baixas'], ['limpo', 'limpa', 'limpos', 'limpas'], ['sujo', 'suja', 'sujos', 'sujas'],
         ['feliz', 'feliz', 'felizes', 'felizes'], ['triste', 'triste', 'tristes', 'tristes'], ['bom', 'boa', 'bons', 'boas']];
+    const GENERIC_VERB = [
+        ['correr', '🏃'], ['comer', '🍽️'], ['beber', '🥤'], ['dormir', '😴'], ['ler', '📖'], ['escrever', '✍️'],
+        ['nadar', '🏊'], ['cantar', '🎤'], ['dançar', '💃'], ['lavar', '🧼'], ['pagar', '💳'], ['abrir', '🔓']
+    ].map(([pt, emoji]) => ({ id: -1, pt, emoji }));
     const adjectiveContext = (w, tpl) => {
         const contexts = tpl.noun_contexts || [];
         const index = contexts.length ? (Number(w.id) || 0) % contexts.length : 0;
@@ -136,12 +142,13 @@
         if (w.scene_template) {
             const selected = templates.find(t => t.id === w.scene_template);
             if (!selected) throw new Error(`场景模板 ${w.scene_template} 当前不可用`);
+            if (!(selected.applies_to?.pos || []).includes(w.pos)) throw new Error('所选场景模板不适用于当前词性');
             return selected;
         }
-        const pos = w.pos === 'adjective' ? 'adjective' : 'noun';
+        const pos = ['noun', 'adjective', 'verb'].includes(w.pos) ? w.pos : 'noun';
         const available = templates.filter(t => (t.applies_to?.pos || []).includes(pos)
             && (!t.foodOnly || isFood(w)));
-        if (!available.length) throw new Error(`没有适用于${pos === 'adjective' ? '形容词' : '名词'}的已发布场景模板`);
+        if (!available.length) throw new Error(`没有适用于${({ noun: '名词', adjective: '形容词', verb: '动词' })[pos]}的已发布场景模板`);
         if (!hasSceneData(w)) return available.find(t => t.id === 'shop') || available[0];
         if (pos === 'adjective') return available[0];
         const automatic = available[templateCursor % available.length];
@@ -386,9 +393,13 @@
                 mine = { id: w.id, pt: adjectiveForm(w, nounCtx), ok: true };
                 batch = pool.filter(x => x.pos === 'adjective' && canPlay(x)).map(x => ({ id: x.id, pt: adjectiveForm(x, nounCtx) }));
                 fallback = GENERIC_ADJ.map(g => ({ id: -1, pt: g[idx] }));
+            } else if (w.pos === 'verb') {
+                mine = { id: w.id, pt: w.pt_word, emoji: em, ok: true };
+                batch = pool.filter(x => x.pos === 'verb' && canPlay(x)).map(x => ({ id: x.id, pt: x.pt_word, emoji: emojiOf(x) }));
+                fallback = GENERIC_VERB;
             } else {
                 mine = { id: w.id, pt: w.pt_word, emoji: em, ok: true };
-                const words = tpl.foodOnly ? pool.filter(isFood) : pool.filter(x => x.pos !== 'adjective');
+                const words = tpl.foodOnly ? pool.filter(isFood) : pool.filter(x => x.pos !== 'adjective' && x.pos !== 'verb');
                 batch = words.map(x => ({ id: x.id, pt: x.pt_word, emoji: emojiOf(x) }));
                 fallback = (tpl.foodOnly ? GENERIC.filter(g => FOOD_EMOJI.has(g.emoji)) : GENERIC).map(g => ({ id: -1, pt: g.pt, emoji: g.emoji }));
             }

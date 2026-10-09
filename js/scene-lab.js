@@ -72,7 +72,7 @@
                 $('lab-pt').value = source.text || '';
                 $('lab-zh').value = source.chinese_meaning || '';
                 $('lab-emoji').value = source.emoji || '';
-                $('lab-pos').value = source.pos === 'adjective' ? 'adjective' : 'noun';
+                $('lab-pos').value = ['noun', 'adjective', 'verb'].includes(source.pos) ? source.pos : 'noun';
                 $('lab-gender').value = source.gender || 'm';
                 $('lab-number').value = source.number || 'singular';
                 $('lab-adj-ms').value = source.adjective_m_singular || '';
