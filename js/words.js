@@ -73,24 +73,6 @@ function speak(w, kind, btn) {                     // kind: 'word' | 'sentence'�
     player.src = `${API}/api/words/${w.id}/audio?${q}`;
     player.play().then(() => spkBtn?.classList.add('play')).catch(() => toast('朗读失败，点喇叭重试'));
 }
-function speakText(text, btn) {                     // 场景固定台词：失败时只保留文字，不弹错误
-    spkBtn?.classList.remove('play'); spkBtn = btn || null;
-    const c = ttsCfg(), q = new URLSearchParams({ text, tts_provider: c.provider });
-    if (c.provider === 'edge' && c.voice) q.set('tts_voice', c.voice);
-    player.src = `${API}/api/tts?${q}`;
-    return new Promise(resolve => {
-        const finish = () => {
-            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish);
-            resolve(true);
-        };
-        player.addEventListener('ended', finish);
-        player.addEventListener('error', finish);
-        player.addEventListener('pause', finish);
-        player.play().then(() => spkBtn?.classList.add('play')).catch(() => {
-            player.removeEventListener('ended', finish); player.removeEventListener('error', finish); player.removeEventListener('pause', finish); resolve(false);
-        });
-    });
-}
 function speakLine(sceneId, nodeId, variant, btn) {   // 场景台词只传注册表中的模板和节点 ID，不发送任意文本
     spkBtn?.classList.remove('play'); spkBtn = btn || null;
     const c = ttsCfg(), q = new URLSearchParams({ scene_id: sceneId, node_id: nodeId, tts_provider: c.provider });
@@ -129,7 +111,7 @@ player.onended = player.onpause = () => spkBtn?.classList.remove('play');
 player.onerror = () => {
     spkBtn?.classList.remove('play');
     const src = player.currentSrc || player.src;
-    if (!src.startsWith('data:') && !src.includes('/api/tts?')) toast('朗读失败，点喇叭重试');
+    if (!src.startsWith('data:')) toast('朗读失败，点喇叭重试');
 };
 /* ---------- 音效：答对 / 答错 ----------
    文件放在前端目录的 sounds/ 下（nginx 里是 html/portuguese-tutor-web/sounds/），想换格式只改这里的文件名。
@@ -395,7 +377,7 @@ function viewScene() {
     const w = sceneWords[sceneIdx];
     if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
     sceneCur?.cancel();
-    const s = Scene.play(w, { mode: 'preview', pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakText, speakLine, speakSceneSentence, extra: sourceButton,
+    const s = Scene.play(w, { mode: 'preview', pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakLine, speakSceneSentence, extra: sourceButton,
         exitLabel: '📋 看单词列表', onExit: () => { sceneCur?.cancel(); sceneCur = null; state = 'preview'; render(); },
         cancelAudio: stopSceneAudio });
     sceneCur = { idx: sceneIdx, get root() { return s.root; }, cancel: s.cancel };
@@ -411,7 +393,7 @@ function viewAssessmentScene() {
     if (sceneCur && sceneCur.wordId === w.id) return sceneCur.root;
     sceneCur?.cancel();
     const pool = (today?.words || []).filter(x => x.id !== w.id && Scene.canPlay(x));
-    const s = Scene.play(w, { mode: 'assessment', pool, isLast: false, afterLabel: '进入原测试', speak, speakText, speakLine, speakSceneSentence,
+    const s = Scene.play(w, { mode: 'assessment', pool, isLast: false, afterLabel: '进入原测试', speak, speakLine, speakSceneSentence,
         exitLabel: '跳过场景，进入测试', onExit: () => { sceneCur?.cancel(); sceneCur = null; showCurrentTest(); },
         extra: sourceButton, cancelAudio: stopSceneAudio, evaluateChoice: evaluateSceneChoice });
     sceneCur = { wordId: w.id, get root() { return s.root; }, cancel: s.cancel };
