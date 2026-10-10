@@ -1,4 +1,6 @@
-// fix-monster-textures.js -- weld PNG textures into GLBs
+// fix-monster-textures.js v3 -- weld PNG textures into GLBs,
+// repair materials (metallic=0, rough=1, white base) AND strip
+// dark vertex colors (COLOR_0) that multiply with the texture.
 // args: <toolDir> <modelsRoot> <cacheRoot> <mapFile>
 const fs = require('fs');
 const path = require('path');
@@ -36,31 +38,60 @@ const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
     if (!fs.existsSync(glb)) { console.log('[skip] ' + rel); continue; }
     let doc;
     try { doc = await io.read(glb); } catch (e) { console.log('[skip] ' + rel + ': ' + e.message); continue; }
-    if (doc.getRoot().listTextures().length > 0) { console.log('[ok] ' + rel + ' already textured'); continue; }
-    let texFile = null;
-    const mtl = byName.get((base + '.mtl').toLowerCase());
-    if (mtl) {
-      const c = fs.readFileSync(mtl, 'utf8');
-      const m = c.match(/^\s*map_Kd\s+(.+)$/mi);
-      if (m) {
-        const want = path.basename(m[1].trim()).toLowerCase();
-        texFile = byName.get(want) || null;
-      }
-    }
-    if (!texFile) {
-      for (const entry of byName) {
-        const n = entry[0];
-        if ((n.endsWith('.png') || n.endsWith('.jpg')) && n.indexOf(base.toLowerCase()) >= 0) { texFile = entry[1]; break; }
-      }
-    }
-    if (!texFile) { console.log('[MISS] ' + rel + ': no texture found for ' + base); continue; }
-    const mime = texFile.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
-    const tex = doc.createTexture(path.basename(texFile))
-      .setImage(fs.readFileSync(texFile))
-      .setMimeType(mime);
+
+    const notes = [];
+
+    // --- 1) material repair ---
     const mats = doc.getRoot().listMaterials();
-    for (const mat of mats) { mat.setBaseColorTexture(tex); }
+    for (const mat of mats) {
+      mat.setMetallicFactor(0);
+      mat.setRoughnessFactor(1);
+      mat.setBaseColorFactor([1, 1, 1, 1]);
+      mat.setDoubleSided(true);
+    }
+    notes.push('material-fixed');
+
+    // --- 2) strip vertex colors (they darken the texture) ---
+    let stripped = 0;
+    for (const mesh of doc.getRoot().listMeshes()) {
+      for (const prim of mesh.listPrimitives()) {
+        const col = prim.getAttribute('COLOR_0');
+        if (col) { prim.setAttribute('COLOR_0', null); col.dispose(); stripped++; }
+      }
+    }
+    if (stripped > 0) notes.push('vertex-colors-stripped(' + stripped + ')');
+
+    // --- 3) texture weld (only if missing) ---
+    if (doc.getRoot().listTextures().length === 0) {
+      let texFile = null;
+      const mtl = byName.get((base + '.mtl').toLowerCase());
+      if (mtl) {
+        const c = fs.readFileSync(mtl, 'utf8');
+        const m = c.match(/^\s*map_Kd\s+(.+)$/mi);
+        if (m) {
+          const want = path.basename(m[1].trim()).toLowerCase();
+          texFile = byName.get(want) || null;
+        }
+      }
+      if (!texFile) {
+        for (const entry of byName) {
+          const n = entry[0];
+          if ((n.endsWith('.png') || n.endsWith('.jpg')) && n.indexOf(base.toLowerCase()) >= 0) { texFile = entry[1]; break; }
+        }
+      }
+      if (texFile) {
+        const mime = texFile.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+        const tex = doc.createTexture(path.basename(texFile))
+          .setImage(fs.readFileSync(texFile))
+          .setMimeType(mime);
+        for (const mat of mats) { mat.setBaseColorTexture(tex); }
+        notes.push('textured <- ' + path.basename(texFile));
+      } else {
+        notes.push('NO-texture-found');
+      }
+    }
+
     await io.write(glb, doc);
-    console.log('[FIXED] ' + rel + ' <- ' + path.basename(texFile));
+    console.log('[FIXED] ' + rel + ' : ' + notes.join(', '));
   }
 })().catch(function(e) { console.log('[error] ' + e.message); });
