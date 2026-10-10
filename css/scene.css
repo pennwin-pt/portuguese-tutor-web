@@ -137,3 +137,31 @@
 @media (prefers-reduced-motion:reduce){
     .sc *, .sc *::before, .sc *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
 }
+
+/* ---------- 3D 舞台（scene.js 加上 .is3d 才生效；失败时去掉 .is3d 就是原来的 2D）---------- */
+.sc-3d-canvas{position:absolute;inset:0;z-index:0;width:100%;height:100%;display:block;touch-action:manipulation}
+.sc.is3d-wait .sc-view>*{visibility:hidden}
+.sc.is3d-wait .sc-view::after{content:"正在加载 3D 场景…";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:14px}
+.sc.is3d .sc-view{background:#cfe9ff}
+.sc.is3d .sc-track{width:100%;transform:none!important;transition:none}
+.sc.is3d .sc-pane{position:absolute;inset:0;flex:none;background:none!important}
+.sc.is3d .street::after,.sc.is3d .deco,.sc.is3d .awning,.sc.is3d .counter,.sc.is3d .sc-place-sign,.sc.is3d .sc-find-art,.sc.is3d .sc-place::before{display:none}
+.sc.is3d .sc-shelf:empty{display:none}
+.sc.is3d .sc-person .sc-inner{visibility:hidden}
+.sc.is3d .sc-person{left:0;top:0;right:auto;bottom:auto;transform:none!important;transition:none;pointer-events:none}
+.sc.is3d .sc-person .sc-tap{pointer-events:auto}
+.sc.is3d .sc-bubble{bottom:auto;transform-origin:20% 100%}
+.sc.is3d .sc-basket{bottom:auto;animation:none}
+/* 热点按钮：不再排成一行，而是由 stage3d 每帧投影到货架上方 */
+.sc.is3d .sc-shelf.proj{position:static;display:contents}
+.sc.is3d .sc-shelf.proj .sc-item{position:absolute;flex:none;max-width:none;min-width:72px;pointer-events:auto;box-shadow:0 3px 12px rgba(30,41,59,.25)}
+/* 调试模式：让画布能接收拖动旋转，按钮仍然可点 */
+.sc.is3d-debug .sc-track{pointer-events:none}
+.sc.is3d-debug .sc-item,.sc.is3d-debug .sc-tap{pointer-events:auto}
+
+/* 宽屏（桌面）：画面更高，选项面板收窄居中，避免盖住人物 */
+.sc.is3d .sc-view{height:min(500px,max(360px,46vw))}
+@media (min-width:700px){
+    .sc.is3d .sc-shelf:not(.proj){left:50%;right:auto;width:min(86%,560px);transform:translateX(-50%);top:26%!important}
+    .sc.is3d .sc-dialogue-bubble.friend,.sc.is3d .sc-dialogue-bubble.helper{max-width:min(46%,420px)}
+}

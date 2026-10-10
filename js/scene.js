@@ -156,6 +156,21 @@
         return automatic;
     }
 
+    /* ---------- 3D 舞台（可选）：?stage=3d 开启并记住，?stage=2d 关闭；?debug=1 显示调试镜头 ---------- */
+    const SCRIPT_SRC = document.currentScript && document.currentScript.src;
+    const want3D = () => {
+        const q = new URLSearchParams(location.search).get('stage');
+        try {
+            if (q === '3d') localStorage.setItem('stage3d', '1');
+            else if (q === '2d') localStorage.removeItem('stage3d');
+            return localStorage.getItem('stage3d') === '1';
+        } catch (e) { return q === '3d'; }
+    };
+    const debug3D = () => new URLSearchParams(location.search).has('debug');
+    let stageModule = null;
+    const loadStage3D = () => stageModule || (stageModule = import(new URL('stage3d.js', SCRIPT_SRC || location.href).href)
+        .catch(e => { stageModule = null; throw e; }));
+
     function playTemplate(w, ctx, tpl) {
         ctx = ctx || {};
         const mode = ctx.mode === 'assessment' || ctx.mode === 'preview' ? ctx.mode : (ctx.evaluateChoice ? 'assessment' : 'preview');
@@ -202,6 +217,25 @@
         root.append(view, ctlBox);
         let loc = 'street';
         if (tpl.roomOnly) { loc = 'place'; root.classList.add('at-place'); }
+
+        /* --- 3D 舞台（可选）：2D 的 DOM 和状态类照常维护，3D 只是叠加；失败/丢失上下文时直接露出 2D --- */
+        let stage = null, stageWait = null;
+        if (!tpl.roomOnly && want3D()) {
+            root.classList.add('is3d-wait');
+            stageWait = loadStage3D()
+                .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(),
+                    onLost: () => { stage = null; root.classList.remove('is3d'); } }))
+                .then(s3 => {
+                    if (!s3) return null;
+                    if (!alive) { s3.dispose(); return null; }
+                    stage = s3; root.classList.add('is3d');
+                    s3.follow(friendEl, 'friend', 'mid'); s3.follow(helperEl, 'helper', 'mid');
+                    s3.follow(me, 'me', 'mid'); s3.follow(bubble, 'friend', 'above'); s3.follow(basket, 'me', 'hand');
+                    return s3;
+                })
+                .catch(e => { console.warn('scene: 3D 舞台不可用，继续使用 2D', e); return null; })
+                .then(s3 => { root.classList.remove('is3d-wait'); return s3; });
+        }
 
         /* --- 运行时状态 --- */
         const st = { visits: {}, opts: {}, req: null, lastSpeech: null, chosen: null, last: null, target: null, tried: new Set(), decoys: 0, note: '', skipAttn: false, entered: false };
@@ -270,21 +304,21 @@
         const FX = {
             async enter(a) {
                 if (a !== 'friend' || tpl.roomOnly || st.entered) return;
-                st.entered = true; await wait(60); root.classList.add('go'); await wait(950);
+                st.entered = true; await wait(60); root.classList.add('go'); stage && stage.enter('friend'); await wait(950);
             },
-            talk(a) { pulse(actorEl(a), 'talk', 1800); },
-            cheer(a) { actorEl(a).classList.add('cheer'); },
+            talk(a) { pulse(actorEl(a), 'talk', 1800); stage && stage.talk(a); },
+            cheer(a) { actorEl(a).classList.add('cheer'); stage && stage.cheer(a); },
             bubble_target() { if (tpl.roomOnly) return; bubble.textContent = zh; bubble.classList.add('txt', 'show'); },
             bubble_happy() { if (tpl.roomOnly) return; bubble.textContent = '😀'; bubble.classList.remove('txt'); bubble.classList.add('show'); },
             walk_me() { root.classList.add('walking'); },
             stop_walk() { root.classList.remove('walking'); },
-            shake(a) { pulse(hotBtn(resolveArg(a)), 'shake', 400); },
-            async open(a) { const b = hotBtn(resolveArg(a)); if (b) b.classList.add('open'); await wait(650); },
+            shake(a) { pulse(hotBtn(resolveArg(a)), 'shake', 400); stage && stage.shake(resolveArg(a)); },
+            async open(a) { const b = hotBtn(resolveArg(a)); if (b) b.classList.add('open'); stage && stage.open(resolveArg(a)); await wait(650); },
             basket_add_target() { bItem.textContent = em || '📦'; basket.classList.add('has'); },
             basket_clear() { bItem.textContent = ''; basket.classList.remove('has'); },
             speak_target() { const p = st.lastSpeech; if (p) p.then(() => { if (alive) speakWord(null); }); else speakWord(null); },
             sparkle() {
-                const pane = tpl.roomOnly ? place : street;
+                const pane = stage ? view : tpl.roomOnly ? place : street;
                 for (let i = 0; i < 6; i++) {
                     const s = el('span', 'sc-spark', '✨'); s.style.left = (44 + Math.random() * 28) + '%'; s.style.top = (30 + Math.random() * 30) + '%';
                     s.style.animationDelay = (i * 90) + 'ms'; pane.append(s); setTimeout(() => s.remove(), 1500);
@@ -302,7 +336,7 @@
         };
         async function camera(to) {
             if (to === loc || (to !== 'street' && to !== 'place')) return;
-            loc = to; root.classList.add('walking'); root.classList.toggle('at-place', to === 'place');
+            loc = to; root.classList.add('walking'); root.classList.toggle('at-place', to === 'place'); stage && stage.cameraTo(to);
             await wait(1500); root.classList.remove('walking');
         }
         async function runEffects(n) {
@@ -363,6 +397,7 @@
             const hs = ensureTarget(id);
             if (hs.length < 2) { console.error('scene: 热点不足', id); return n.on_target; }
             shelf.textContent = ''; shelf.style.pointerEvents = '';
+            shelf.classList.toggle('proj', !!stage);
             const btns = hs.map(h => {
                 const b = el('button', 'sc-item hot'); b.type = 'button'; b.dataset.id = h.id; b.setAttribute('aria-label', h.zh || h.pt);
                 b.append(el('span', 'em', h.icon));
@@ -370,6 +405,7 @@
                 if (st.tried.has(h.id)) { b.disabled = true; b.classList.add('bad'); }
                 shelf.append(b); return b;
             });
+            if (stage) btns.forEach(b => stage.follow(b, 'hs:' + b.dataset.id, 'hot'));
             if (st.visits[id] === 1) showPrompt(n.prompt_zh);
             setCtl(null);
             const hid = await new Promise(res => btns.forEach(b => { b.onclick = () => { if (!b.disabled) res(b); }; }));
@@ -426,7 +462,7 @@
         async function doChoice(id, n) {
             let o = st.opts[id];
             if (!o) { o = st.opts[id] = { list: buildOptions(n), wrong: 0 }; showPrompt(n.prompt_zh); }
-            shelf.textContent = ''; shelf.style.pointerEvents = '';
+            shelf.textContent = ''; shelf.style.pointerEvents = ''; shelf.classList.remove('proj');
             o.list.forEach(x => { x.btn = optionButton(x); shelf.append(x.btn); });
             setCtl(null);
             const opt = await new Promise(resolve => {
@@ -479,6 +515,7 @@
         const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, actor_tap: doActorTap, hotspot_choice: doHotspots, word_choice: doChoice, complete: doComplete };
         const completeId = Object.keys(tpl.nodes).find(k => tpl.nodes[k].type === 'complete');
         async function run() {
+            if (stageWait) { await stageWait; guard(); }
             let id = tpl.start, steps = 0;
             for (;;) {
                 guard();
@@ -494,7 +531,7 @@
         }
         const done = run().then(() => alive, e => { if (e !== CANCEL) console.error(e); return false; })
             .then(ok => ok ? true : new Promise(() => {}));
-        return { root, done, cancel: () => { alive = false; if (ctx.cancelAudio) ctx.cancelAudio(); } };
+        return { root, done, cancel: () => { alive = false; stage && stage.dispose(); if (ctx.cancelAudio) ctx.cancelAudio(); } };
     }
 
     function play(w, ctx) {
