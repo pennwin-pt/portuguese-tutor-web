@@ -156,15 +156,15 @@
         return automatic;
     }
 
-    /* ---------- 3D 舞台（可选）：?stage=3d 开启并记住，?stage=2d 关闭；?debug=1 显示调试镜头 ---------- */
+    /* ---------- 3D 舞台（可选）：默认开启 3D；?stage=2d 关闭并记住，?stage=3d 恢复；?debug=1 显示调试镜头 ---------- */
     const SCRIPT_SRC = document.currentScript && document.currentScript.src;
     const want3D = () => {
         const q = new URLSearchParams(location.search).get('stage');
         try {
-            if (q === '3d') localStorage.setItem('stage3d', '1');
-            else if (q === '2d') localStorage.removeItem('stage3d');
-            return localStorage.getItem('stage3d') === '1';
-        } catch (e) { return q === '3d'; }
+            if (q === '2d') localStorage.setItem('stage3d', '0');
+            else if (q === '3d') localStorage.removeItem('stage3d');
+            return localStorage.getItem('stage3d') !== '0';        // 默认开启；没有 3D 布局的模板会自动用 2D
+        } catch (e) { return q !== '2d'; }
     };
     const debug3D = () => new URLSearchParams(location.search).has('debug');
     let stageModule = null;

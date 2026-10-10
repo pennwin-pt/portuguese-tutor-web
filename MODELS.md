@@ -26,6 +26,6 @@
 - 如果某个模型放进去后朝向反了，在 `js/stage3d-layouts.js` 里给对应行加 `rotY: 3.14` 即可。
 
 ## 怎么看效果 / 调位置
-- 打开 `scene-lab.html?stage=3d`：开启 3D（会记住，之后 words.html 也是 3D）；`?stage=2d` 关回 2D。
+- 3D 现在**默认开启**（只有 shop 有布局，其他模板自动用 2D）。`?stage=2d` 关闭并记住（之后都是 2D），`?stage=3d` 恢复默认。
 - 加 `&debug=1`：画面上显示相机坐标和**缺少哪些模型**，可以用手指/鼠标拖动旋转视角、滚轮缩放，把满意的相机坐标抄进 `js/stage3d-layouts.js` 的 `cameras`。
 - 只有 `shop` 模板有 3D 布局，其他模板自动继续用 2D。
