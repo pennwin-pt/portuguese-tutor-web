@@ -220,7 +220,7 @@
 
         /* --- 3D 舞台（可选）：2D 的 DOM 和状态类照常维护，3D 只是叠加；失败/丢失上下文时直接露出 2D --- */
         let stage = null, stageWait = null;
-        if (!tpl.roomOnly && want3D()) {
+        if (want3D()) {                                     // 房间类场景（roomOnly）也支持 3D；没有布局的模板 create() 会返回 null，自动继续用 2D
             root.classList.add('is3d-wait');
             stageWait = loadStage3D()
                 .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(),

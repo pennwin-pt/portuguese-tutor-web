@@ -5,7 +5,7 @@
 项目路径:
 - 后端代码:portuguese-tutor-server.zip
 - 管理端界面代码:WordMemorizer.Core.zip(本阶段如阶段说明要求才改)
-- 其他是前端代码
+- 前端代码: portuguese-tutor-web.zip
 
 现在第五步我要做的已经做完了，管理端也看到测试页面了，没有太大问题，请你继续
 

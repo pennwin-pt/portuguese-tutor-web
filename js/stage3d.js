@@ -62,7 +62,14 @@ function blobShadow() {
 /* ---------- 简易几何体兜底（模型缺失时） ---------- */
 function fallbackProp(spec) {
     const fb = spec.fb || {}, h = spec.h || 1, w = fb.w || h * 0.8, g = new T.Group();
-    if (fb.tree) {
+    if (fb.parts) {                                      // 用布局里写的小零件拼家具；整体会按 h 自动缩放，零件只需比例对
+        for (const q of fb.parts) {
+            const geo = q.shape === 'cyl' ? new T.CylinderGeometry(q.size[0] / 2, q.size[0] / 2, q.size[1], 16)
+                : q.shape === 'sph' ? new T.SphereGeometry(q.size[0] / 2, 14, 10)
+                    : new T.BoxGeometry(q.size[0], q.size[1], q.size[2]);
+            const m = new T.Mesh(geo, mat(q.color)); m.position.set(q.pos[0], q.pos[1], q.pos[2]); g.add(m);
+        }
+    } else if (fb.tree) {
         const s = fb.small ? 0.5 : 1;
         const trunk = new T.Mesh(new T.CylinderGeometry(0.1 * s, 0.14 * s, h * 0.4, 8), mat('#8b5a2b')); trunk.position.y = h * 0.2;
         const crown = new T.Mesh(new T.SphereGeometry(h * 0.3, 12, 10), mat('#4caf50')); crown.position.y = h * 0.62;
@@ -77,7 +84,7 @@ function fallbackProp(spec) {
     } else {
         const box = new T.Mesh(new T.BoxGeometry(w, h, fb.d || w * 0.9), mat(fb.color || '#cccccc')); box.position.y = h / 2;
         g.add(box);
-        if (h > 3) {                                     // 建筑：加一排窗和屋顶，别太像盒子
+        if (h > 3 || fb.house) {                         // 建筑：加一排窗和屋顶，别太像盒子
             const roof = new T.Mesh(new T.BoxGeometry(w * 1.08, 0.25, (fb.d || w * 0.9) * 1.08), mat('#8b5e3c')); roof.position.y = h + 0.12;
             g.add(roof);
             for (let i = -1; i <= 1; i += 2) {
@@ -118,6 +125,8 @@ export async function create(opts) {
     const { view, tpl, hotspots = [], debug = false, onLost } = opts;
     const layout = LAYOUTS[tpl.id];
     if (!layout) return null;
+    const startLoc = tpl.roomOnly ? 'place' : 'street';     // 房间类场景：朋友/帮手是同一个人，已经在室内，没有街道镜头
+    if (!layout.cameras || !layout.cameras[startLoc]) { console.warn('stage3d: 布局缺少镜头', tpl.id, startLoc); return null; }
     for (const h of hotspots) if (!layout.hotspots[h.id]) { console.warn('stage3d: 布局缺少热点', tpl.id, h.id); return null; }
 
     let sh;
@@ -151,12 +160,12 @@ export async function create(opts) {
         return normalize(T.cloneSkinned(g.scene), spec);
     };
 
-    const hsObjs = {};
+    const hsObjs = {};      // 热点 id -> 物件数组（同一个热点可以由几个物件组成，比如“几座房子”）
     for (const p of layout.props || []) {
         const obj = instance(p.model, p) || normalize(fallbackProp(p), { h: p.h });
         obj.position.set(...p.pos); obj.rotation.y = p.rotY || 0;
         world.add(obj);
-        if (p.hs) { obj.userData.base = obj.scale.clone(); hsObjs[p.hs] = obj; }
+        if (p.hs) { obj.userData.base = obj.scale.clone(); (hsObjs[p.hs] = hsObjs[p.hs] || []).push(obj); }
     }
 
     /* ---- 人物 ---- */
@@ -172,7 +181,7 @@ export async function create(opts) {
         const body = g ? normalize(T.cloneSkinned(g.scene), spec) : normalize(fallbackPerson(looks[key]), { h: spec.h });
         const root = new T.Group(), inner = new T.Group();
         inner.add(body); root.add(inner); root.add(blobShadow());
-        const start = spec.from || spec.street || spec.place;
+        const start = tpl.roomOnly ? spec.place : (spec.from || spec.street || spec.place);
         root.position.set(...start);
         world.add(root);
         const a = { key, spec, root, inner, hop: null, face: 0.35, walking: false, mixer: null, actions: {}, cur: null };
@@ -196,8 +205,8 @@ export async function create(opts) {
 
     /* ---- 镜头 ---- */
     const cams = layout.cameras;
-    const camPos = new T.Vector3(...cams.street.pos), camLook = new T.Vector3(...cams.street.look);
-    let loc = 'street';
+    const camPos = new T.Vector3(...cams[startLoc].pos), camLook = new T.Vector3(...cams[startLoc].look);
+    let loc = startLoc;
     const applyCam = () => { camera.position.copy(camPos); camera.lookAt(camLook); };
     applyCam();
 
@@ -295,6 +304,7 @@ export async function create(opts) {
     }
 
     let camTween = null;
+    const actorOf = k => actors[k] || (tpl.roomOnly ? actors.helper : null);   // 房间场景里 friend 和 helper 是同一个人
     const move = (a, to, dur, face) => {
         const from = a.root.position.clone(), dest = new T.Vector3(...to);
         if (face != null) a.face = face;
@@ -306,17 +316,17 @@ export async function create(opts) {
         missing: [...missing],
         /* 朋友从左边走进街道 */
         enter(who) {
-            const a = actors[who]; if (!a) return;
+            const a = actorOf(who); if (!a || tpl.roomOnly) return;
             move(a, a.spec.street, 950, Math.PI / 2);
             setTimeout(() => { a.face = -0.45; }, 900);
         },
         talk(who) {
-            const a = actors[who]; if (!a || reduced()) return;
+            const a = actorOf(who); if (!a || reduced()) return;
             a.hop = { t0: performance.now(), dur: 1350, n: 3, amp: 0.13 };
             if (a.actions.wave) { playClip(a, 'wave', true); setTimeout(() => playClip(a, 'idle'), 1400); }
         },
         cheer(who) {
-            const a = actors[who]; if (!a || reduced()) return;
+            const a = actorOf(who); if (!a || reduced()) return;
             a.hop = { t0: performance.now(), dur: 1500, n: 3, amp: 0.4 };
             if (a.actions.cheer) { playClip(a, 'cheer', true); setTimeout(() => playClip(a, 'idle'), 1500); }
         },
@@ -332,13 +342,15 @@ export async function create(opts) {
         },
         open(id) { this.bump(id, 1.12, 650); },
         shake(id) {
-            const o = hsObjs[id]; if (!o || reduced()) return;
-            tween(350, p => { o.rotation.z = Math.sin(p * Math.PI * 4) * 0.05 * (1 - p); }, () => { o.rotation.z = 0; });
+            const list = hsObjs[id]; if (!list || reduced()) return;
+            for (const o of list) tween(350, p => { o.rotation.z = Math.sin(p * Math.PI * 4) * 0.05 * (1 - p); }, () => { o.rotation.z = 0; });
         },
         bump(id, k, dur) {
-            const o = hsObjs[id]; if (!o || reduced()) return;
-            const base = o.userData.base;
-            tween(dur, p => o.scale.copy(base).multiplyScalar(1 + (k - 1) * Math.sin(p * Math.PI)), () => o.scale.copy(base));
+            const list = hsObjs[id]; if (!list || reduced()) return;
+            for (const o of list) {
+                const base = o.userData.base;
+                tween(dur, p => o.scale.copy(base).multiplyScalar(1 + (k - 1) * Math.sin(p * Math.PI)), () => o.scale.copy(base));
+            }
         },
         follow(el, key, mode) {
             const i = followers.findIndex(f => f.el === el);
