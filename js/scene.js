@@ -58,6 +58,7 @@
     const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
+    const ADJECTIVE_TEMPLATES = new Set(['describe', 'describe_person']);   // 形容词场景：描述物件 / 描述人物（服务端 scene_registry.CONTEXT_SCENES）
     function emojiOf(w) {
         if (!w) return '';
         if (w.scene_confirmed === true && typeof w.emoji === 'string' && w.emoji.trim()) return w.emoji.trim();
@@ -69,7 +70,7 @@
         if (hasSceneData(w)) {
             if (w.scene_confirmed !== true || w.scene_ok !== true) return false;
             if (w.pos === 'noun') return w.scene_template !== 'describe' && !!(emojiOf(w) || w.cn_meaning);
-            if (w.pos === 'adjective') return (w.scene_template == null || w.scene_template === 'describe') &&
+            if (w.pos === 'adjective') return (w.scene_template == null || ADJECTIVE_TEMPLATES.has(w.scene_template)) &&
                 ['adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural']
                     .every(key => typeof w[key] === 'string' && w[key].trim()) && !!(emojiOf(w) || w.cn_meaning);
             if (w.pos === 'verb') return (w.scene_template == null ||
@@ -257,7 +258,9 @@
         }
         const speakNode = (nodeId, btn) => {
             if (!ctx.speakLine) return null;
-            try { return Promise.resolve(ctx.speakLine(tpl.id, nodeId, tpl.id === 'describe' ? nounCtx.index : undefined, btn)).catch(() => false); } catch (e) { return null; }
+            // 只有台词里带 {art}/{noun} 的节点才带名词语境序号；服务端对其它台词的 variant 会返回 422（以前 describe 的固定台词因此一直没声音）
+            const line = tpl.nodes[nodeId], variant = tpl.adjectiveOnly && /\{(art|noun)\}/.test((line && line.pt) || '') ? nounCtx.index : undefined;
+            try { return Promise.resolve(ctx.speakLine(tpl.id, nodeId, variant, btn)).catch(() => false); } catch (e) { return null; }
         };
         const speakWord = btn => { if (ctx.speak) ctx.speak(w, 'word', btn || null); };
 

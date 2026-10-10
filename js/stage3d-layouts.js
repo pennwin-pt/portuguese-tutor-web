@@ -8,6 +8,8 @@
  * roomOnly 模板（find_room / verb_school / verb_home）：朋友和帮手是同一个人、一开始就在室内，
  *   没有街道，所以只需要 cameras.place，人物只写 me 和 helper 的 place。
  * 手机竖屏时画面约只看得到 place 镜头中心左右 ±3.5 米：热点尽量排在这个范围内，热点之间留 2.3 米以上。
+ * people（可选）：站在场景里的“群众演员”（describe_person 的男孩/女孩），写法和 props 类似：
+ *   { model, pos, h, rotY, hs, look }；有 idle 动画就播放；没放模型文件时用 look 拼一个兜底小人（look.girl=true 加裙子和长发）。
  * 调位置：URL 加 ?debug=1，拖动视角后把读数抄回 cameras；人物/物件坐标直接改这里。 */
 
 /* ================= 兜底几何体零件（没有模型文件时用；比例对就行） ================= */
@@ -182,6 +184,40 @@ export const LAYOUTS = {
       { model: 'street/building_1', pos: [23.55, 0.7, -2.5], h: 0.9, hs: 'casas', fb: { w: 0.5, color: '#c7d9f2', house: true } }
     ],
     hotspots: { copo: hot(15.45, 2.3, -2.3), casa: hot(17.95, 2.3, -2.3), livros: hot(20.45, 2.3, -2.3), casas: hot(22.95, 2.3, -2.3) },
+    cameras: { street: STREET_CAM, place: PLACE_CAM(19.2) },
+    actors: {
+      me: { ...ME, place: [16.5, 0, 1.8] },
+      friend: FRIEND,
+      helper: { model: 'characters/helper', h: 1.7, place: [19.2, 0, 2.0] }
+    }
+  },
+
+  /* ---------- describe_person：描述人物（热点 rapaz / rapariga / rapazes / raparigas，四组人站成一排）----------
+   * 一个男孩 / 一个女孩 / 两个男孩 / 两个女孩，各站在一块浅色站台上；热点和 describe 一样间隔 2.5 米，竖屏看得全。
+   * 新模型（可选，缺了用兜底小人）：people/boy_a、people/boy_b、people/girl_a、people/girl_b，清单见 models/MODELS_describe_person.md。 */
+  describe_person: {
+    sky: '#cfe9ff',
+    blocks: [...STREET_BLOCKS,
+      { pos: [19.2, 0.03, -1.9], size: [11.6, 0.05, 3.4], color: '#e6d3a3' },                                        // 空地
+      ...[15.45, 17.95, 20.45, 22.95].map(x => ({ pos: [x, 0.07, -2.4], size: [2.1, 0.05, 1.7], color: '#f6ecd0' }))],  // 四块站台（顶面 y≈0.095）
+    props: [
+      ...STREET_PROPS,
+      // 远处的教学楼 + 两侧的树
+      { model: 'street/building_1', pos: [13.0, 0, -8.4], h: 4.8, fb: { w: 3.2, color: '#f2c7a5' } },
+      { model: 'street/building_2', pos: [19.2, 0, -9.0], h: 5.6, fb: { w: 3.6, color: '#a7c7e7' } },
+      { model: 'street/building_1', pos: [25.4, 0, -8.4], h: 4.8, fb: { w: 3.2, color: '#f6e0a4' } },
+      { model: 'street/tree_1', pos: [13.4, 0, -4.8], h: 3.4, fb: { tree: true } },
+      { model: 'street/tree_2', pos: [25.2, 0, -4.8], h: 3.0, fb: { tree: true } }
+    ],
+    people: [
+      { model: 'people/boy_a', pos: [15.45, 0.095, -2.4], h: 1.5, hs: 'rapaz', look: { shirt: '#3b82f6', hair: '#3b2a20' } },                       // rapaz：一个男孩
+      { model: 'people/girl_a', pos: [17.95, 0.095, -2.4], h: 1.5, hs: 'rapariga', look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },        // rapariga：一个女孩
+      { model: 'people/boy_a', pos: [20.05, 0.095, -2.35], h: 1.5, hs: 'rapazes', look: { shirt: '#3b82f6', hair: '#3b2a20' } },                       // rapazes：两个男孩（两个人外观要不同）
+      { model: 'people/boy_b', pos: [20.85, 0.095, -2.5], h: 1.5, hs: 'rapazes', look: { shirt: '#22c55e', hair: '#111827' } },
+      { model: 'people/girl_a', pos: [22.55, 0.095, -2.35], h: 1.5, hs: 'raparigas', look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },       // raparigas：两个女孩
+      { model: 'people/girl_b', pos: [23.35, 0.095, -2.5], h: 1.5, hs: 'raparigas', look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } }
+    ],
+    hotspots: { rapaz: hot(15.45, 2.2, -2.3), rapariga: hot(17.95, 2.2, -2.3), rapazes: hot(20.45, 2.2, -2.3), raparigas: hot(22.95, 2.2, -2.3) },
     cameras: { street: STREET_CAM, place: PLACE_CAM(19.2) },
     actors: {
       me: { ...ME, place: [16.5, 0, 1.8] },

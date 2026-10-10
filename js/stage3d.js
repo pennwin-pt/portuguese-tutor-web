@@ -98,9 +98,13 @@ function fallbackProp(spec) {
 
 function fallbackPerson(look) {
     const g = new T.Group(), shirt = look?.shirt || '#3d9be9', hair = look?.hair || '#1f2937';
-    for (const x of [-0.12, 0.12]) { const l = new T.Mesh(new T.CylinderGeometry(0.09, 0.09, 0.62, 8), mat('#374151')); l.position.set(x, 0.31, 0); g.add(l); }
+    for (const x of [-0.12, 0.12]) { const l = new T.Mesh(new T.CylinderGeometry(0.09, 0.09, 0.62, 8), mat(look?.girl ? (look?.skin || '#f5cba7') : '#374151')); l.position.set(x, 0.31, 0); g.add(l); }
     const body = new T.Mesh(new T.CapsuleGeometry(0.27, 0.46, 4, 10), mat(shirt)); body.position.y = 0.98; g.add(body);
-    const head = new T.Mesh(new T.SphereGeometry(0.25, 14, 12), mat('#f5cba7')); head.position.y = 1.52; g.add(head);
+    if (look?.girl) {                                    // 女孩：裙子 + 脑后的长发（describe_person 没放模型时用）
+        const skirt = new T.Mesh(new T.CylinderGeometry(0.2, 0.36, 0.42, 16), mat(look.skirt || shirt)); skirt.position.y = 0.62; g.add(skirt);
+        const long = new T.Mesh(new T.CapsuleGeometry(0.2, 0.34, 4, 8), mat(hair)); long.position.set(0, 1.4, -0.15); g.add(long);
+    }
+    const head = new T.Mesh(new T.SphereGeometry(0.25, 14, 12), mat(look?.skin || '#f5cba7')); head.position.y = 1.52; g.add(head);
     const cap = new T.Mesh(new T.SphereGeometry(0.265, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), mat(hair)); cap.position.y = 1.55; g.add(cap);
     for (const x of [-0.09, 0.09]) { const e = new T.Mesh(new T.SphereGeometry(0.03, 6, 6), mat('#111827')); e.position.set(x, 1.53, 0.23); g.add(e); }
     return g;
@@ -150,6 +154,7 @@ export async function create(opts) {
     const missing = new Set();
     const want = new Set();
     for (const p of layout.props || []) if (p.model) want.add(p.model);
+    for (const p of layout.people || []) if (p.model) want.add(p.model);
     for (const a of Object.values(layout.actors || {})) if (a.model) want.add(a.model);
     const loaded = {};
     await Promise.all([...want].map(async m => { loaded[m] = await loadModel(m); if (!loaded[m]) missing.add(m); }));
@@ -166,6 +171,25 @@ export async function create(opts) {
         obj.position.set(...p.pos); obj.rotation.y = p.rotY || 0;
         world.add(obj);
         if (p.hs) { obj.userData.base = obj.scale.clone(); (hsObjs[p.hs] = hsObjs[p.hs] || []).push(obj); }
+    }
+
+    /* ---- 群众演员（layout.people，describe_person 的男孩/女孩）：不参与剧情，只站在原地播 idle；hs = 热点 id，和 props 一样会被弹一下 / 摇一下 ---- */
+    const mixers = [];
+    for (const p of layout.people || []) {
+        const g = p.model ? loaded[p.model] : null;
+        const body = g ? normalize(T.cloneSkinned(g.scene), p) : normalize(fallbackPerson(p.look), { h: p.h });
+        const root = new T.Group();
+        root.add(body, blobShadow());
+        root.position.set(...p.pos); root.rotation.y = p.rotY || 0;
+        world.add(root);
+        if (g && g.animations?.length) {
+            const clip = g.animations.find(c => CLIPS.idle.test(c.name));
+            if (clip) {                                  // 没有 idle 动画就保持静止姿势；起始时间随机，几个人不会同步晃动
+                const mixer = new T.AnimationMixer(body), action = mixer.clipAction(clip);
+                action.play(); action.time = Math.random() * clip.duration; mixers.push(mixer);
+            }
+        }
+        if (p.hs) { root.userData.base = root.scale.clone(); (hsObjs[p.hs] = hsObjs[p.hs] || []).push(root); }
     }
 
     /* ---- 人物 ---- */
@@ -293,6 +317,7 @@ export async function create(opts) {
             a.root.rotation.y += (a.face - a.root.rotation.y) * Math.min(1, dt * 10);
             a.mixer && a.mixer.update(dt);
         }
+        for (const m of mixers) m.update(dt);
         if (controls) { if (camTween) applyCam(); else controls.update(); } else applyCam();
         renderer.render(scene, camera);
         updateFollowers(size.w, size.h);
