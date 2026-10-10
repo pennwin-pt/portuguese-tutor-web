@@ -55,7 +55,7 @@
     for (const k of Object.keys(RAW)) ITEM_EMOJI[norm(k)] = RAW[k];
     const GENERIC_EMOJI = [...new Set(Object.values(ITEM_EMOJI))];
     const GENERIC_PT = ['maçã', 'leite', 'pão', 'água', 'livro', 'chave', 'guarda-chuva', 'chapéu', 'sapato', 'telemóvel', 'ovo', 'flor'];
-    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template',
+    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
     function emojiOf(w) {
@@ -120,7 +120,9 @@
     ].map(([pt, emoji]) => ({ id: -1, pt, emoji }));
     const adjectiveContext = (w, tpl) => {
         const contexts = tpl.noun_contexts || [];
-        const index = contexts.length ? (Number(w.id) || 0) % contexts.length : 0;
+        // 管理端配置了 scene_noun 且在模板名词语境里 → 用它；否则按 id 取余（旧行为，与服务端 scene_registry.adjective_context_index 一致）
+        const picked = w.scene_noun ? contexts.findIndex(c => c.noun === w.scene_noun) : -1;
+        const index = picked >= 0 ? picked : (contexts.length ? (Number(w.id) || 0) % contexts.length : 0);
         const context = contexts[index] || {};
         return { ...context, nounZh: context.noun_zh || context.nounZh || '', index };
     };
