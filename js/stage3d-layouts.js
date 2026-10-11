@@ -5,7 +5,7 @@
  *   - fb.parts = 用小方块（默认）/ 圆柱 cyl / 球 sph 拼出来的家具，整体会按 h 自动缩放，零件只需比例对。
  * h / w：目标高度 / 宽度（自动按包围盒缩放，不同模型包的尺寸差异不用管）。
  * hs：这个物件对应的热点 id，被点中 / 答对时会弹一下；同一个热点可以挂多个物件（比如“几座房子”）。
- * roomOnly 模板（find_room / verb_school / verb_home）：朋友和帮手是同一个人、一开始就在室内，
+ * roomOnly 模板（find_room / verb_school / verb_home / verb_note / verb_treasure）：朋友和帮手是同一个人、一开始就在室内，
  *   没有街道，所以只需要 cameras.place，人物只写 me 和 helper 的 place。
  * 手机竖屏时画面约只看得到 place 镜头中心左右 ±3.5 米：热点尽量排在这个范围内，热点之间留 2.3 米以上。
  * people（可选）：站在场景里的“群众演员”（describe_person 的男孩/女孩），写法和 props 类似：
@@ -49,6 +49,15 @@ const PARTS = {
     box(.42, .3, .3, 0, .95, 0, '#1f2937'), box(.2, .16, 0, 0, .95, .24, '#60a5fa', 'cyl')],
   icecream: [box(.2, .3, 0, 0, .15, 0, '#e0a458', 'cyl'), box(.32, 0, 0, 0, .38, 0, '#f9a8d4', 'sph'), box(.24, 0, 0, 0, .56, 0, '#fde68a', 'sph')],
   flower: c => [box(.04, .3, .04, 0, .15, 0, '#16a34a'), box(.2, 0, 0, 0, .34, 0, c, 'sph')],
+  /* 海岛寻宝（verb_treasure）：没下载 beach/ 模型时用这些兜底 */
+  palm: [box(.2, 2.6, 0, 0, 1.3, 0, '#a16207', 'cyl'), box(1.3, 0, 0, 0, 2.65, 0, '#16a34a', 'sph'),
+    box(.9, 0, 0, .75, 2.4, 0, '#22c55e', 'sph'), box(.9, 0, 0, -.75, 2.4, 0, '#22c55e', 'sph'),
+    box(.9, 0, 0, 0, 2.4, .75, '#22c55e', 'sph'), box(.9, 0, 0, 0, 2.4, -.75, '#22c55e', 'sph')],
+  rock: [box(1.3, 0, 0, 0, .45, 0, '#94a3b8', 'sph'), box(.8, 0, 0, .55, .28, .2, '#a8b3c4', 'sph'), box(.6, 0, 0, -.5, .22, .25, '#7c8aa0', 'sph')],
+  boat: [box(2.2, .3, .9, 0, .25, 0, '#a16207'), box(2.2, .3, .08, 0, .52, .45, '#8a5a2b'), box(2.2, .3, .08, 0, .52, -.45, '#8a5a2b'),
+    box(.1, .3, .9, 1.1, .52, 0, '#8a5a2b'), box(.1, .3, .9, -1.1, .52, 0, '#8a5a2b'), box(.1, .08, .8, 0, .42, 0, '#d9a066')],
+  chest: [box(.8, .35, .5, 0, .18, 0, '#92400e'), box(.8, .16, .5, 0, .43, 0, '#b45309'), box(.1, .55, .52, 0, .28, 0, '#facc15'), box(.12, .14, .05, 0, .34, .27, '#fde047')],
+  barrel: [box(.55, .8, 0, 0, .4, 0, '#a16207', 'cyl'), box(.58, .06, 0, 0, .25, 0, '#6b4423', 'cyl'), box(.58, .06, 0, 0, .55, 0, '#6b4423', 'cyl')],
   /* 笔记本电脑（商店数码区货架前的箱子上）：底座 + 立起的屏幕 + 蓝色屏幕面 */
   laptop: [box(.7, .04, .5, 0, .02, 0, '#9ca3af'), box(.7, .5, .04, 0, .27, -.23, '#1f2937'), box(.6, .4, .02, 0, .27, -.2, '#60a5fa')],
   /* 墙上的板子：黑板（深绿）/ 菜单板（深色）。lines = 粉笔字的条数 */
@@ -404,6 +413,31 @@ export const LAYOUTS = {
       me: { ...ME, place: [15.9, 0, 1.9] },
       helper: { model: 'characters/friend', h: 1.7, place: [18.6, 0, 2.2] }
     }
+  }
+};
+/* ---------- verb_treasure：海岛寻宝（roomOnly 户外；热点 palm / rock / boat，另有只用来“打开宝箱”的 chest） ----------
+ * 需要下载的模型（可选，放 web/models/beach/，找不到就用上面的兜底几何体）：palm / rock / boat / chest / barrel */
+LAYOUTS.verb_treasure = {
+  sky: '#cfe9ff',
+  blocks: [
+    { pos: [19, -0.06, 2], size: [80, 0.12, 30], color: '#f1dfaa' },          // 沙滩（整片地面）
+    { pos: [19.1, 0.0, -6.4], size: [60, 0.05, 6.8], color: '#5aaee8' },       // 海水
+    { pos: [19.1, 0.03, -2.85], size: [60, 0.05, 0.45], color: '#ffffff' },    // 浪花
+    { pos: [19.1, 0.02, 0.5], size: [9, 0.03, 4.4], color: '#e6cf8f' }         // 宝箱前的深色沙地
+  ],
+  props: [
+    { model: 'beach/palm', pos: [15.6, 0, -2.5], h: 3.1, hs: 'palm', fb: { parts: PARTS.palm } },
+    { model: 'beach/rock', pos: [19.2, 0, -2.3], h: 1.1, hs: 'rock', fb: { parts: PARTS.rock } },
+    { model: 'beach/boat', pos: [22.6, 0, -3.5], h: 0.9, rotY: 0.2, hs: 'boat', fb: { parts: PARTS.boat } },
+    { model: 'beach/chest', pos: [19.1, 0, 0.3], h: 0.6, hs: 'chest', fb: { parts: PARTS.chest } },   // 锁着的宝箱：答对后 open:chest
+    { model: 'beach/barrel', pos: [24.7, 0, -1.5], h: 0.8, fb: { parts: PARTS.barrel } },
+    { model: 'beach/palm', pos: [26.0, 0, -3.0], h: 2.8, fb: { parts: PARTS.palm } }
+  ],
+  hotspots: { palm: hot(15.6, 3.0, -2.2), rock: hot(19.2, 1.5, -1.9), boat: hot(22.6, 1.6, -3.0), chest: hot(19.1, 1.0, 0.3) },
+  cameras: { place: PLACE_CAM() },
+  actors: {
+    me: { ...ME, place: [16.4, 0, 1.7] },
+    helper: { model: 'characters/friend', h: 1.7, place: [22.0, 0, 1.6] }
   }
 };
 LAYOUTS.verb_note = LAYOUTS.verb_school;                // verb_note 用教室布局（热点同为 board / shelf / bag），藏字条的地方
