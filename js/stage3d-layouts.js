@@ -168,8 +168,8 @@ export const LAYOUTS = {
     }
   },
 
-  /* ---------- describe：描述特征（热点 copo / casa / livros / casas，四个展台排一排） ---------- */
-  describe: {
+  /* ---------- describe_object：描述物体（热点 copo / casa / livros / casas，四个展台排一排） ---------- */
+  describe_object: {
     sky: '#cfe9ff',
     blocks: [...STREET_BLOCKS, ...building('#ead9bd', '#fdf6e3', '#f1e1c1'),
       ...[15.45, 17.95, 20.45, 22.95].map(x => ({ pos: [x, 0.35, -2.6], size: [2.0, 0.7, 1.1], color: '#f3e0c0' })),
@@ -193,7 +193,7 @@ export const LAYOUTS = {
   },
 
   /* ---------- describe_person：描述人物（热点 rapaz / rapariga / rapazes / raparigas，四组人站成一排）----------
-   * 一个男孩 / 一个女孩 / 两个男孩 / 两个女孩，各站在一块浅色站台上；热点和 describe 一样间隔 2.5 米，竖屏看得全。
+   * 一个男孩 / 一个女孩 / 两个男孩 / 两个女孩，各站在一块浅色站台上；热点和 describe_object 一样间隔 2.5 米，竖屏看得全。
    * 新模型（可选，缺了用兜底小人）：people/boy_a、people/boy_b、people/girl_a、people/girl_b，清单见 models/MODELS_describe_person.md。 */
   describe_person: {
     sky: '#cfe9ff',

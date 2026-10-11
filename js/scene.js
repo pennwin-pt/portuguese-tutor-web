@@ -58,7 +58,7 @@
     const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
-    const ADJECTIVE_TEMPLATES = new Set(['describe', 'describe_person']);   // 形容词场景：描述物件 / 描述人物（服务端 scene_registry.CONTEXT_SCENES）
+    const ADJECTIVE_TEMPLATES = new Set(['describe_object', 'describe_person']);   // 形容词场景：描述物件 / 描述人物（服务端 scene_registry.CONTEXT_SCENES）
     function emojiOf(w) {
         if (!w) return '';
         if (w.scene_confirmed === true && typeof w.emoji === 'string' && w.emoji.trim()) return w.emoji.trim();
@@ -69,7 +69,7 @@
         if (!w || !w.pt_word) return false;
         if (hasSceneData(w)) {
             if (w.scene_confirmed !== true || w.scene_ok !== true) return false;
-            if (w.pos === 'noun') return w.scene_template !== 'describe' && !!(emojiOf(w) || w.cn_meaning);
+            if (w.pos === 'noun') return w.scene_template !== 'describe_object' && !!(emojiOf(w) || w.cn_meaning);
             if (w.pos === 'adjective') return (w.scene_template == null || ADJECTIVE_TEMPLATES.has(w.scene_template)) &&
                 ['adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural']
                     .every(key => typeof w[key] === 'string' && w[key].trim()) && !!(emojiOf(w) || w.cn_meaning);
@@ -250,7 +250,7 @@
             const hn = tpl.nodes[nodeId];
             const hs = ((hn && hn.hotspots) || []).map(x => hotspots.get(x)).filter(Boolean);
             if (hs.length >= 2 && (!st.target || !hs.some(h => h.id === st.target))) {
-                // assign_target:noun_context（describe）：目标热点 = 本词名词语境对应的那个，不随机
+                // assign_target:noun_context（describe_object）：目标热点 = 本词名词语境对应的那个，不随机
                 const forced = hn.assign_target === 'noun_context' ? hs.find(h => h.context === nounCtx.index) : null;
                 st.target = (forced || hs[Math.floor(Math.random() * hs.length)]).id;
             }
@@ -258,7 +258,7 @@
         }
         const speakNode = (nodeId, btn) => {
             if (!ctx.speakLine) return null;
-            // 只有台词里带 {art}/{noun} 的节点才带名词语境序号；服务端对其它台词的 variant 会返回 422（以前 describe 的固定台词因此一直没声音）
+            // 只有台词里带 {art}/{noun} 的节点才带名词语境序号；服务端对其它台词的 variant 会返回 422（以前 describe_object 的固定台词因此一直没声音）
             const line = tpl.nodes[nodeId], variant = tpl.adjectiveOnly && /\{(art|noun)\}/.test((line && line.pt) || '') ? nounCtx.index : undefined;
             try { return Promise.resolve(ctx.speakLine(tpl.id, nodeId, variant, btn)).catch(() => false); } catch (e) { return null; }
         };
