@@ -41,6 +41,7 @@ const PARTS = {
     box(.06, .5, .06, -.75, .7, -.22, '#4b5563'), box(.06, .5, .06, .75, .7, -.22, '#4b5563')],
   duck: [box(.34, 0, 0, 0, .17, 0, '#fde047', 'sph'), box(.2, 0, 0, 0, .38, .12, '#fde047', 'sph'), box(.1, .05, .1, 0, .37, .26, '#fb923c')],
   ball: [box(.4, 0, 0, 0, .2, 0, '#ef4444', 'sph')],
+  icecream: [box(.2, .3, 0, 0, .15, 0, '#e0a458', 'cyl'), box(.32, 0, 0, 0, .38, 0, '#f9a8d4', 'sph'), box(.24, 0, 0, 0, .56, 0, '#fde68a', 'sph')],
   flower: c => [box(.04, .3, .04, 0, .15, 0, '#16a34a'), box(.2, 0, 0, 0, .34, 0, c, 'sph')],
   /* 墙上的板子：黑板（深绿）/ 菜单板（深色）。lines = 粉笔字的条数 */
   board: (c, lines) => [box(2.7, 1.5, .08, 0, .75, 0, '#7c4a1e'), box(2.5, 1.3, .06, 0, .75, .04, c),
@@ -301,6 +302,30 @@ export const LAYOUTS = {
     actors: {
       me: { ...ME, place: [17.4, 0, 1.9] },
       helper: { model: 'characters/friend', h: 1.7, place: [22.6, 0, 0.2] }
+    }
+  },
+
+  /* ---------- verb_persuade：说服朋友（roomOnly；热点 ball / icecream / duck；小Rui站在客厅前面，三样他喜欢的东西排在后排）----------
+   * 说服类动词专用（manualOnly，只有管理端明确选了“说服朋友”的词才进来）。小Rui = people/boy_a（和 describe_person 共用同一个模型；没放模型时用兜底小人）。
+   * 足球/冰淇淋/小鸭子：球和冰淇淋没有模型也能显示（兜底几何体），鸭子复用 park/duck，冰淇淋可选 shop/icecream。 */
+  verb_persuade: {
+    sky: '#fbeee6',
+    blocks: [...room('#e6cfa8', '#fbeee6', '#f3dccb', '#c9a27a'), rug(19.1, -0.4, 7.4, 3.6, '#bfdbfe'), ...windowAt(21.6, 2.8)],
+    props: [
+      { model: 'room/sofa', pos: [19.1, 0, -3.1], h: 0.95, fb: { parts: PARTS.sofa } },
+      { model: 'room/table', pos: [19.1, 0, -1.9], h: 0.45, fb: { parts: PARTS.table } },
+      { model: 'shop/icecream', pos: [19.1, 0.46, -1.9], h: 0.35, hs: 'icecream', fb: { parts: PARTS.icecream } },        // 茶几上的冰淇淋
+      { model: 'park/ball', pos: [16.2, 0.05, -2.0], h: 0.4, hs: 'ball', fb: { parts: PARTS.ball } },                       // 地毯上的足球
+      { model: 'park/duck', pos: [22.0, 0.05, -2.0], h: 0.4, hs: 'duck', fb: { parts: PARTS.duck } }                        // 小鸭子玩具
+    ],
+    people: [
+      { model: 'people/boy_a', pos: [17.9, 0, 0.3], h: 1.5, rotY: 0.25, look: { shirt: '#3b82f6', hair: '#3b2a20' } }       // 小Rui：站在中间偏左，不挡后排的东西
+    ],
+    hotspots: { ball: hot(16.2, 1.25, -1.8), icecream: hot(19.1, 1.45, -1.8), duck: hot(22.0, 1.25, -1.8) },
+    cameras: { place: PLACE_CAM() },
+    actors: {
+      me: { ...ME, place: [16.2, 0, 1.9] },
+      helper: { model: 'characters/friend', h: 1.7, place: [22.4, 0, 0.7] }
     }
   },
 

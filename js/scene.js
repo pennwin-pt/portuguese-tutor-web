@@ -150,7 +150,7 @@
         }
         const pos = ['noun', 'adjective', 'verb'].includes(w.pos) ? w.pos : 'noun';
         const available = templates.filter(t => (t.applies_to?.pos || []).includes(pos)
-            && (!t.foodOnly || isFood(w)));
+            && (!t.foodOnly || isFood(w)) && !t.manualOnly);          // manualOnly（如 verb_persuade）不参加自动轮换，只在词里明确选了它时才用
         if (!available.length) throw new Error(`没有适用于${({ noun: '名词', adjective: '形容词', verb: '动词' })[pos]}的已发布场景模板`);
         if (!hasSceneData(w)) return available.find(t => t.id === 'shop') || available[0];
         if (pos === 'adjective') return available[0];
