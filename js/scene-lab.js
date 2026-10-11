@@ -7,7 +7,7 @@
     const host = $('scene-host');
     const player = $('lab-player');
     const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-    let current = null, templates = [], selectedWordId = Number(params.get('word')) || 1, selectedNoun = '';
+    let current = null, templates = [], selectedWordId = Number(params.get('word')) || 1, selectedNoun = '', selectedZone = '';
     const setStatus = value => { status.textContent = value || ''; };
     const stopAudio = () => { player.pause(); player.removeAttribute('src'); player.load(); };
     const sayLine = (sceneId, nodeId, variant, btn) => {
@@ -41,7 +41,7 @@
         const word = {
             id: selectedWordId, pt_word: pt, cn_meaning: $('lab-zh').value.trim(), emoji: $('lab-emoji').value.trim(),
             pos: $('lab-pos').value, gender: $('lab-gender').value, number: $('lab-number').value,
-            scene_ok: true, scene_confirmed: true, scene_template: template, scene_noun: selectedNoun || undefined,
+            scene_ok: true, scene_confirmed: true, scene_template: template, scene_noun: selectedNoun || undefined, scene_zone: selectedZone || undefined,
             adjective_m_singular: $('lab-adj-ms').value.trim(), adjective_f_singular: $('lab-adj-fs').value.trim(),
             adjective_m_plural: $('lab-adj-mp').value.trim(), adjective_f_plural: $('lab-adj-fp').value.trim(),
         };
@@ -80,6 +80,7 @@
                 $('lab-adj-mp').value = source.adjective_m_plural || '';
                 $('lab-adj-fp').value = source.adjective_f_plural || '';
                 selectedNoun = source.scene_noun || '';
+                selectedZone = params.get('zone') || source.scene_zone || '';
             }
             populateTemplates(params.get('template') || (source && source.scene_template));
             if (!templateSelect.options.length) throw new Error('没有适用于当前词性的已发布模板。');

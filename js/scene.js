@@ -19,6 +19,7 @@
    节点公共字段：type、modes（['preview'] / ['assessment']，当前模式不在列表里就跳过）、location（'street'|'place'，镜头先走过去）、effects（见 FX）
    dialogue / feedback：speaker(friend|helper)、side?、pt、zh、speech(auto|on_tap|none)、button?（没有就等 delay_ms 自动往下）、next、request?(true=这句是“请求”，后面选择环节会重复显示)
    hotspot_choice：hotspots、prompt_zh、on_target、on_decoy         点场景里的物件探索，不提交评判、不计错
+                 assign_target：random（默认）/ noun_context（describe_*）/ word_zone（shop：目标 = 词的 scene_zone，没配置则在 random_target≠false 的热点里随机）
    actor_tap：actors(friend|helper)、prompt_zh、on_tap_<人物id>、next、hint_for   点画面里的人物问线索，不提交评判、不计错；
                  next 是被 modes 跳过时的后继；hint_for 指向后面的 hotspot_choice，让 {hotspot_zh} 提前有值
    word_choice：prompt_zh、display{preview,assessment}、on_correct、on_wrong   从 4 个词里选，正式测验在这里提交评判
@@ -55,7 +56,7 @@
     for (const k of Object.keys(RAW)) ITEM_EMOJI[norm(k)] = RAW[k];
     const GENERIC_EMOJI = [...new Set(Object.values(ITEM_EMOJI))];
     const GENERIC_PT = ['maçã', 'leite', 'pão', 'água', 'livro', 'chave', 'guarda-chuva', 'chapéu', 'sapato', 'telemóvel', 'ovo', 'flor'];
-    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun',
+    const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun', 'scene_zone',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
     const ADJECTIVE_TEMPLATES = new Set(['describe_object', 'describe_person']);   // 形容词场景：描述物件 / 描述人物（服务端 scene_registry.CONTEXT_SCENES）
@@ -251,8 +252,14 @@
             const hs = ((hn && hn.hotspots) || []).map(x => hotspots.get(x)).filter(Boolean);
             if (hs.length >= 2 && (!st.target || !hs.some(h => h.id === st.target))) {
                 // assign_target:noun_context（describe_object）：目标热点 = 本词名词语境对应的那个，不随机
-                const forced = hn.assign_target === 'noun_context' ? hs.find(h => h.context === nounCtx.index) : null;
-                st.target = (forced || hs[Math.floor(Math.random() * hs.length)]).id;
+                // assign_target:word_zone（shop）：目标热点 = 管理端给这个词配置的购买分区（w.scene_zone）；没配置/配置已失效时回到随机
+                let forced = null;
+                if (hn.assign_target === 'noun_context') forced = hs.find(h => h.context === nounCtx.index);
+                else if (hn.assign_target === 'word_zone' && w.scene_zone) forced = hs.find(h => h.id === w.scene_zone);
+                // 随机时跳过 random_target:false 的热点（如 shop 的数码区）：没配置分区的老词不会被随机派到它那里去
+                const cands = hn.assign_target === 'word_zone' ? hs.filter(h => h.random_target !== false) : hs;
+                const rnd = cands.length ? cands : hs;
+                st.target = (forced || rnd[Math.floor(Math.random() * rnd.length)]).id;
             }
             return hs;
         }

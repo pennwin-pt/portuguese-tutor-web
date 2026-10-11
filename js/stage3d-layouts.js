@@ -49,6 +49,8 @@ const PARTS = {
     box(.42, .3, .3, 0, .95, 0, '#1f2937'), box(.2, .16, 0, 0, .95, .24, '#60a5fa', 'cyl')],
   icecream: [box(.2, .3, 0, 0, .15, 0, '#e0a458', 'cyl'), box(.32, 0, 0, 0, .38, 0, '#f9a8d4', 'sph'), box(.24, 0, 0, 0, .56, 0, '#fde68a', 'sph')],
   flower: c => [box(.04, .3, .04, 0, .15, 0, '#16a34a'), box(.2, 0, 0, 0, .34, 0, c, 'sph')],
+  /* 笔记本电脑（商店数码区货架前的箱子上）：底座 + 立起的屏幕 + 蓝色屏幕面 */
+  laptop: [box(.7, .04, .5, 0, .02, 0, '#9ca3af'), box(.7, .5, .04, 0, .27, -.23, '#1f2937'), box(.6, .4, .02, 0, .27, -.2, '#60a5fa')],
   /* 墙上的板子：黑板（深绿）/ 菜单板（深色）。lines = 粉笔字的条数 */
   board: (c, lines) => [box(2.7, 1.5, .08, 0, .75, 0, '#7c4a1e'), box(2.5, 1.3, .06, 0, .75, .04, c),
     ...Array.from({ length: lines }, (_, i) => box(1.9 - i * .35, .07, .03, -.1 - i * .08, 1.1 - i * .27, .09, '#f5f5dc')),
@@ -105,18 +107,21 @@ export const LAYOUTS = {
     blocks: [...STREET_BLOCKS, ...building('#e2c08d', '#fff1d0', '#f5deb3')],
     props: [
       ...STREET_PROPS,
-      // 商店：三个货架（对应热点 fruit / bakery / drinks），货架前各放一个箱子
-      { model: 'shop/shelf', pos: [15.7, 0, -3.0], h: 2.2, hs: 'fruit', fb: { w: 1.9, color: '#c58b4e', shelf: true } },
-      { model: 'shop/shelf', pos: [18.0, 0, -3.0], h: 2.2, hs: 'bakery', fb: { w: 1.9, color: '#c58b4e', shelf: true } },
-      { model: 'shop/shelf', pos: [20.3, 0, -3.0], h: 2.2, hs: 'drinks', fb: { w: 1.9, color: '#c58b4e', shelf: true } },
-      { model: 'shop/crate', pos: [15.7, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#d9a066' } },
-      { model: 'shop/crate', pos: [18.0, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#e8c58a' } },
-      { model: 'shop/crate', pos: [20.3, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#9ec5e8' } },
+      // 商店：四个货架（对应热点 fruit / bakery / drinks / digital），货架前各放一个箱子；间距 2.3 米，整体以 x=19.1 为中心
+      { model: 'shop/shelf', pos: [15.65, 0, -3.0], h: 2.2, hs: 'fruit', fb: { w: 1.9, color: '#c58b4e', shelf: true } },
+      { model: 'shop/shelf', pos: [17.95, 0, -3.0], h: 2.2, hs: 'bakery', fb: { w: 1.9, color: '#c58b4e', shelf: true } },
+      { model: 'shop/shelf', pos: [20.25, 0, -3.0], h: 2.2, hs: 'drinks', fb: { w: 1.9, color: '#c58b4e', shelf: true } },
+      { model: 'shop/shelf', pos: [22.55, 0, -3.0], h: 2.2, hs: 'digital', fb: { w: 1.9, color: '#64748b', shelf: true } },
+      { model: 'shop/crate', pos: [15.65, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#d9a066' } },
+      { model: 'shop/crate', pos: [17.95, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#e8c58a' } },
+      { model: 'shop/crate', pos: [20.25, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#9ec5e8' } },
+      { model: 'shop/crate', pos: [22.55, 0, -1.9], h: 0.55, fb: { w: 0.8, color: '#94a3b8' } },
+      { pos: [22.55, 0.55, -1.9], h: 0.5, fb: { parts: PARTS.laptop } },                                  // 数码区箱子上的笔记本电脑
       { model: 'shop/counter', pos: [21.9, 0, 0.1], h: 1.05, rotY: 0, fb: { w: 1.9, color: '#b9824a' } },
-      { model: 'shop/plant', pos: [14.2, 0, -2.6], h: 1.2, fb: { tree: true, small: true } }
+      { model: 'shop/plant', pos: [14.0, 0, -2.6], h: 1.2, fb: { tree: true, small: true } }
     ],
     // 热点按钮悬浮的位置（货架前上方）
-    hotspots: { fruit: [15.7, 1.75, -2.2], bakery: [18.0, 1.75, -2.2], drinks: [20.3, 1.75, -2.2] },
+    hotspots: { fruit: [15.65, 1.75, -2.2], bakery: [17.95, 1.75, -2.2], drinks: [20.25, 1.75, -2.2], digital: [22.55, 1.75, -2.2] },
     cameras: { street: STREET_CAM, place: PLACE_CAM() },
     actors: {
       me: { ...ME, place: [16.4, 0, 1.7] },
