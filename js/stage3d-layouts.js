@@ -1,4 +1,4 @@
-/* 3D 舞台布局：每个场景模板 id 一份。没有布局的模板自动继续用 2D。
+/* 3D 舞台布局：每个场景模板 id 必须有一份（缺失时该场景显示错误卡）。
  * 单位 ≈ 米；x 向右、y 向上、z 朝向镜头。街道在 x≈0，“place”（商店/餐厅/客厅/公园…）在 x≈19。
  * model = models/ 下的相对路径（不带 .glb）；找不到文件时自动用 fb（简易几何体）代替，所以没下载模型也能跑。
  *   - 没写 model 的物件（黑板、菜单板、花、球…）永远用 fb 拼出来，不需要下载。
@@ -324,7 +324,7 @@ export const LAYOUTS = {
       { model: 'room/desk', pos: [15.4, 0, -0.6], h: 0.8, fb: { parts: PARTS.desk } },
       { model: 'room/chair', pos: [15.4, 0, 0.5], h: 0.95, rotY: Math.PI, fb: { parts: PARTS.chair } }
     ],
-    hotspots: { board: hot(15.4, 2.45, -2.9), shelf: hot(17.9, 1.9, -2.5), bag: hot(20.4, 1.7, -2.0) },
+    hotspots: { board: hot(15.4, 5.95, -0.9), shelf: hot(17.9, 1.9, -2.5), bag: hot(20.4, 1.7, -2.0) },
     cameras: { place: PLACE_CAM() },
     actors: {
       me: { ...ME, place: [17.4, 0, 1.9] },

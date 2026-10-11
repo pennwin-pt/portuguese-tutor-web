@@ -1,4 +1,4 @@
-/* 场景演练 3D 舞台（Three.js）。由 scene.js 动态 import，失败或没有布局时 scene.js 自动继续用 2D。
+/* 场景演练 3D 舞台（Three.js）。由 scene.js 动态 import；创建失败（WebGL 不可用 / 模板没有布局 / 加载失败）时 scene.js 显示错误卡，没有 2D 回退。
  * 设计要点：
  *  - 只负责“画面”：背景、人物、镜头、特效。剧情/判分/泄露保护仍在 scene.js。
  *  - 全局只建一个 WebGLRenderer（iOS 对 WebGL context 数量有限制，words.js 会连续播很多个词）。

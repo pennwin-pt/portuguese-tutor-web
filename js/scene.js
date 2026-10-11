@@ -1,5 +1,5 @@
 /* 场景演练：用「节点图」演绎购物、餐厅点单、寻找物品、房间里找东西和形容词描述。
-   不引入任何库：人物是内联 SVG，动画全是 CSS；对外只有 Scene.canPlay(w) / Scene.play(w, ctx) / Scene.emojiOf(w)。
+   只做 3D 舞台（stage3d.js，Three.js 渲染）；本文件的 DOM 只负责台词气泡、热点按钮、人物点击区；对外只有 Scene.canPlay(w) / Scene.play(w, ctx) / Scene.emojiOf(w)。
 
    ctx = {
      mode: 'preview' | 'assessment'   缺省：有 evaluateChoice 就是 assessment，否则 preview
@@ -81,23 +81,8 @@
         if (w.pos === 'adjective' || w.pos === 'verb') return false;
         return !!(emojiOf(w) || w.cn_meaning);
     };
-    /* ---------- 人物：内联 SVG（只拼颜色常量，没有任何用户数据） ---------- */
-    const person = (shirt, hair) =>
-        '<svg viewBox="0 0 48 76" width="48" height="76" aria-hidden="true">' +
-        '<ellipse cx="24" cy="72" rx="14" ry="3" fill="rgba(0,0,0,.12)"/>' +
-        '<rect x="14" y="52" width="8" height="18" rx="4" fill="#475569"/><rect x="26" y="52" width="8" height="18" rx="4" fill="#475569"/>' +
-        `<rect x="9" y="24" width="30" height="34" rx="13" style="fill:${shirt}"/>` +
-        `<rect x="3" y="28" width="9" height="22" rx="4.5" style="fill:${shirt}"/><rect x="36" y="28" width="9" height="22" rx="4.5" style="fill:${shirt}"/>` +
-        '<circle cx="24" cy="15" r="12" fill="#f8d5b5"/>' +
-        `<path d="M12 14c0-9 7-12 12-12s12 3 12 12c-4-5-8-6-12-6s-8 1-12 6z" style="fill:${hair}"/>` +
-        '<circle cx="20" cy="16" r="1.5" fill="#1f2937"/><circle cx="28" cy="16" r="1.5" fill="#1f2937"/>' +
-        '<path d="M20.5 21q3.5 3 7 0" stroke="#9a3412" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>';
-    function mkPerson(cls, shirt, hair) {
-        const p = el('div', 'sc-person ' + cls), inner = el('div', 'sc-inner');
-        inner.innerHTML = person(shirt, hair);
-        p.append(inner);
-        return p;
-    }
+    /* ---------- 人物点击锚点：空 div，由 stage3d 每帧投影到 3D 人物身上；点击区（.sc-tap）挂在里面 ---------- */
+    const mkAnchor = cls => el('div', 'sc-person ' + cls);
 
     /* ---------- 常量 ---------- */
     const MAX_STEPS = 200;            // 节点图跳转次数上限，防止写错的数据把页面卡死
@@ -169,16 +154,8 @@
         return automatic;
     }
 
-    /* ---------- 3D 舞台（可选）：默认开启 3D；?stage=2d 关闭并记住，?stage=3d 恢复；?debug=1 显示调试镜头 ---------- */
+    /* ---------- 3D 舞台（必需）：?debug=1 显示调试镜头 ---------- */
     const SCRIPT_SRC = document.currentScript && document.currentScript.src;
-    const want3D = () => {
-        const q = new URLSearchParams(location.search).get('stage');
-        try {
-            if (q === '2d') localStorage.setItem('stage3d', '0');
-            else if (q === '3d') localStorage.removeItem('stage3d');
-            return localStorage.getItem('stage3d') !== '0';        // 默认开启；没有 3D 布局的模板会自动用 2D
-        } catch (e) { return q !== '2d'; }
-    };
     const debug3D = () => new URLSearchParams(location.search).has('debug');
     let stageModule = null;
     const loadStage3D = () => stageModule || (stageModule = import(new URL('stage3d.js', SCRIPT_SRC || location.href).href)
@@ -203,52 +180,48 @@
         const fillPt = s => String(s || '').replace(/\{(blank|art|noun)\}/g, (_, k) => k === 'blank' ? '______' : k === 'art' ? nounCtx.article : nounCtx.noun);
         const fillZh = s => String(s || '').replace(/\{(target_zh|noun_zh|hotspot_zh)\}/g, (_, k) => k === 'target_zh' ? zh : k === 'noun_zh' ? nounCtx.nounZh : hotspotZh());
 
-        /* --- 依模板搭舞台；色块 SVG 是静态素材，不包含单词或用户数据 --- */
-        const root = el('div', `sc ${tpl.root}`);
-        const view = el('div', 'sc-view'), track = el('div', 'sc-track');
-        const street = el('div', 'sc-pane street'), place = el('div', `sc-pane sc-place ${tpl.scenery}`);
-        [['🌳', '6%', '18%'], ['🏠', '78%', '24%'], ['☁️', '30%', '6%'], ['☁️', '66%', '4%']].forEach(([t, l, tp]) => {
-            const d = el('span', 'deco', t); d.style.left = l; d.style.top = tp; street.append(d);
-        });
-        if (tpl.id === 'find') {
-            const art = el('div', 'sc-find-art');
-            art.innerHTML = '<svg viewBox="0 0 260 150" aria-hidden="true"><rect x="18" y="75" width="118" height="42" rx="12" fill="#c084fc"/><rect x="30" y="55" width="90" height="35" rx="12" fill="#d8b4fe"/><rect x="28" y="112" width="10" height="24" fill="#7c3f16"/><rect x="116" y="112" width="10" height="24" fill="#7c3f16"/><rect x="177" y="42" width="55" height="76" rx="5" fill="#a16207"/><rect x="183" y="49" width="43" height="28" fill="#fef3c7"/><rect x="183" y="83" width="43" height="29" fill="#fde68a"/><circle cx="213" cy="95" r="2" fill="#92400e"/><path d="M150 118h96" stroke="#64748b" stroke-width="5"/><path d="M154 115c-9-35 6-55 18-67 10 12 18 31 11 67" fill="#86efac"/><path d="M159 94l-16-13m36 20 14-15m-27-13 2-20" stroke="#16a34a" stroke-width="5" stroke-linecap="round"/></svg>';
-            place.append(art);
-        }
-        if (tpl.id === 'restaurant') place.append(el('div', 'sc-place-sign', 'MENU'));
-        const helperEl = mkPerson('sc-clerk', tpl.cast.helper[0], tpl.cast.helper[1]);
-        const friendEl = tpl.roomOnly ? helperEl : mkPerson('sc-friend', tpl.cast.friend[0], tpl.cast.friend[1]);   // 房间场景里朋友就在房间里
+        /* --- 依模板搭 DOM 层：台词气泡、热点按钮、人物点击锚点、篮子；画面本身全部由 stage3d 渲染 --- */
+        const root = el('div', 'sc');
+        const view = el('div', 'sc-view');
+        const helperEl = mkAnchor('sc-clerk');
+        const friendEl = tpl.roomOnly ? helperEl : mkAnchor('sc-friend');   // 房间场景里朋友就在房间里
         const bubble = el('div', 'sc-bubble');
-        if (!tpl.roomOnly) street.append(friendEl, bubble);
-        const shelf = el('div', 'sc-shelf');
-        place.append(el('div', 'awning'), shelf, helperEl, el('div', 'counter'));
-        track.append(street, place);
-        const me = mkPerson('sc-me', 'var(--blue)', '#3b2a20');
+        const shelf = el('div', 'sc-shelf proj');
         const basket = el('div', 'sc-basket'), bItem = el('span', 'b-item'); basket.append(bItem, el('span', '', tpl.carrier));
         const dialogueBubble = el('div', 'sc-dialogue-bubble'), ctlBox = el('div', 'sc-ctl');
-        view.append(track, me, basket, dialogueBubble);
+        view.append(shelf, helperEl);
+        if (!tpl.roomOnly) view.append(friendEl, bubble);
+        view.append(basket, dialogueBubble);
         root.append(view, ctlBox);
-        let loc = 'street';
-        if (tpl.roomOnly) { loc = 'place'; root.classList.add('at-place'); }
+        let loc = tpl.roomOnly ? 'place' : 'street';
 
-        /* --- 3D 舞台（可选）：2D 的 DOM 和状态类照常维护，3D 只是叠加；失败/丢失上下文时直接露出 2D --- */
-        let stage = null, stageWait = null;
-        if (want3D()) {                                     // 房间类场景（roomOnly）也支持 3D；没有布局的模板 create() 会返回 null，自动继续用 2D
-            root.classList.add('is3d-wait');
-            stageWait = loadStage3D()
-                .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(),
-                    onLost: () => { stage = null; root.classList.remove('is3d'); } }))
-                .then(s3 => {
-                    if (!s3) return null;
-                    if (!alive) { s3.dispose(); return null; }
-                    stage = s3; root.classList.add('is3d');
-                    s3.follow(friendEl, 'friend', 'mid'); s3.follow(helperEl, 'helper', 'mid');
-                    s3.follow(me, 'me', 'mid'); s3.follow(bubble, 'friend', 'above'); s3.follow(basket, 'me', 'hand');
-                    return s3;
-                })
-                .catch(e => { console.warn('scene: 3D 舞台不可用，继续使用 2D', e); return null; })
-                .then(s3 => { root.classList.remove('is3d-wait'); return s3; });
+        /* --- 3D 舞台：必须成功。WebGL 不可用 / 加载失败 / 模板没有布局 / 渲染上下文丢失 → 显示错误卡 + 退出按钮（没有 2D 回退） --- */
+        let stage = null;
+        function showStageError(message) {
+            if (!alive) return;
+            alive = false; stage = null;                    // guard() 之后会让主循环以 CANCEL 退出，done 永不 resolve
+            root.className = 'sc sc-load-error'; root.textContent = '';
+            root.append(el('div', 'sc-load-message', message));
+            if (ctx.onExit) {
+                const exit = el('button', 'sc-exit', ctx.exitLabel || '退出场景');
+                exit.type = 'button'; exit.onclick = () => ctx.onExit(); root.append(exit);
+            }
+            if (ctx.cancelAudio) ctx.cancelAudio();
         }
+        root.classList.add('is3d-wait');
+        const stageWait = loadStage3D()
+            .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(),
+                onLost: () => showStageError('3D 画面丢失（显卡上下文被系统回收），请退出后重新进入场景。') }))
+            .then(s3 => {
+                if (!s3) throw new Error('这个场景的 3D 画面不可用（浏览器不支持 WebGL，或模板缺少 3D 布局）。');
+                if (!alive) { s3.dispose(); return null; }
+                stage = s3;
+                s3.follow(friendEl, 'friend', 'mid'); s3.follow(helperEl, 'helper', 'mid');
+                s3.follow(bubble, 'friend', 'above'); s3.follow(basket, 'me', 'hand');
+                return s3;
+            })
+            .catch(e => { console.warn('scene: 3D 舞台不可用', e); showStageError(`3D 场景加载失败：${e.message}`); return null; })
+            .then(s3 => { root.classList.remove('is3d-wait'); return s3; });
 
         /* --- 运行时状态 --- */
         const st = { visits: {}, opts: {}, req: null, lastSpeech: null, chosen: null, last: null, target: null, tried: new Set(), decoys: 0, note: '', skipAttn: false, entered: false };
@@ -325,21 +298,19 @@
         const FX = {
             async enter(a) {
                 if (a !== 'friend' || tpl.roomOnly || st.entered) return;
-                st.entered = true; await wait(60); root.classList.add('go'); stage && stage.enter('friend'); await wait(950);
+                st.entered = true; await wait(60); stage && stage.enter('friend'); await wait(950);
             },
-            talk(a) { pulse(actorEl(a), 'talk', 1800); stage && stage.talk(a); },
-            cheer(a) { actorEl(a).classList.add('cheer'); stage && stage.cheer(a); },
+            talk(a) { stage && stage.talk(a); },
+            cheer(a) { stage && stage.cheer(a); },
             bubble_target() { if (tpl.roomOnly) return; bubble.textContent = zh; bubble.classList.add('txt', 'show'); },
             bubble_happy() { if (tpl.roomOnly) return; bubble.textContent = '😀'; bubble.classList.remove('txt'); bubble.classList.add('show'); },
-            walk_me() { root.classList.add('walking'); },
-            stop_walk() { root.classList.remove('walking'); },
             shake(a) { pulse(hotBtn(resolveArg(a)), 'shake', 400); stage && stage.shake(resolveArg(a)); },
             async open(a) { const b = hotBtn(resolveArg(a)); if (b) b.classList.add('open'); stage && stage.open(resolveArg(a)); await wait(650); },
             basket_add_target() { bItem.textContent = em || '📦'; basket.classList.add('has'); },
             basket_clear() { bItem.textContent = ''; basket.classList.remove('has'); },
             speak_target() { const p = st.lastSpeech; if (p) p.then(() => { if (alive) speakWord(null); }); else speakWord(null); },
             sparkle() {
-                const pane = stage ? view : tpl.roomOnly ? place : street;
+                const pane = view;
                 for (let i = 0; i < 6; i++) {
                     const s = el('span', 'sc-spark', '✨'); s.style.left = (44 + Math.random() * 28) + '%'; s.style.top = (30 + Math.random() * 30) + '%';
                     s.style.animationDelay = (i * 90) + 'ms'; pane.append(s); setTimeout(() => s.remove(), 1500);
@@ -357,8 +328,8 @@
         };
         async function camera(to) {
             if (to === loc || (to !== 'street' && to !== 'place')) return;
-            loc = to; root.classList.add('walking'); root.classList.toggle('at-place', to === 'place'); stage && stage.cameraTo(to);
-            await wait(1500); root.classList.remove('walking');
+            loc = to; stage && stage.cameraTo(to);
+            await wait(1500);
         }
         async function runEffects(n) {
             for (const e of n.effects || []) {
@@ -418,7 +389,7 @@
             const hs = ensureTarget(id);
             if (hs.length < 2) { console.error('scene: 热点不足', id); return n.on_target; }
             shelf.textContent = ''; shelf.style.pointerEvents = '';
-            shelf.classList.toggle('proj', !!stage);
+            shelf.classList.add('proj');
             const btns = hs.map(h => {
                 const b = el('button', 'sc-item hot'); b.type = 'button'; b.dataset.id = h.id; b.setAttribute('aria-label', h.zh || h.pt);
                 b.append(el('span', 'em', h.icon));
@@ -579,5 +550,17 @@
         return { get root() { return child?.root || root; }, done, cancel: () => { alive = false; child?.cancel(); if (ctx.cancelAudio) ctx.cancelAudio(); } };
     }
 
-    window.Scene = { canPlay, play, emojiOf };
+    /* 预习列表里某个词没有「预习场景」按钮时，说明原因（排查用，原因按浏览器实际收到的数据算）；返回 '' = 可以玩 */
+    const whyNot = w => {
+        if (!w || !w.pt_word || canPlay(w)) return '';
+        if (!hasSceneData(w)) return '没有 emoji，也没有中文释义';
+        if (w.scene_confirmed !== true) return '场景字段还没有在管理端点“确认”（只“保存”不算）';
+        if (w.scene_ok !== true) return '没有勾选“适合用于场景演练”';
+        if (!['noun', 'adjective', 'verb'].includes(w.pos)) return `词性是 ${w.pos || '空'}，只有名词 / 形容词 / 动词能用场景`;
+        if (w.pos === 'verb' && w.scene_template && !String(w.scene_template).startsWith('verb_')) return `模板 ${w.scene_template} 不是动词模板`;
+        if (w.pos === 'noun' && w.scene_template === 'describe_object') return '名词不能用 describe_object 模板';
+        if (w.pos === 'adjective') return '形容词的场景模板，或四种词形不完整';
+        return '缺少 emoji 或中文释义';
+    };
+    window.Scene = { canPlay, play, emojiOf, whyNot };
 })();
