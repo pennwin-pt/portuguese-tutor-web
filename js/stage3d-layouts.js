@@ -126,7 +126,7 @@ export const LAYOUTS = {
     actors: {
       me: { ...ME, place: [16.4, 0, 1.7] },
       friend: FRIEND,
-      helper: { model: 'characters/helper', h: 1.7, place: [21.9, 0, -0.9] }
+      helper: { model: 'characters/helper', h: 1.7, place: [21.9, 0, 1.5] }      // 站在柜台前面（z 比柜台 0.1 大 = 更靠近镜头）；原来在柜台后面 z=-0.9，镜头偏低会被柜台挡住
     }
   },
 
