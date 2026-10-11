@@ -5,7 +5,7 @@
  *   - fb.parts = 用小方块（默认）/ 圆柱 cyl / 球 sph 拼出来的家具，整体会按 h 自动缩放，零件只需比例对。
  * h / w：目标高度 / 宽度（自动按包围盒缩放，不同模型包的尺寸差异不用管）。
  * hs：这个物件对应的热点 id，被点中 / 答对时会弹一下；同一个热点可以挂多个物件（比如“几座房子”）。
- * roomOnly 模板（find_room / verb_school / verb_home / verb_note / verb_treasure）：朋友和帮手是同一个人、一开始就在室内，
+ * roomOnly 模板（find_room / verb_school / verb_home / verb_note / verb_treasure / verb_magic）：朋友和帮手是同一个人、一开始就在室内，
  *   没有街道，所以只需要 cameras.place，人物只写 me 和 helper 的 place。
  * 手机竖屏时画面约只看得到 place 镜头中心左右 ±3.5 米：热点尽量排在这个范围内，热点之间留 2.3 米以上。
  * people（可选）：站在场景里的“群众演员”（describe_person 的男孩/女孩），写法和 props 类似：
@@ -58,6 +58,13 @@ const PARTS = {
     box(.1, .3, .9, 1.1, .52, 0, '#8a5a2b'), box(.1, .3, .9, -1.1, .52, 0, '#8a5a2b'), box(.1, .08, .8, 0, .42, 0, '#d9a066')],
   chest: [box(.8, .35, .5, 0, .18, 0, '#92400e'), box(.8, .16, .5, 0, .43, 0, '#b45309'), box(.1, .55, .52, 0, .28, 0, '#facc15'), box(.12, .14, .05, 0, .34, .27, '#fde047')],
   barrel: [box(.55, .8, 0, 0, .4, 0, '#a16207', 'cyl'), box(.58, .06, 0, 0, .25, 0, '#6b4423', 'cyl'), box(.58, .06, 0, 0, .55, 0, '#6b4423', 'cyl')],
+  /* 魔法小屋（verb_magic）：没下载 magic/ 模型时用这些兜底 */
+  cauldron: [box(1.1, 0, 0, 0, .55, 0, '#1f2937', 'sph'), box(.95, .08, 0, 0, .98, 0, '#374151', 'cyl'), box(.8, .03, 0, 0, 1.0, 0, '#4ade80', 'cyl'),
+    box(.12, .2, .12, -.4, .1, .25, '#111827'), box(.12, .2, .12, .4, .1, .25, '#111827'), box(.12, .2, .12, 0, .1, -.45, '#111827')],
+  spellbook: [box(.5, .04, .34, 0, .02, 0, '#7c3aed'), box(.23, .03, .3, -.12, .055, 0, '#fef3c7'), box(.23, .03, .3, .12, .055, 0, '#fffbeb')],
+  crystal: [box(.32, .12, 0, 0, .06, 0, '#6b7280', 'cyl'), box(.5, 0, 0, 0, .37, 0, '#a5b4fc', 'sph')],
+  potion: c => [box(.2, .24, 0, 0, .12, 0, c, 'cyl'), box(.08, .12, 0, 0, .3, 0, c, 'cyl'), box(.09, .04, 0, 0, .38, 0, '#a16207', 'cyl')],
+  broom: [box(.05, 1.5, .05, 0, .75, 0, '#8a5a2b'), box(.3, .35, .3, 0, .17, 0, '#d9a066')],
   /* 笔记本电脑（商店数码区货架前的箱子上）：底座 + 立起的屏幕 + 蓝色屏幕面 */
   laptop: [box(.7, .04, .5, 0, .02, 0, '#9ca3af'), box(.7, .5, .04, 0, .27, -.23, '#1f2937'), box(.6, .4, .02, 0, .27, -.2, '#60a5fa')],
   /* 墙上的板子：黑板（深绿）/ 菜单板（深色）。lines = 粉笔字的条数 */
@@ -436,8 +443,37 @@ LAYOUTS.verb_treasure = {
   hotspots: { palm: hot(15.6, 3.0, -2.2), rock: hot(19.2, 1.5, -1.9), boat: hot(22.6, 1.6, -3.0), chest: hot(19.1, 1.0, 0.3) },
   cameras: { place: PLACE_CAM() },
   actors: {
-    me: { ...ME, place: [16.4, 0, 1.7] },
-    helper: { model: 'characters/friend', h: 1.7, place: [22.0, 0, 1.6] }
+    me: { ...ME, place: [15.6, 0, 1.7] },
+    helper: { model: 'characters/friend', h: 1.7, place: [22.9, 0, 1.6] }
+  }
+};
+/* ---------- verb_magic：魔法小屋（roomOnly；热点 book / potion / crystal，另有只用来“给大锅施法”的 cauldron） ----------
+ * 需要下载的模型（可选，放 web/models/magic/，找不到就用上面的兜底几何体）：cauldron / book / crystal / potion / broom */
+LAYOUTS.verb_magic = {
+  sky: '#4c3a6b',
+  blocks: [...room('#8b6f9e', '#4c3a6b', '#5b4580', '#3b2a55'), rug(19.1, 0.2, 6.4, 3.0, '#7c3aed'),
+    { pos: [24.6, 2.8, -3.56], size: [1.7, 1.5, 0.05], color: '#ffffff' },                   // 夜空窗户：窗框 + 夜色 + 两颗星
+    { pos: [24.6, 2.8, -3.52], size: [1.5, 1.3, 0.05], color: '#1e1b4b' },
+    { pos: [24.2, 3.1, -3.48], size: [0.12, 0.12, 0.03], color: '#fde68a' },
+    { pos: [25.0, 2.6, -3.48], size: [0.1, 0.1, 0.03], color: '#fde68a' }],
+  props: [
+    { model: 'room/table', pos: [15.7, 0, -2.5], h: 0.8, fb: { parts: PARTS.table } },
+    { model: 'magic/book', pos: [15.7, 0.8, -2.5], h: 0.25, hs: 'book', fb: { parts: PARTS.spellbook } },
+    { model: 'room/table', pos: [19.1, 0, -2.6], h: 0.8, fb: { parts: PARTS.table } },
+    ...spread([
+      { model: 'magic/potion', pos: [18.7, 0.8, -2.6], h: 0.4, fb: { parts: PARTS.potion('#f472b6') } },
+      { model: 'magic/potion', pos: [19.1, 0.8, -2.6], h: 0.4, fb: { parts: PARTS.potion('#60a5fa') } },
+      { model: 'magic/potion', pos: [19.5, 0.8, -2.6], h: 0.4, fb: { parts: PARTS.potion('#4ade80') } }], 'potion'),
+    { model: 'room/table', pos: [22.5, 0, -2.5], h: 0.8, fb: { parts: PARTS.table } },
+    { model: 'magic/crystal', pos: [22.5, 0.8, -2.5], h: 0.6, hs: 'crystal', fb: { parts: PARTS.crystal } },
+    { model: 'magic/cauldron', pos: [19.1, 0, 0.6], h: 1.1, hs: 'cauldron', fb: { parts: PARTS.cauldron } },   // 中间的大锅：答对后 open:cauldron
+    { model: 'magic/broom', pos: [25.6, 0, -2.6], h: 1.6, rotY: 0.3, fb: { parts: PARTS.broom } }
+  ],
+  hotspots: { book: hot(15.7, 1.6, -2.2), potion: hot(19.1, 1.6, -2.3), crystal: hot(22.5, 1.9, -2.2), cauldron: hot(19.1, 1.7, 0.6) },
+  cameras: { place: PLACE_CAM() },
+  actors: {
+    me: { ...ME, place: [15.1, 0, 1.7] },
+    helper: { model: 'characters/friend', h: 1.7, place: [22.9, 0, 1.6] }
   }
 };
 LAYOUTS.verb_note = LAYOUTS.verb_school;                // verb_note 用教室布局（热点同为 board / shelf / bag），藏字条的地方
