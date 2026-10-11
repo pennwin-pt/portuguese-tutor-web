@@ -142,6 +142,10 @@
         return templateRequest;
     }
     let templateCursor = 0;                // 名词没指定模板时轮换，体验不同场景
+    // verb_park / verb_restaurant 等句式是 “Vamos ____ / quero ____”，只有单个词的不定式（correr、dever）才读得通。
+    // 变位 / 过去分词 / 反身（decidiu、acontecido、lembrar-se）自动轮换时只进 verbForms: 'any' 的模板（如 verb_note）。
+    // 抽象的不定式（confirmar、resolver）套进公园/餐厅语义别扭，在管理端把场景模板固定成 verb_note 即可。
+    const isPlainInfinitive = s => /^\p{L}*(ar|er|ir|or|ôr)$/iu.test(String(s || '').trim());
     function chooseTemplate(w, templates) {
         if (w.scene_template) {
             const selected = templates.find(t => t.id === w.scene_template);
@@ -155,8 +159,13 @@
         if (!available.length) throw new Error(`没有适用于${({ noun: '名词', adjective: '形容词', verb: '动词' })[pos]}的已发布场景模板`);
         if (!hasSceneData(w)) return available.find(t => t.id === 'shop') || available[0];
         if (pos === 'adjective') return available[0];
-        const automatic = available[templateCursor % available.length];
-        templateCursor = (templateCursor + 1) % available.length;
+        let candidates = available;
+        if (pos === 'verb' && !isPlainInfinitive(w.pt_word)) {
+            const anyForm = available.filter(t => t.verbForms === 'any');
+            if (anyForm.length) candidates = anyForm;
+        }
+        const automatic = candidates[templateCursor % candidates.length];
+        templateCursor = (templateCursor + 1) % candidates.length;
         return automatic;
     }
 

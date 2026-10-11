@@ -406,4 +406,5 @@ export const LAYOUTS = {
     }
   }
 };
+LAYOUTS.verb_note = LAYOUTS.verb_school;                // verb_note 用教室布局（热点同为 board / shelf / bag），藏字条的地方
 LAYOUTS.verb_restaurant = LAYOUTS.restaurant;        // 两个餐厅模板的热点一样（menu / counter / kitchen），布局共用
