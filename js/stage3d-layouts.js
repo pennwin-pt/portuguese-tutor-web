@@ -41,6 +41,12 @@ const PARTS = {
     box(.06, .5, .06, -.75, .7, -.22, '#4b5563'), box(.06, .5, .06, .75, .7, -.22, '#4b5563')],
   duck: [box(.34, 0, 0, 0, .17, 0, '#fde047', 'sph'), box(.2, 0, 0, 0, .38, .12, '#fde047', 'sph'), box(.1, .05, .1, 0, .37, .26, '#fb923c')],
   ball: [box(.4, 0, 0, 0, .2, 0, '#ef4444', 'sph')],
+  goal: [box(.08, 1.2, .08, -1.0, .6, 0, '#f8fafc'), box(.08, 1.2, .08, 1.0, .6, 0, '#f8fafc'), box(2.08, .08, .08, 0, 1.2, 0, '#f8fafc'),
+    box(2.0, 1.1, .03, 0, .6, -.3, '#e2e8f0')],
+  picnic: [box(1.7, .08, .8, 0, .76, 0, '#c58b4e'), box(1.7, .06, .3, 0, .45, .62, '#b9824a'), box(1.7, .06, .3, 0, .45, -.62, '#b9824a'),
+    box(.08, .76, .7, -.7, .38, 0, '#8a5a2b'), box(.08, .76, .7, .7, .38, 0, '#8a5a2b')],
+  camera: [box(.05, .8, .05, -.2, .4, -.1, '#374151'), box(.05, .8, .05, .2, .4, -.1, '#374151'), box(.05, .8, .05, 0, .4, .22, '#374151'),
+    box(.42, .3, .3, 0, .95, 0, '#1f2937'), box(.2, .16, 0, 0, .95, .24, '#60a5fa', 'cyl')],
   icecream: [box(.2, .3, 0, 0, .15, 0, '#e0a458', 'cyl'), box(.32, 0, 0, 0, .38, 0, '#f9a8d4', 'sph'), box(.24, 0, 0, 0, .56, 0, '#fde68a', 'sph')],
   flower: c => [box(.04, .3, .04, 0, .15, 0, '#16a34a'), box(.2, 0, 0, 0, .34, 0, c, 'sph')],
   /* 墙上的板子：黑板（深绿）/ 菜单板（深色）。lines = 粉笔字的条数 */
@@ -326,6 +332,49 @@ export const LAYOUTS = {
     actors: {
       me: { ...ME, place: [16.2, 0, 1.9] },
       helper: { model: 'characters/friend', h: 1.7, place: [22.4, 0, 0.7] }
+    }
+  },
+
+  /* ---------- group_photo：拍集体照（roomOnly；热点 field / picnic / school；三群人站成一排，朋友在前面架好相机）----------
+   * 名词里“一群人”类的词专用（manualOnly，只有管理端明确选了“拍集体照”的词才进来）：equipa、grupo、família、turma、banda…
+   * 球场 / 野餐桌 / 教学楼 / 球门 / 野餐桌都用兜底几何体拼，不需要下载；人物复用 people/ 里的模型，缺了用兜底小人。
+   * 新模型（可选）：people/man、people/woman（大人）、shop/camera（相机），清单见 models/MODELS_group_photo.md。 */
+  group_photo: {
+    sky: '#cfe9ff',
+    blocks: [{ pos: [14, -0.06, 1], size: [80, 0.12, 30], color: '#cfe7c4' },                                            // 草地
+      { pos: [19.2, 0.03, -1.6], size: [11.6, 0.05, 4.6], color: '#e6d3a3' },                                           // 空地
+      { pos: [16.0, 0.065, -2.5], size: [3.5, 0.03, 3.3], color: '#7ec96b' },                                           // 小球场
+      { pos: [16.0, 0.085, -2.5], size: [3.3, 0.01, 0.06], color: '#ffffff' },                                          // 中线
+      { pos: [16.0, 0.085, -2.5], size: [0.06, 0.01, 3.1], color: '#ffffff' }],
+    props: [
+      { model: 'street/building_2', pos: [22.2, 0, -6.0], h: 5.2, fb: { w: 3.8, color: '#a7c7e7' } },                    // 教学楼
+      { model: 'street/building_1', pos: [18.0, 0, -7.4], h: 4.6, fb: { w: 3.2, color: '#f2c7a5' } },
+      { model: 'street/tree_1', pos: [13.6, 0, -5.0], h: 3.4, fb: { tree: true } },
+      { model: 'street/tree_2', pos: [25.2, 0, -4.6], h: 3.0, fb: { tree: true } },
+      { pos: [16.0, 0, -4.1], h: 1.2, fb: { parts: PARTS.goal } },                                                       // 球门
+      { pos: [17.1, 0.05, -1.6], h: 0.35, fb: { parts: PARTS.ball } },                                                   // 足球
+      { pos: [19.2, 0, -1.7], h: 0.8, fb: { parts: PARTS.picnic } },                                                     // 野餐桌
+      { model: 'shop/camera', pos: [19.2, 0, 2.5], h: 1.1, fb: { parts: PARTS.camera } }                                 // 前面的三脚架相机
+    ],
+    people: [
+      // 球场边：三个穿球衣的孩子（热点 field）
+      { model: 'people/boy_a', pos: [15.2, 0.065, -2.3], h: 1.5, hs: 'field', look: { shirt: '#ef4444', hair: '#3b2a20' } },
+      { model: 'people/boy_b', pos: [16.0, 0.065, -2.6], h: 1.5, hs: 'field', look: { shirt: '#ef4444', hair: '#111827' } },
+      { model: 'people/girl_b', pos: [16.8, 0.065, -2.3], h: 1.5, hs: 'field', look: { girl: true, shirt: '#ef4444', hair: '#fbbf24' } },
+      // 野餐桌后面：一家人（热点 picnic）
+      { model: 'people/man', pos: [18.4, 0, -2.7], h: 1.75, hs: 'picnic', look: { shirt: '#22c55e', hair: '#1f2937' } },
+      { model: 'people/girl_a', pos: [19.2, 0, -2.7], h: 1.3, hs: 'picnic', look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
+      { model: 'people/woman', pos: [20.0, 0, -2.7], h: 1.65, hs: 'picnic', look: { girl: true, shirt: '#a855f7', hair: '#451a03' } },
+      // 教学楼前：三个同学（热点 school）
+      { model: 'people/girl_a', pos: [21.5, 0.03, -2.4], h: 1.5, hs: 'school', look: { girl: true, shirt: '#3b82f6', hair: '#7c2d12' } },
+      { model: 'people/boy_a', pos: [22.3, 0.03, -2.6], h: 1.5, hs: 'school', look: { shirt: '#3b82f6', hair: '#3b2a20' } },
+      { model: 'people/boy_b', pos: [23.1, 0.03, -2.4], h: 1.5, hs: 'school', look: { shirt: '#3b82f6', hair: '#111827' } }
+    ],
+    hotspots: { field: hot(16.0, 2.3, -2.3), picnic: hot(19.2, 2.3, -2.3), school: hot(22.3, 2.3, -2.3) },
+    cameras: { place: PLACE_CAM() },
+    actors: {
+      me: { ...ME, place: [16.4, 0, 2.4] },
+      helper: { model: 'characters/friend', h: 1.7, place: [21.6, 0, 2.3] }
     }
   },
 
