@@ -1,6 +1,6 @@
 ---
 name: "pt-tutor-app"
-description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:index.html/index.css/touch-protection.css/index.js + 单词任务页 words.html/words.css/words.js,原生JS无构建;后端:FastAPI+SQLite+Faster-Whisper+Piper/Google/Edge/StreamElements TTS+Gemini/Groq/Ollama;配套的 WordMemorizer C# WinForms 管理端经 /api/admin/* 读写同一个 sessions.db)时必须使用此skill。只要用户提到"葡语陪练"、"WordMemorizer"、管理端、周计划/生词本/积分/Admin API/数据库合并、粘贴这个项目任意一端的代码(含 C# 的 AdminApiClient/FormMain/FormAddWeek/FormNewWords 等),或要求修改语音对话/ASR/TTS音色/LLM切换/智能体绑定/角色人设/主题背景/历史记录/单词拆解/单词库/单词任务/复习调度/周六加练/掌握规则等任何功能,先读本skill再动手,不要让用户重新粘贴源文件或重新解释项目背景与接口约定。前后端经常一起改,改动涉及接口字段时两端都要检查。
+description: 帮 Peng Wang 开发/修改「葡语陪练」全栈项目(前端:index.html/index.css/touch-protection.css/index.js + 单词任务页 words.html/words.css/words.js,原生JS无构建;后端:FastAPI+SQLite+Faster-Whisper+Piper/Google/Edge/StreamElements TTS+Gemini/Groq/Ollama;配套的 WordMemorizer C# WinForms 管理端经 /api/admin/* 读写同一个 sessions.db)时必须使用此skill。只要用户提到"葡语陪练"、"WordMemorizer"、管理端、周计划/生词本/积分/Admin API/数据库合并、粘贴这个项目任意一端的代码(含 C# 的 AdminApiClient/FormMain/FormAddWeek/FormNewWords 等),或要求修改语音对话/ASR/TTS音色/LLM切换/智能体绑定/角色人设/主题背景/历史记录/单词拆解/单词库/单词任务/复习调度/周六加练/掌握规则/场景演练(scene.js、stage3d.js 3D 舞台、scenes/*.json 场景模板、3D 布局与模型清单)等任何功能,先读本skill再动手,不要让用户重新粘贴源文件或重新解释项目背景与接口约定。前后端经常一起改,改动涉及接口字段时两端都要检查。
 ---
 
 # 葡语陪练 · 全栈项目协作规则
@@ -18,11 +18,13 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   words.html / css/words.css / js/words.js                                单词任务页(复用 index.css;聊天页 header 的 📚 进入)
   sounds/success.wav, sounds/fail.wav                                      单词页答对/答错音效(缺文件静默不播)
   scene-lab.html / js/scene-lab.js                                          场景模板调试预览页（复用已发布模板，测验预览不提交判分）
+  js/scene.js / css/scene.css                                               场景演练 DOM 层（台词气泡、热点按钮、人物点击锚点、篮子、选词面板）；只支持 3D；对外 Scene.canPlay / play / emojiOf
+  js/stage3d.js / js/stage3d-layouts.js / js/vendor/three-bundle.js         3D 舞台（Three.js）与每个模板的 3D 布局 LAYOUTS[模板id]；模型放 models/<路径>.glb，缺文件时用兜底几何体
 后端:
   main.py                  FastAPI入口,挂聊天/用户/单词/管理 API 路由 + startup 初始化各 manager(SQLite)
   run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
   config.py                全局配置,读.env(ASR/LLM/TTS/WORD_*/SQLITE_PATH/CORS)
-  api/routes.py            聊天核心:/chat/*,/history,/translate,/explain,/breakdown,/regenerate_audio,/audio,/session,/message,/vocab
+  api/routes.py            聊天核心:/chat/*,/history,/translate,/explain,/breakdown,/regenerate_audio,/audio,/session,/message,/vocab;场景接口 /scene/templates、/scene/line-audio、/scene/sentence-audio
   api/user_routes.py       /user/* 绑定、主题、背景、音色(tts)、角色人设(persona),/background/{name}
   api/word_routes.py       /words/* 今日任务(动态调度)/语音评判/完成结算/记错题/标记已掌握/单词朗读
   core/asr_engine.py       Faster-Whisper单例懒加载
@@ -43,12 +45,15 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   memory/word_task_manager.py     每日"是否完成"记录(word_task_done)
   memory/word_error_manager.py    错词事件流(word_errors)
   memory/word_example_manager.py  ★生成例句缓存(P4):word_examples/word_example_use 两张表 + norm_sentence/pick_example 轮换
+  scenes/*.json            场景模板（15 个，启动时由注册表加载，改完要重启后端）；3D 布局不在这里，在前端 stage3d-layouts.js
+  memory/scene_registry.py 场景模板注册表与校验（tools/validate_scenes.py 调用）
   prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona, focus_words=None)
   prompts/helper_prompts.py 中文求助翻译/语法解析/单词拆解提示词
   prompts/word_prompts.py   单词评判提示词(mode1 义项语义 / mode2 葡语是否说对目标词)+ 例句生成提示词 WORD_EXAMPLES_PROMPT,纯JSON输出
   tools/gen_examples.py     ★在用户机器上手动运行:给词批量生成 pt-PT 例句写入 word_examples(见「多例句轮换」一节)
   tools/backup_db.py        SQLite backup API 备份 sessions.db(start_server.bat 每次启动自动跑:每天一份,保留最近 14 份)
   tools/merge_wordmemorizer.py  一次性迁移(旧 WordMemorizer.db → sessions.db),已用完,可归档
+  tools/validate_scenes.py  场景模板校验（零错误才算过）；tools/test_scenes.py / test_scene_api.py / test_scene_noun.py 是场景自测（需要 fastapi 环境）
   tools/reset_week.py       手动兜底:重置某智能体本周词表 / 当天计划(合库后覆盖或删除周计划时服务端已自动重置)
   tools/test_*.py           各阶段自测脚本(test_wm_admin / test_wm_calendar / test_merge …)
 ```
@@ -103,16 +108,16 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 `WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,source,remark,reference_image_number,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`,若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。来源值 1=图片关联、2=口语陪练；学习词从 NewWords 转入 Words 时要复制 Source/Remark。单词学习页“查看来源”按来源弹出图片或 Remark；图片通过 `/api/words/source-image/{image_number}` 从 WordMemorizer.Core/images/jpg 读取。
 
 ## 一周节奏(周日~周六)
-- **周日**:新一周词表已生成,全部放进 `preview` 只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。(前端另有"周日以测代看"`sunMode`,见"造句与周日以测代看"一节。)
+- **周日**:新一周词表已生成,除了"今天已在复习里"的词之外**全部**放进 `preview`(包括生词本"重新学习"复用的、已有进度的词)只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。(前端另有"周日以测代看"`sunMode`,见"造句与周日以测代看"一节。)
 - **周一~周五**:复习(到期词,≤15)→ 周五加"本周回顾"→ 新词;最后还有 `preview`(预习明天的词,只看不评分)。
 - **周六**:没有新词;到期复习(≤8,`WEEKEND_REVIEW_MAX`)+ **周六加练**(`kind=extra`),总数 ≤10(`SATURDAY_MAX`)。没有任何弱词时周六就是休息日(`/words/complete` 对空计划返回 422)。
 - 周末不安排普通复习,间隔按**工作日**计算。"今天"= 服务器本地日期(`word_task_manager.today_str()`)。
-- 本周词表(`word_week`)首次请求时固定;上周没学完的顺延到下周,再从词源按顺序补没用过的词,凑满 `WEEK_SIZE=30`。当天计划(`word_daily_plan`)首次请求时生成并固定,刷新页面/重新学习都不变(**计划为空时不落库,每次请求会重算**)。
+- 本周词表(`word_week`,`ensure_week`)首次请求时固定:**本周计划里的词一律进词表**(含"重新学习"复用的、已有进度的旧词),上周没学完(不在 `word_progress` 里)的顺延进来,但和本周计划**同名**的顺延词会被丢掉(旧版录入留下的重复记录)。**没有词数上限**,顺延多少本周词表就比 WordMemorizer 的计划多多少(顺延 9 个 + 计划 30 个 = 39 个);`WEEK_SIZE` 不再是 `ensure_week` 的截断依据。当天计划(`word_daily_plan`)首次请求时生成并固定,刷新页面/重新学习都不变(**计划为空时不落库,每次请求会重算**)。
 
 ## 调度参数(全部集中在 `word_planner.py` 顶部,调参只改这里)
 | 参数 | 值 | 含义 |
 |---|---|---|
-| `WEEK_SIZE` | 30 | 每周新词数 |
+| `WEEK_SIZE` | 30 | 每周新词数的参考值（`ensure_week` 不再按它截断，见「一周节奏」） |
 | `WORKLOAD` / `NEW_MIN` / `NEW_MAX` | 20 / 3 / 10 | 一天总量上限 / 每天新词数上下限 |
 | `REVIEW_MAX` / `WEEKEND_REVIEW_MAX` | 15 / 8 | 工作日 / 周末复习上限 |
 | `PREVIEW_MAX` | 8 | 预习词上限 |
@@ -233,7 +238,7 @@ WordMemorizer.Core/
 | `GET /weeks/{plan_id}/words` | 该计划的词;计划不存在返回 `[]` |
 | `POST /weeks/current/words` | body `{words:[{text,chinese_meaning,example_sentence?,example_chinese?,reference_image_number?}]}`:追加(没有本周计划就创建)→ `{plan_id,created_plan,imported,word_ids,appended:{word_week}}` |
 | `PUT /weeks/current/words` | 同上 body:覆盖(删旧建新)→ `{plan_id,deleted_plans,imported,word_ids,reset:{word_week,daily_plan}}` |
-| `PUT /weeks/current/from_newwords` | body `{new_word_ids:[…]}`:生词本 → 本周计划,**单事务**(校验 → 删旧计划 → 建新计划 → 复制词 → 标记已录入 → 重置调度);已录入的 422,不存在的 404;返回同覆盖 |
+| `PUT /weeks/current/from_newwords` | body `{new_word_ids:[…]}`:生词本 → 本周计划,**单事务**(校验 → 删旧计划 → 建新计划 → **复用 Words 里的同名词,没有才新建** → 标记已录入 → 重置调度);已录入的 422,不存在的 404;返回同覆盖,另带 `reused`(复用了几个旧记录) |
 | `DELETE /weeks/current` | → `{deleted_plans,reset}`;只删计划,`Words` 保留(`word_progress` 可能还引用) |
 | `GET /words/{id}` | 单个词,404 = 不存在 |
 | `GET /scenes` | 已发布场景模板元数据 `[{id,title,status,applies_to}]`，供管理端动态选择和筛选词性 |
@@ -254,6 +259,7 @@ WordMemorizer.Core/
 - 写操作都在 `BEGIN IMMEDIATE` 事务里,失败整体回滚。业务异常 `WMNotFound`→404、`WMInvalid`→422、`WMDBError`→503(库被占用 / 缺表 / 文件不存在),消息是中文。
 - **周从周日起算**(`wm_calendar.week_range`);`WeekNumber` 等价 .NET `GetWeekOfYear(FirstDay, Sunday)`;`StartDate`/`EndDate` 存文本 `YYYY-MM-DD 00:00:00`;同一个 StartDate 可能有多份计划(跨年旧数据),按日期匹配并全部处理。
 - **与单词任务的联动**:追加 → 新词续号追加进已固定的 `word_week`;覆盖 / 生词转计划 / 删除 → 重置所有智能体本周的 `word_week` + 今天起到本周六的 `word_daily_plan`。**不碰** `word_progress` / `word_outcomes`。所以管理端改了词表,单词页立即看到新词表,不用再跑 `reset_week.py`。
+- **"重新学习"保留旧进度**:`replace_from_newwords` 按归一化后的词(同 `newword_manager._key`)在 `Words` 里找同名记录,有就**复用**、不再 `INSERT`(多条同名时优先选有 `word_progress` 的 → `SceneConfirmed=1` 的 → Id 大的);释义/例句/来源/备注用生词本最新值(非空才覆盖);选中的记录场景未确认而同名的另一条已确认时,把 `Scene*` 列抄过去;同一批里同名的词只进一次。没有同名才新建。**原因**:场景数据和学习进度都挂在 `Words.Id` 上,旧版每次录入都新建一行,会让预习列表里同一个词出现两条(一条有场景按钮、一条没有)、进度分叉。复用后的词有进度 ⇒ 不再当新词,按到期日走复习,周日预习照常显示。`POST/PUT /weeks/current/words`(文本导入的追加/覆盖)仍然是新建行,没做同名复用。
 - **时间**:`record_time` 接受 `YYYY-MM-DD HH:MM:SS[.fff…]`、T 分隔、带 `Z` / `±HH:MM` 后缀,归一成服务器本地无时区格式;表里 `CreatedTime`/`AddedDate` 保持 `DEFAULT CURRENT_TIMESTAMP`(UTC),不显式写入。
 - 请求体多余字段会被忽略,所以 C# 可以直接把模型对象(含 `id`、`created_time`)序列化发过去。生词去重沿用聊天加生词那套(`newword_manager._clean_word` / `_key`)。
 - **改字段 = 三处同步**:`admin_routes.py` 的 pydantic 模型、`wm_manager._word/_plan/_newword` 返回字典、C# 的模型类与 `AdminApiClient.cs` 里的 DTO。
@@ -300,8 +306,8 @@ WordMemorizer.Core/
 | `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex)],preview:[WordItem],meta:{new,review,weekly,extra,preview,...},completed}`;词可选场景字段 `emoji,pos(noun/verb/adjective/other),gender(m/f),number(singular/plural),scene_ok,scene_confirmed`，只使用已确认字段（详见 AGENTS.md）；未生成过候选的旧词不返回这些字段；completed 非空 = 今天已完成 `{rounds,total,first_pass,attempts,round_score,times,completed_at}` |
 | `POST /api/words/scene/evaluate` | FormData: `selected_word_id,word_id,session_id,run_id` → `{word_id,passed,recognized_text,comment,earned,round_score?}`；只支持场景选项点选判分，答对时按现有规则尝试发放积分 |
 | `GET /api/scene/templates` | 返回场景注册表中 `published` 模板；响应带 `ETag`，支持 `If-None-Match` / 304 |
-| `GET /api/scene/line-audio?scene_id=&node_id=&variant=&tts_provider=&tts_voice=` | 只合成已发布模板中 `speech=auto/on_tap` 的节点台词；`describe` 的 `variant` 是 `noun_contexts` 索引（0–3）；复用场景语音限速与缓存 |
-| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 按服务端确认过的场景词和已注册模板合成跟读句；模板适用词性由注册表校验，`describe` 的名词性数语境来自 `scenes/describe.json` |
+| `GET /api/scene/line-audio?scene_id=&node_id=&variant=&tts_provider=&tts_voice=` | 只合成已发布模板中 `speech=auto/on_tap` 的节点台词；`describe_object` / `describe_person` 的 `variant` 是 `noun_contexts` 索引（0–3）；复用场景语音限速与缓存 |
+| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 按服务端确认过的场景词和已注册模板合成跟读句；模板适用词性由注册表校验，`describe_*` 的名词性数语境来自 `scenes/describe_object.json` / `describe_person.json` |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3/4),session_id?,run_id? → `{word_id,mode,passed,recognized_text,comment}`;mode 4 另带 `corrected`;带 run_id 且通过时并入 `earned`/`round_score`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,run_id?,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
@@ -315,29 +321,50 @@ WordMemorizer.Core/
 
 场景点选流程不使用录音判分；旧的 `POST /api/scene/check` 已删除，`POST /api/words/scene/evaluate` 不再接受 `audio`。 前端场景模板只从 `/api/scene/templates` 加载，不含内置副本或回退；模板请求失败会显示错误并允许退出。固定台词通过 `/api/scene/line-audio` 按模板/节点 ID 获取，浏览器不传台词文本；旧的 `GET /api/tts`（按台词原文合成）已删除。
 
+### 场景演练前端（只支持 3D，没有 2D 回退）
+- **分工**:`scene.js` 只建 DOM 层——台词气泡 `.sc-dialogue-bubble`、热点按钮 `.sc-shelf.proj .sc-item`、人物点击锚点 `.sc-person`（空 div，里面挂 `.sc-tap` 点击区）、篮子 `.sc-basket`、选词面板（`word_choice` 用的非 `.proj` 的 `.sc-shelf`，flex 排布，不投影）;**画面全部由 `stage3d.js` 渲染进 canvas**,它每帧用 `follow(el, 人物, 锚点)` 把 DOM 投影到 3D 对象上。`scene.css` 只剩这些 DOM 的样式。
+- **3D 必须成功**:`loadStage3D` 失败 / `create()` 返回 null（WebGL 不可用、模板没有布局、布局缺镜头或热点）/ 渲染上下文丢失（`onLost`）⇒ `showStageError` 显示错误卡 + 退出按钮,`alive=false` 让主循环以 CANCEL 退出。**用户已明确不要 2D,别加回 `?stage=2d` / localStorage `stage3d` 开关、SVG 人物、街道/商店背景、`.template-*` 样式、`walk_me`/`stop_walk` 特效。**
+- **布局**(`stage3d-layouts.js`):`LAYOUTS[模板id] = {sky, blocks, props, hotspots:{热点id: hot(x,y,z)}, cameras:{street?, place?}, actors:{me, friend?, helper?}, people?}`。**每个模板 id 必须有一份布局,布局的热点 id 必须和模板 JSON 的热点一一对应**,否则场景显示错误卡。`roomOnly` 只需 `cameras.place`,人物写 me/helper 的 place;街上场景 `find` 只有 `cameras.street`、`actors` 只有 me/friend。手机竖屏约只看得到镜头中心 ±3.5 米,热点之间留 ≥2.3 米。调位置:URL 加 `?debug=1` 拖视角,读数抄回 `cameras`。
+- **模型**:文件在前端 `models/<路径>.glb`(路径不带 `.glb`),按包围盒高度 `h`(或宽度 `w`)自动缩放、居中、底部贴地,所以导出尺寸/原点不用管;布局里默认 `rotY=0`(正面朝镜头);没有文件时用 `fb`(兜底几何体 `PARTS.*`)顶替,浏览器控制台 `console.info` 会列出缺哪些。现有分类目录:`characters/ people/ street/ shop/ room/ park/ beach/ magic/`。能复用已有路径就复用(例:`park/bench` 在公园和街上都用)。
+- **改场景/新增热点要三处同步**:模板 JSON 的热点(id/icon/pt/zh/label)、`LAYOUTS` 的 `hotspots` 与 `props[].hs`、必要时 `PARTS` 兜底零件。
+- **用户自己准备 3D 模型**:凡是布局里新增模型,回复里要给**清单**——相对 `models/` 的文件名、新增还是复用、外观要求、高度/比例、朝向、面数/体积建议、通用要求(单个 `.glb`、贴图内嵌、不需要骨骼动画、风格与现有低多边形模型一致)。
+- 选词面板（`word_choice`）所有模板统一样式（偏下居中的米色面板）,不再有按模板区分的底色/位置。
+
 ### 场景模板（`scenes/*.json`，注册表 `memory/scene_registry.py` 启动时加载；改完要重启后端）
 
 **目标结构**：每个场景有 3 次有意义的操作——点人物问线索 → 选地点（探索）→ 选词（评判）。只有最后的 `word_choice` 会提交 `/words/scene/evaluate`；点人物、点错地点都不发请求、不计错。
 
-| 模板 | 适用词性 | 流程 |
+| 模板 | 适用词性（标志） | 热点（3~4 个） |
 |---|---|---|
-| `shop` | 名词 | 点售货员 → 水果区 / 面包区 / 饮料区 → 选词 |
-| `restaurant` | 名词（`foodOnly`） | 点服务员 → 菜单板 / 柜台 / 厨房窗口 → 选菜 |
-| `find` | 名词 | 点身边的朋友 → 沙发 / 柜子 / 绿植（与 `scene.js` 里画的背景一致）→ 选物品 |
-| `find_room` | 名词（`roomOnly`） | 点朋友 → 桌子 / 书架 / 背包 → 选物品 |
-| `describe` | 形容词 | 点朋友 → 在 copo / casa / livros / casas 里找到本词的名词语境 → 选形容词词形 |
+| `shop` | 名词 | 售货员 → 水果区 / 面包区 / 饮料区 / 数码区 |
+| `restaurant` | 名词（`foodOnly`） | 服务员 → 菜单板 / 柜台 / 厨房窗口 |
+| `find` | 名词 | **街上**（镜头始终是 street，只有朋友）：垃圾桶 / 长椅 / 邮筒 |
+| `find_room` | 名词（`roomOnly`） | 朋友 → 桌子 / 书架 / 背包 |
+| `group_photo` | 名词（`roomOnly`、`manualOnly`） | 球场 / 野餐桌 / 教学楼 |
+| `describe_object` | 形容词（`adjectiveOnly`） | 一个杯子 / 一座房子 / 几本书 / 几座房子（名词语境） |
+| `describe_person` | 形容词（`adjectiveOnly`） | 一个男孩 / 一个女孩 / 几个男孩 / 几个女孩 |
+| `verb_home` | 动词（`roomOnly`） | 厨房 / 卧室 / 客厅 |
+| `verb_school` | 动词（`roomOnly`） | 黑板 / 书架 / 书包 |
+| `verb_note` | 动词（`roomOnly`，任意动词形式） | 黑板 / 书架 / 书包 |
+| `verb_magic` | 动词（`roomOnly`，任意动词形式） | 魔法书 / 药水瓶 / 水晶球 / 大锅 |
+| `verb_treasure` | 动词（`roomOnly`，任意动词形式） | 棕榈树 / 岩石 / 小船 / 宝箱 |
+| `verb_park` | 动词 | 草地 / 湖边 / 长椅 |
+| `verb_restaurant` | 动词 | 菜单板 / 柜台 / 厨房窗口 |
+| `verb_persuade` | 动词（`roomOnly`、`manualOnly`） | 足球 / 冰淇淋 / 小鸭子 |
+
+最后一步 `word_choice` 的选项由词性决定；`manualOnly` 的模板不参加自动轮换，只在词里明确选了它时才用。模板 JSON 里**没有** `root` / `scenery` 字段了（那是 2D 背景用的，已随 2D 一起删除）；`cast`（人物配色）保留，3D 没有模型时用它给兜底小人上色。
 
 节点类型：`dialogue`、`feedback`、`hotspot_choice`、`word_choice`、`actor_tap`、`complete`。
 
-- **`actor_tap`**：玩家点画面里的人物，得到一句线索。字段：`actors`（1~2 个，只能是 `friend` / `helper`，且必须是当前画面看得到的；朋友在街道画面、帮手在商店画面，`roomOnly` 场景里同一个人）、`on_tap_<人物id>`（**每个 actors 都要有，写成字符串字段，不要写成 `on_tap: {…}` 对象**，校验器会把所有 `on_` 开头的字段当跳转目标）、`next`（必填，被 `modes` 跳过时的后继）、`hint_for`（必填，指向后面的 `hotspot_choice`，运行时据此提前确定目标热点）、`prompt_zh`。必须放在 `arrive`（带 `location: place`）之后。
+- **`actor_tap`**：玩家点画面里的人物，得到一句线索。字段：`actors`（1~2 个，只能是 `friend` / `helper`，且必须是当前画面看得到的；朋友在街道画面、帮手在商店画面，`roomOnly` 场景里同一个人）、`on_tap_<人物id>`（**每个 actors 都要有，写成字符串字段，不要写成 `on_tap: {…}` 对象**，校验器会把所有 `on_` 开头的字段当跳转目标）、`next`（必填，被 `modes` 跳过时的后继）、`hint_for`（必填，指向后面的 `hotspot_choice`，运行时据此提前确定目标热点）、`prompt_zh`。放在 `arrive` 之后(商店类要先 `location: place` 换到店里;`roomOnly` 场景本来就在室内;街上的 `find` 镜头始终是 `street`,只有 `friend` 一个人,不换场景)。
 - **`{hotspot_zh}` 占位符**：目标热点的中文名，**只允许出现在 `zh` / `hint_zh`**，不得出现在 `pt` / `prompt_zh` / `reveal_pt`；模板里没有 `hotspot_choice` 时出现会报错。葡语台词写成通用句（如 `Procura bem!`），具体位置只在中文里说，这样台词音频才能按节点缓存。
-- **`hotspot_choice.assign_target`**：`random`（默认）或 `noun_context`。`noun_context` 只允许 `describe` 使用：目标热点 = 本词名词语境（`word.id % 4`）对应的那个；要求热点数等于 `noun_contexts` 数，每个热点有 `context`（0~3，不重复），且热点 `pt` 必须等于 `noun_contexts[context].noun`。
+- **`hotspot_choice.assign_target`**：`random`（默认）或 `noun_context`。`noun_context` 只允许 `describe_object` / `describe_person` 使用(另有 `word_zone`,见 `scene_registry.py`)：目标热点 = 本词名词语境（`word.id % 4`）对应的那个；要求热点数等于 `noun_contexts` 数，每个热点有 `context`（0~3，不重复），且热点 `pt` 必须等于 `noun_contexts[context].noun`。
 - **`modes`**：`["preview"]` 的节点在正式测验里跳过。目前只有 `intro` / `friend_intro` 标了仅预习；`thanks` 没有标（测验里仍会走“带回去 → 感谢”），如要精简再加。
-- **不要动 `describe.json` 的 `noun_contexts` 与 `context_pick`**，否则跟读句（`/api/scene/sentence-audio`）会和场景对不上；形容词词形缺失的词不能进该场景（`canPlay`）。
+- **不要动 `describe_object.json` / `describe_person.json` 的 `noun_contexts` 与 `context_pick`**，否则跟读句（`/api/scene/sentence-audio`）会和场景对不上；形容词词形缺失的词不能进该场景（`canPlay`）。
 - **热点标签是固定葡语，不得含目标词**：校验器的静态泄露扫描（需要有 WordMemorizer 数据库的环境）会检查；前端运行时还会把撞词的标签换成只留图标。
 
 **改模板的通用检查**：`python tools/validate_scenes.py` 零错误 → `python tools/test_scenes.py` 全绿 → 重启后端 → `scene-lab.html` 先走预习再走测验（可用 `?template=<id>&word=<id>`）→ 测验里点错一个地点、一个物品再点对，网络面板只能有 2 次 `/words/scene/evaluate` → 360 / 390 宽度的手机上人物和热点可点、不被气泡遮挡、无横向滚动。
-**部署顺序**：先部署校验器（`memory/scene_registry.py`）和前端（`js/scene.js`、`css/scene.css`），再部署新模板；否则前端不认 `actor_tap` / `assign_target`，场景会在该节点卡住。
+**部署顺序**：先部署校验器（`memory/scene_registry.py`）和前端（`js/scene.js`、`css/scene.css`、`js/stage3d.js`、`js/stage3d-layouts.js`），再部署新模板；否则前端不认 `actor_tap` / `assign_target`，场景会在该节点卡住。改模板 id 或热点 id 时，`scenes/*.json` 与 `stage3d-layouts.js` 必须同时上线。
 
 ## 安全模式(涉及文件/用户输入的新功能照此写)
 - **服务端生成文件名,绝不用用户输入拼路径**:回复音频 `msg_{uuid12}.{wav|mp3}`,背景图 `bg_{uuid32}.{ext}`,单词朗读缓存 `piper_{sha1[:16]}.wav`。
@@ -361,7 +388,7 @@ WordMemorizer.Core/
 
 ## 存储(SQLite)
 - `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak`/`used_count`/`last_used_on`、`word_task_done.round_score` 同理。这些都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
-- `Words` 新增 `SceneEmoji` / `ScenePos` / `SceneGender` / `SceneNumber` / `SceneOk` / `SceneConfirmed`；旧记录列保持 NULL，所以 `/today` 不返回场景字段、前端维持旧行为。AI 生成只写候选并保持未确认，只有管理端 PUT 明确确认后前端才使用。
+- `Words` 新增 `Scene*` 系列列（`SceneEmoji` / `ScenePos` / `SceneGender` / `SceneNumber` / `SceneOk` / `SceneConfirmed` / `SceneTemplate` / `SceneNoun` / `SceneZone` / `SceneAdjMS` / `SceneAdjFS` / `SceneAdjMP` / `SceneAdjFP`），**挂在 `Words` 的某一行（Id）上**，同名词的另一行不会共享；旧记录列保持 NULL，所以 `/today` 不返回场景字段、前端维持旧行为。AI 生成只写候选并保持未确认，只有管理端 PUT 明确确认后前端才使用。
 - `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
 - `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
 - 陪练自身的 `messages`、`users`、`word_*` 等表与 WordMemorizer 的 `Words`、`WeeklyPlans`、`WeeklyPlanWords`、`ScoreRecord`、`ConsumeLog`、`NewWords` 六张表共用同一个 `SQLITE_PATH` 数据库。后六张表保留 PascalCase 表名，由 FastAPI 的 `wm_manager` 管理(另有 `WordQuizRun`/`WordQuizAward` 两张测验积分表也在 `wm_manager.SCHEMA` 里)；WordMemorizer 通过 `/api/admin/*` 读写，陪练的 `word_source.py`(只读)和 `newword_manager.py`(写生词)按 `WORD_DB_PATH`(默认 = `SQLITE_PATH`)访问同一个库。WAL 默认开启，备份必须使用 `tools/backup_db.py`(SQLite backup API)，**不要直接复制 `.db` 文件**，详见"备份与 WAL"一节。
@@ -385,11 +412,15 @@ WordMemorizer.Core/
 - 删除本周计划只删 `WeeklyPlans`/`WeeklyPlanWords`,`Words` 行有意保留(`word_progress` / `ScoreRecord` 可能引用)。
 - 单词测验积分只有 `WORD_QUIZ_POINT_USERS` 名单里的智能体能加;名单是写死在 `config.py` 里的集合。
 
+- `Words` 里有历史同名重复行（实测约 2000 行只有约 1200 个不同的词），`word_progress` 里也有同名词对应多个 Id 的情况；"录入这周"已改为复用同名记录，但**没有批量合并历史重复**——要做的话是写合并脚本把同名词的进度/场景并到同一个 Id，别在录入逻辑里顺手清库。
+- 场景演练需要 WebGL；浏览器不支持或加载失败时只显示错误卡 + 退出，没有降级。
+
 ## 回复用户时的默认做法
 - 用户一般直接贴改动需求或报 bug,默认只改涉及的文件。**每个被改动的文件以完整文件形式生成(从头到尾,含未改动部分),用 create_file 写到 `/mnt/user-data/outputs/` 下对应文件名,再用 present_files 交付**,不要把整份代码贴在聊天里。没涉及的文件不要重复生成。正文只用简短文字说明改了什么、为什么、前后端哪一侧要跟着改;讲思路可以多写。
 - **保留原文件的换行符**:后端 `.py` 是 CRLF(Windows 开发),改完要保持 CRLF,否则整文件 diff 全红。C# 的 `.cs` 多数也是 CRLF(个别文件如 `FormNewWords.cs` 是 CRLF/LF 混合,`DB/WordImporter.cs` 是 LF),改动用精确替换保持原样,不要整文件重新规整换行;有 BOM 的保留 BOM。
 - **改 C# 时**:本环境没有 .NET 编译器,只能静态核对(方法是否还存在、DTO 字段名、`using`、internal/public 可见性),交付时提醒用户在 VS(或 MSBuild)里重新生成;窗体的新增写入类操作要 `catch (ApiException)` 并 `AdminApiClient.ShowError`;动 Admin API 字段要按"改字段 = 三处同步"一起检查服务端和 C# 两侧。
 - **改接口字段/请求参数时,必须同时指出前端或后端哪一侧要跟着改。**
+- 用户习惯自己测试:写好直接交付,不用过分帮他测;只做必要的静态核对(语法检查、`validate_scenes.py`、解析对比)并如实说明哪些没跑。
 - 涉及新文件上传/文件名生成,默认套用"安全模式"。
 - 项目语言是简体中文注释 + 中文 UI 文案(后端日志/异常信息也是中文),葡语系统提示词用葡语撰写,新增代码保持这个风格。
 - 改调度规则(`word_planner.py`)时:先用纯函数写个模拟(造几个 row 跑 `apply_outcome` + `build_today_plan`)验证,再交付;动了表结构要补自动迁移并测"跑两次幂等"。

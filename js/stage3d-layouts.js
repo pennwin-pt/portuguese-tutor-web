@@ -5,6 +5,7 @@
  *   - fb.parts = 用小方块（默认）/ 圆柱 cyl / 球 sph 拼出来的家具，整体会按 h 自动缩放，零件只需比例对。
  * h / w：目标高度 / 宽度（自动按包围盒缩放，不同模型包的尺寸差异不用管）。
  * hs：这个物件对应的热点 id，被点中 / 答对时会弹一下；同一个热点可以挂多个物件（比如“几座房子”）。
+ * find：在街上帮朋友找东西，镜头一直是街道（cameras 只有 street，人物只写 me / friend），热点 bin / bench / mailbox 就站在街边。
  * roomOnly 模板（find_room / verb_school / verb_home / verb_note / verb_treasure / verb_magic）：朋友和帮手是同一个人、一开始就在室内，
  *   没有街道，所以只需要 cameras.place，人物只写 me 和 helper 的 place。
  * 手机竖屏时画面约只看得到 place 镜头中心左右 ±3.5 米：热点尽量排在这个范围内，热点之间留 2.3 米以上。
@@ -39,6 +40,8 @@ const PARTS = {
   bench: [box(1.7, .08, .5, 0, .46, 0, '#c58b4e'), box(1.7, .4, .06, 0, .78, -.22, '#c58b4e'),
     box(.08, .46, .46, -.75, .23, 0, '#4b5563'), box(.08, .46, .46, .75, .23, 0, '#4b5563'),
     box(.06, .5, .06, -.75, .7, -.22, '#4b5563'), box(.06, .5, .06, .75, .7, -.22, '#4b5563')],
+  bin: [box(.5, .8, 0, 0, .4, 0, '#16a34a', 'cyl'), box(.54, .06, 0, 0, .83, 0, '#15803d', 'cyl'), box(.18, .04, .04, 0, .9, 0, '#14532d')],
+  mailbox: [box(.55, 1.1, 0, 0, .55, 0, '#dc2626', 'cyl'), box(.55, 0, 0, 0, 1.1, 0, '#b91c1c', 'sph'), box(.3, .05, .04, 0, .85, .27, '#111827')],
   duck: [box(.34, 0, 0, 0, .17, 0, '#fde047', 'sph'), box(.2, 0, 0, 0, .38, .12, '#fde047', 'sph'), box(.1, .05, .1, 0, .37, .26, '#fb923c')],
   ball: [box(.4, 0, 0, 0, .2, 0, '#ef4444', 'sph')],
   goal: [box(.08, 1.2, .08, -1.0, .6, 0, '#f8fafc'), box(.08, 1.2, .08, 1.0, .6, 0, '#f8fafc'), box(2.08, .08, .08, 0, 1.2, 0, '#f8fafc'),
@@ -177,23 +180,21 @@ export const LAYOUTS = {
   },
 
   /* ---------- find：帮朋友找东西（热点 sofa / cabinet / plant） ---------- */
+  /* ---------- find：在街上帮朋友找东西（不换场景，镜头一直是街道；热点 bin / bench / mailbox，各间隔 3 米，在手机竖屏 ±3.5 米范围内） ---------- */
   find: {
     sky: '#cfe9ff',
-    blocks: [...STREET_BLOCKS, ...building('#d7b98e', '#f6efe6', '#eadfce'),
-      rug(15.7, -1.2, 3.0, 2.0, '#c4b5fd'), ...windowAt(18.1, 2.9)],
+    blocks: [...STREET_BLOCKS],
     props: [
-      ...STREET_PROPS,
-      { model: 'room/sofa', pos: [15.7, 0, -2.8], h: 0.95, hs: 'sofa', fb: { parts: PARTS.sofa } },
-      { model: 'room/cabinet', pos: [18.1, 0, -3.2], h: 2.0, hs: 'cabinet', fb: { parts: PARTS.cabinet } },
-      { model: 'shop/plant', pos: [20.5, 0, -3.0], h: 1.3, hs: 'plant', fb: { tree: true, small: true } }
+      ...STREET_PROPS.filter(p => !p.model.startsWith('street/tree')),      // 只留楼；树挪到画面两侧，中间留给热点
+      { model: 'street/tree_1', pos: [-5.6, 0, -1.2], h: 2.8, fb: { tree: true } },
+      { model: 'street/tree_2', pos: [5.8, 0, -1.4], h: 2.4, fb: { tree: true } },
+      { model: 'street/bin', pos: [-3.0, 0, -1.3], h: 0.95, hs: 'bin', fb: { parts: PARTS.bin } },
+      { model: 'park/bench', pos: [0, 0, -1.7], h: 0.95, hs: 'bench', fb: { parts: PARTS.bench } },
+      { model: 'street/mailbox', pos: [3.0, 0, -1.3], h: 1.5, hs: 'mailbox', fb: { parts: PARTS.mailbox } }
     ],
-    hotspots: { sofa: hot(15.7, 1.75, -2.2), cabinet: hot(18.1, 2.2, -2.5), plant: hot(20.5, 1.9, -2.3) },
-    cameras: { street: STREET_CAM, place: PLACE_CAM() },
-    actors: {
-      me: { ...ME, place: [16.4, 0, 1.7] },
-      friend: FRIEND,
-      helper: { model: 'characters/helper', h: 1.7, place: [22.6, 0, -0.5] }
-    }
+    hotspots: { bin: hot(-3.0, 1.45, -1.0), bench: hot(0, 1.4, -1.4), mailbox: hot(3.0, 2.0, -1.0) },
+    cameras: { street: STREET_CAM },
+    actors: { me: ME, friend: FRIEND }
   },
 
   /* ---------- describe_object：描述物体（热点 copo / casa / livros / casas，四个展台排一排） ---------- */
