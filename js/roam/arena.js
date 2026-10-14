@@ -69,6 +69,133 @@ export const ARENAS = {
         ],
         slots: [{ id: 'palm', pos: [-6, 0, -2.4] }, { id: 'rock', pos: [-1.5, 0, -3.4] }, { id: 'boat', pos: [6, 0, -2.9] }, { id: 'barrel', pos: [7.5, 0, 4.1] }],
         camIntro: { pos: [0, 20, 18], look: [0, 0, 0] }
+    },
+
+    /* ============ 下面四个是"走路版"的老场景：find / shop / restaurant / verb_park（模型路径和比例沿用它们原来的 3D 布局） ============
+       通用约定：每个场地正好 4 个 slots（钥匙/物品挂的位置，站在 slot 1.4 米内能抓）；slot 放在道具"前面"（z 更大，靠镜头一侧）；
+       decor = 地面上的路 / 草坪 / 墙（solid:true 才有碰撞）；seaY:null = 没有海面；掉出地面（y < fallY）回 tiles[].rp。 */
+
+    /* find：街上帮朋友找东西。四个位置：垃圾桶 / 长椅 / 邮筒 / 树。 */
+    street_find: {
+        sky: '#cfe9ff', seaY: null, fallY: -3,
+        spawn: [-11, 0, 3],
+        ring: { pos: [0, 0, 2.8], r: 1.3 },
+        friend: { pos: [2.4, 0, 3.4], rotY: -2.2 },
+        tiles: [{ x: 0, z: 0, w: 28, d: 16, thick: 0.6, color: '#cfe7c4', flat: true, rp: [-10, 0, 3] }],
+        decor: [
+            { pos: [0, 0.02, 2.2], size: [28, 0.04, 2.4], color: '#e5e7eb' },          // 人行道
+            { pos: [0, 0.02, 5.4], size: [28, 0.04, 4.0], color: '#9aa4b2' }           // 马路
+        ],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'street/building_1', pos: [-8.5, 0, -6.2], h: 4.6, fb: { w: 3.2, color: '#f2c7a5' }, solid: [3.2, 4, 2.4] },
+            { model: 'street/building_2', pos: [-2.8, 0, -6.4], h: 5.2, fb: { w: 3.4, color: '#a7c7e7' }, solid: [3.4, 4, 2.4] },
+            { model: 'street/building_1', pos: [3.0, 0, -6.2], h: 4.6, fb: { w: 3.2, color: '#f6e0a4' }, solid: [3.2, 4, 2.4] },
+            { model: 'street/building_2', pos: [9.0, 0, -6.4], h: 5.2, fb: { w: 3.4, color: '#a7c7e7' }, solid: [3.4, 4, 2.4] },
+            { model: 'street/tree_1', pos: [-12.2, 0, -2], h: 2.8, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [12.4, 0, -1], h: 2.4, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { id: 'bin', model: 'street/bin', pos: [-7, 0, 0.2], h: 0.95, fb: 'bin', solid: [0.6, 0.9, 0.6] },
+            { id: 'bench', model: 'park/bench', pos: [-2, 0, -1.5], h: 0.95, fb: 'bench', solid: [1.6, 0.5, 0.6] },
+            { id: 'mailbox', model: 'street/mailbox', pos: [3.5, 0, 0.2], h: 1.5, fb: 'mailbox', solid: [0.6, 1.4, 0.6] },
+            { id: 'tree', model: 'street/tree_1', pos: [9, 0, -1.6], h: 2.8, fb: { tree: true }, solid: [0.5, 3, 0.5] }
+        ],
+        slots: [{ id: 'bin', pos: [-7, 0, 1.3] }, { id: 'bench', pos: [-2, 0, -0.4] }, { id: 'mailbox', pos: [3.5, 0, 1.3] }, { id: 'tree', pos: [9, 0, -0.5] }],
+        camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
+    },
+
+    /* shop：商店。四个货架区 fruit / bakery / drinks / digital；slot id 就是词的 scene_zone，所以"水果"会出现在水果区
+       （roam_choice.slot_by_zone = true）；digital 不参与随机分配（和原来 random_target:false 一致）。 */
+    shop_inside: {
+        sky: '#cfe9ff', seaY: null, fallY: -3,
+        spawn: [-9.5, 0, 3],
+        ring: { pos: [0, 0, 1.8], r: 1.3 },
+        friend: { pos: [2.6, 0, 2.6], rotY: -2.2 },
+        tiles: [{ x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#e8d5b5', flat: true, rp: [-9, 0, 3] }],
+        decor: [
+            { wall: true, pos: [0, 2.2, -7.0], size: [22, 4.4], rotY: 0, color: '#f5deb3', collide: [22, 4.4, 0.4] },                 // 后墙（面朝 +z）
+            { wall: true, pos: [-11.0, 2.2, -0.5], size: [13, 4.4], rotY: Math.PI / 2, color: '#f5deb3', collide: [0.4, 4.4, 13] },   // 左墙（面朝 +x）
+            { wall: true, pos: [11.0, 2.2, -0.5], size: [13, 4.4], rotY: -Math.PI / 2, color: '#f5deb3', collide: [0.4, 4.4, 13] },  // 右墙（面朝 -x）
+            { pos: [0, 0.03, 0.8], size: [9, 0.04, 5], color: '#fecaca' }                            // 地毯
+        ],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'shop/shelf', pos: [-7.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
+            { model: 'shop/shelf', pos: [-2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
+            { model: 'shop/shelf', pos: [2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
+            { model: 'shop/shelf', pos: [7.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#64748b', shelf: true }, solid: [1.9, 2.2, 0.6] },
+            { model: 'shop/crate', pos: [-7.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#d9a066' }, solid: [0.8, 0.55, 0.8] },
+            { model: 'shop/crate', pos: [-2.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#e8c58a' }, solid: [0.8, 0.55, 0.8] },
+            { model: 'shop/crate', pos: [2.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#9ec5e8' }, solid: [0.8, 0.55, 0.8] },
+            { model: 'shop/crate', pos: [7.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#94a3b8' }, solid: [0.8, 0.55, 0.8] },
+            { pos: [7.5, 0.55, -4.9], h: 0.5, fb: 'laptop' },                                          // 数码区箱子上的笔记本电脑
+            { model: 'shop/counter', pos: [0, 0, 4.4], h: 1.05, fb: { w: 2.4, color: '#b9824a' }, solid: [2.4, 1.05, 0.7] },
+            { model: 'shop/plant', pos: [-10, 0, -5.8], h: 1.2, fb: { tree: true, small: true }, solid: [0.5, 1.2, 0.5] }
+        ],
+        slots: [{ id: 'fruit', pos: [-7.5, 0, -3.5] }, { id: 'bakery', pos: [-2.5, 0, -3.5] }, { id: 'drinks', pos: [2.5, 0, -3.5] }, { id: 'digital', pos: [7.5, 0, -3.5], randomTarget: false }],
+        camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
+    },
+
+    /* restaurant：餐厅。四个位置：菜单板 / 厨房出餐口 / 柜台 / 餐桌。 */
+    restaurant_inside: {
+        sky: '#cfe9ff', seaY: null, fallY: -3,
+        spawn: [-9.5, 0, 3],
+        ring: { pos: [0, 0, 2.2], r: 1.3 },
+        friend: { pos: [2.7, 0, 2.8], rotY: -2.2 },
+        tiles: [{ x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#e8d5b5', flat: true, rp: [-9, 0, 3] }],
+        decor: [
+            { wall: true, pos: [0, 2.2, -7.0], size: [22, 4.4], rotY: 0, color: '#fff3e0', collide: [22, 4.4, 0.4] },
+            { wall: true, pos: [-11.0, 2.2, -0.5], size: [13, 4.4], rotY: Math.PI / 2, color: '#fff3e0', collide: [0.4, 4.4, 13] },
+            { wall: true, pos: [11.0, 2.2, -0.5], size: [13, 4.4], rotY: -Math.PI / 2, color: '#fff3e0', collide: [0.4, 4.4, 13] },
+            { pos: [-2.5, 1.85, -6.97], size: [2.5, 1.3, 0.1], color: '#6b7280' },                   // 厨房出餐口：外框 + 暖色里窗 + 台面
+            { pos: [-2.5, 1.85, -6.92], size: [2.2, 1.0, 0.08], color: '#fbbf24' },
+            { pos: [-2.5, 1.2, -6.7], size: [2.5, 0.08, 0.55], color: '#b9824a' },
+            { pos: [0, 0.03, 0.8], size: [8, 0.04, 4.6], color: '#fecaca' }
+        ],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { id: 'menu', pos: [-7.5, 1.4, -6.85], h: 1.5, fb: { parts: PARTS.board('#1f3b2d', 3) } },                  // 菜单板（挂在墙上，不用下载）
+            { id: 'kitchen', model: 'room/stove', pos: [-2.5, 0, -6.3], h: 1.0, fb: 'stove', solid: [0.9, 0.9, 0.7] },
+            { id: 'counter', model: 'shop/counter', pos: [3, 0, -3.8], h: 1.05, fb: { w: 2.4, color: '#b9824a' }, solid: [2.4, 1.05, 0.7] },
+            { id: 'table', model: 'room/table', pos: [8, 0, -2.5], h: 0.75, fb: 'table', solid: [1.1, 0.75, 1.1] },
+            { model: 'room/chair', pos: [6.9, 0, -2.5], h: 0.95, rotY: Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] },
+            { model: 'room/chair', pos: [9.1, 0, -2.5], h: 0.95, rotY: -Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] },
+            { model: 'room/table', pos: [-8.5, 0, 4.8], h: 0.75, fb: 'table', solid: [1.1, 0.75, 1.1] },
+            { model: 'room/chair', pos: [-9.6, 0, 4.8], h: 0.95, rotY: Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] },
+            { model: 'room/chair', pos: [-7.4, 0, 4.8], h: 0.95, rotY: -Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] }
+        ],
+        slots: [{ id: 'menu', pos: [-7.5, 0, -5.0] }, { id: 'kitchen', pos: [-2.5, 0, -4.9] }, { id: 'counter', pos: [3, 0, -2.2] }, { id: 'table', pos: [8, 0, -0.9] }],
+        camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
+    },
+
+    /* verb_park：公园。四个位置：草坪（球和花）/ 湖边（鸭子）/ 长椅 / 冰淇淋车。选项是动词。 */
+    park: {
+        sky: '#cfe9ff', seaY: null, fallY: -3,
+        spawn: [-11, 0, 4],
+        ring: { pos: [-1, 0, 3.2], r: 1.3 },
+        friend: { pos: [1.7, 0, 3.6], rotY: -2.2 },
+        tiles: [{ x: 0, z: 0, w: 28, d: 18, thick: 0.6, color: '#86d36b', flat: true, rp: [-10, 0, 4] }],
+        decor: [
+            { pos: [0, 0.02, 6.4], size: [28, 0.04, 2.0], color: '#e6d3a3' },                        // 小路
+            { pos: [-8.5, 0.02, -3.5], size: [6, 0.04, 4.5], color: '#9be37f' },                     // 草坪
+            { pos: [5, 0.15, -3.5], size: [7, 0.3, 5], color: '#cbd5e1', solid: true },              // 湖边石岸（有碰撞，进不去）
+            { pos: [5, 0.32, -3.5], size: [6.4, 0.04, 4.4], color: '#5aaee8' }                       // 湖水
+        ],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'street/tree_1', pos: [-12.4, 0, -7.2], h: 3.4, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [1.5, 0, -7.6], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_1', pos: [12.6, 0, -6.8], h: 3.6, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { id: 'ball', model: 'park/ball', pos: [-8.5, 0.05, -3.0], h: 0.4, fb: 'ball' },
+            { pos: [-9.6, 0.05, -4.3], h: 0.4, fb: { parts: PARTS.flower('#f472b6') } },
+            { pos: [-7.4, 0.05, -4.5], h: 0.4, fb: { parts: PARTS.flower('#fbbf24') } },
+            { pos: [-7.1, 0.05, -2.9], h: 0.4, fb: { parts: PARTS.flower('#a78bfa') } },
+            { id: 'bench', model: 'park/bench', pos: [-1.5, 0, -6.0], h: 0.95, fb: 'bench', solid: [1.6, 0.5, 0.6] },
+            { model: 'park/duck', pos: [4.2, 0.34, -3.2], h: 0.4, fb: 'duck' },
+            { model: 'park/duck', pos: [6.0, 0.34, -4.2], h: 0.4, fb: 'duck' },
+            { id: 'cart', model: 'shop/icecream', pos: [11, 0, -2.0], h: 1.3, fb: 'icecream', solid: [1.0, 1.3, 0.8] }
+        ],
+        slots: [{ id: 'lawn', pos: [-8.5, 0, -1.9] }, { id: 'lake', pos: [5, 0, -0.6] }, { id: 'bench', pos: [-1.5, 0, -4.7] }, { id: 'cart', pos: [11, 0, -0.8] }],
+        camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
     }
 };
 
@@ -90,7 +217,7 @@ export async function buildArena(arenaId, tpl) {
     const A = ARENAS[arenaId];
     if (!A) throw new Error(`没有名为 ${arenaId} 的场地（js/roam/arena.js 的 ARENAS）`);
     const loaded = {};
-    const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model)])];
+    const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model).filter(Boolean)])];
     await Promise.all(wanted.map(async p => { loaded[p] = await loadModel(p); }));
     const clone = p => T.cloneSkinned(loaded[p].scene);
 
@@ -143,7 +270,7 @@ export async function buildArena(arenaId, tpl) {
 
     /* ---- 答案底座 ---- */
     const slots = A.slots.map(s => {
-        if (A.slotPedestal === false) return { id: s.id, pos: new T.Vector3(...s.pos), obj: null };      // 海岛：钥匙直接挂在道具前面，不要底座
+        if (A.slotPedestal === false) return { id: s.id, pos: new T.Vector3(...s.pos), obj: null, randomTarget: s.randomTarget };      // 海岛：钥匙直接挂在道具前面，不要底座
         let obj;
         if (loaded['roam/pedestal']) obj = normalize(clone('roam/pedestal'), { h: 0.8 });
         else {
@@ -154,14 +281,25 @@ export async function buildArena(arenaId, tpl) {
         }
         obj.position.set(s.pos[0], s.pos[1], s.pos[2]); root.add(obj);
         boxes.push({ min: [s.pos[0] - 0.5, s.pos[1], s.pos[2] - 0.5], max: [s.pos[0] + 0.5, s.pos[1] + 0.8, s.pos[2] + 0.5] });
-        return { id: s.id, pos: new T.Vector3(...s.pos), obj };
+        return { id: s.id, pos: new T.Vector3(...s.pos), obj, randomTarget: s.randomTarget };
     });
+
+    /* ---- 装饰方块（地面上的路 / 草坪 / 墙；solid:true 的同时参与碰撞） ---- */
+    for (const d of A.decor || []) {
+        if (d.wall) {                                                    // 单面墙：只从屋内（法线一侧）看得见，镜头跑到墙外面不会被挡；collide 是它的碰撞盒 [宽, 高, 深]
+            const m = new T.Mesh(new T.PlaneGeometry(d.size[0], d.size[1]), mat(d.color)); m.position.set(...d.pos); m.rotation.y = d.rotY || 0; root.add(m);
+            if (d.collide) boxes.push({ min: [d.pos[0] - d.collide[0] / 2, d.pos[1] - d.collide[1] / 2, d.pos[2] - d.collide[2] / 2], max: [d.pos[0] + d.collide[0] / 2, d.pos[1] + d.collide[1] / 2, d.pos[2] + d.collide[2] / 2] });
+            continue;
+        }
+        const m = new T.Mesh(new T.BoxGeometry(...d.size), mat(d.color)); m.position.set(...d.pos); root.add(m);
+        if (d.solid) boxes.push({ min: [d.pos[0] - d.size[0] / 2, d.pos[1] - d.size[1] / 2, d.pos[2] - d.size[2] / 2], max: [d.pos[0] + d.size[0] / 2, d.pos[1] + d.size[1] / 2, d.pos[2] + d.size[2] / 2] });
+    }
 
     /* ---- 道具（海岛的棕榈树 / 岩石 / 小船 / 木桶 / 宝箱）：模型缺了用 PARTS 兜底；solid 是碰撞盒 ---- */
     const props = {};
     for (const p of A.props || []) {
-        const spec = { h: p.h, fb: { parts: PARTS[p.fb] } };
-        const obj = loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackProp(spec), { h: p.h });
+        const spec = { h: p.h, fb: typeof p.fb === 'string' ? { parts: PARTS[p.fb] } : (p.fb || {}) };   // fb：PARTS 的键，或直接写 fallbackProp 的参数（{w,color} / {tree:true} / {parts}）
+        const obj = p.model && loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackProp(spec), { h: p.h });
         obj.position.set(...p.pos); obj.rotation.y = p.rotY || 0; root.add(obj);
         props[p.id] = { obj, base: obj.scale.clone(), bounce: 0 };
         if (p.solid) boxes.push({ min: [p.pos[0] - p.solid[0] / 2, 0, p.pos[2] - p.solid[2] / 2], max: [p.pos[0] + p.solid[0] / 2, p.solid[1], p.pos[2] + p.solid[2] / 2] });
@@ -205,8 +343,10 @@ export async function buildArena(arenaId, tpl) {
     };
 
     /* ---- 海面 + 装饰云（掉下去有东西接着；云只有放了模型才出现） ---- */
-    const sea = new T.Mesh(new T.PlaneGeometry(240, 240), new T.MeshBasicMaterial({ color: A.seaColor || '#7dd3fc', transparent: true, opacity: 0.9 }));
-    sea.rotation.x = -Math.PI / 2; sea.position.y = A.seaY; root.add(sea);
+    if (A.seaY != null) {                                                   // seaY 写 null = 不要海面（室内 / 公园）
+        const sea = new T.Mesh(new T.PlaneGeometry(240, 240), new T.MeshBasicMaterial({ color: A.seaColor || '#7dd3fc', transparent: true, opacity: 0.9 }));
+        sea.rotation.x = -Math.PI / 2; sea.position.y = A.seaY; root.add(sea);
+    }
     if (loaded['roam/cloud']) {
         [[-14, 4, -14, 4], [16, 6, -10, 5], [-6, 7, 18, 4.5]].forEach(([x, y, z, w]) => { const c = normalize(clone('roam/cloud'), { w }); c.position.set(x, y, z); root.add(c); });
     }

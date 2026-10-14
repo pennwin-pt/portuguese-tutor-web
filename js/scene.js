@@ -519,6 +519,7 @@
             await stage.run({
                 pads: o.list, display: disp, seed: (Number(w.id) || 1) * 1000 + today,   // 同一天同一个词，底座分配不变
                 clue: { emoji: em, zh }, preview: mode === 'preview', autoGrab: true,
+                correctSlot: n.slot_by_zone ? (w.scene_zone || null) : null,       // shop：正确答案放在这个词所属的货架区（没配置就随机）
                 grabRange: n.grab_range || 1.4, hints: n.hints || {},
                 onApproach: pad => {                                                      // 预习：靠近物件时读它的葡语（测验不读，会泄露答案）
                     const rec = pad.ok ? w : (ctx.pool || []).find(p => p.id === pad.id);

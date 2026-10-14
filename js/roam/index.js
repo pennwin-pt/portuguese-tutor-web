@@ -145,12 +145,22 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
 
     /* ---------- 答案物件（orb）与标签 ---------- */
     const orbs = [];
-    function makeOrbs(pads, display, seed) {
-        const order = arena.slots.map((_, i) => i), r = rng(seed);
-        for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    /* 选项放到哪个底座：正确项放 correctSlot（shop 的"词属于哪个货架区"）；没指定就在 randomTarget≠false 的底座里随机；干扰项随机填满剩下的 */
+    function assignSlots(pads, seed, correctSlot) {
+        const r = rng(seed), all = arena.slots.map((_, i) => i);
+        const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+        const okI = pads.findIndex(p => p.ok);
+        let okSlot = -1;
+        if (correctSlot) { const f = all.find(i => arena.slots[i].id === correctSlot); if (f !== undefined) okSlot = f; }
+        if (okSlot < 0 && okI >= 0) { const c = all.filter(i => arena.slots[i].randomTarget !== false); const pool = c.length ? c : all; okSlot = pool[Math.floor(r() * pool.length)]; }
+        const rest = shuffle(all.filter(i => i !== okSlot)); let k = 0;
+        return pads.map((_, i) => i === okI ? okSlot : rest[k++ % rest.length]);
+    }
+    function makeOrbs(pads, display, seed, correctSlot) {
+        const slotIdx = assignSlots(pads, seed, correctSlot);
         pads.forEach((pad, i) => {
-            const slot = arena.slots[order[i % order.length]];
-            const color = ORB_COLORS[order[i % order.length] % ORB_COLORS.length];
+            const slot = arena.slots[slotIdx[i]];
+            const color = ORB_COLORS[slotIdx[i] % ORB_COLORS.length];
             const mesh = new T.Mesh(new T.SphereGeometry(0.32, 20, 16), new T.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.35 }));
             const halo = makeRing(0.5, 0.03, '#ffffff', 20, 0.7); mesh.add(halo);
             mesh.position.set(slot.pos.x, slot.pos.y + 1.5, slot.pos.z); scene.add(mesh);
@@ -374,7 +384,7 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
             return new Promise(resolve => {
                 clearOrbs();
                 opts.hints = opts.hints || {};
-                makeOrbs(opts.pads, opts.display, opts.seed || 1);
+                makeOrbs(opts.pads, opts.display, opts.seed || 1, opts.correctSlot);
                 clueEmoji.textContent = opts.clue && opts.clue.emoji && opts.display !== 'pt' ? opts.clue.emoji : '';
                 clueZh.textContent = (opts.clue && opts.clue.zh) || '';
                 run = { opts, resolve, t: 0, since: 0, wrong: 0, cool: 0, near: null, range: opts.grabRange || 1.4 };
