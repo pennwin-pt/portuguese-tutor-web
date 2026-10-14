@@ -161,6 +161,16 @@
     const loadStage3D = () => stageModule || (stageModule = import(new URL('stage3d.js', SCRIPT_SRC || location.href).href)
         .catch(e => { stageModule = null; throw e; }));
 
+    /* 派对闯关（tpl.roam）：自由走动的 3D 场地，模块和样式都是第一次用到时才加载 */
+    let roamModule = null;
+    const loadRoam = () => roamModule || (roamModule = (() => {
+        if (!document.querySelector('link[data-roam-css]')) {
+            const l = document.createElement('link'); l.rel = 'stylesheet'; l.dataset.roamCss = '1';
+            l.href = new URL('../css/roam.css', SCRIPT_SRC || location.href).href; document.head.append(l);
+        }
+        return import(new URL('roam/index.js', SCRIPT_SRC || location.href).href);
+    })().catch(e => { roamModule = null; throw e; }));
+
     function playTemplate(w, ctx, tpl) {
         ctx = ctx || {};
         const mode = ctx.mode === 'assessment' || ctx.mode === 'preview' ? ctx.mode : (ctx.evaluateChoice ? 'assessment' : 'preview');
@@ -181,7 +191,7 @@
         const fillZh = s => String(s || '').replace(/\{(target_zh|noun_zh|hotspot_zh)\}/g, (_, k) => k === 'target_zh' ? zh : k === 'noun_zh' ? nounCtx.nounZh : hotspotZh());
 
         /* --- 依模板搭 DOM 层：台词气泡、热点按钮、人物点击锚点、篮子；画面本身全部由 stage3d 渲染 --- */
-        const root = el('div', 'sc');
+        const root = el('div', 'sc' + (tpl.roam ? ' sc-roam' : ''));
         const view = el('div', 'sc-view');
         const helperEl = mkAnchor('sc-clerk');
         const friendEl = tpl.roomOnly ? helperEl : mkAnchor('sc-friend');   // 房间场景里朋友就在房间里
@@ -209,8 +219,8 @@
             if (ctx.cancelAudio) ctx.cancelAudio();
         }
         root.classList.add('is3d-wait');
-        const stageWait = loadStage3D()
-            .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(),
+        const stageWait = (tpl.roam ? loadRoam() : loadStage3D())
+            .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(), ctx,
                 onLost: () => showStageError('3D 画面丢失（显卡上下文被系统回收），请退出后重新进入场景。') }))
             .then(s3 => {
                 if (!s3) throw new Error('这个场景的 3D 画面不可用（浏览器不支持 WebGL，或模板缺少 3D 布局）。');
@@ -487,6 +497,73 @@
             return n.on_wrong;
         }
 
+        /* --- 节点：roam_choice（派对闯关：玩家在 3D 场地里跑动，抓取答案；每次抓取提交一次评判，和 word_choice 的判分完全一致） --- */
+        let roamTimer = 0;
+        function roamNotice(msg, ms) {                                       // 跑动中的短提示：几秒后自动收起
+            clearTimeout(roamTimer);
+            dialogueBubble.className = 'sc-dialogue-bubble visible friend'; dialogueBubble.textContent = '';
+            if (typeof msg === 'string') dialogueBubble.append(el('div', 'sc-dialogue-zh', msg));
+            else { dialogueBubble.append(el('div', 'sc-dialogue-text', msg.pt), el('div', 'sc-dialogue-zh', msg.zh)); }
+            if (st.note) { addZhLine(st.note); st.note = ''; }
+            roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, ms || 2600);
+        }
+        async function doRoamChoice(id, n) {
+            if (!stage || !stage.run) throw new Error('派对闯关需要 3D 场地（舞台没有就绪）。');
+            let o = st.opts[id];
+            if (!o) o = st.opts[id] = { list: buildOptions(n).map(x => ({ ...x, text: x.pt })), wrong: 0 };
+            showPrompt(n.prompt_zh);
+            clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, 4200);
+            setCtl(null); root.classList.add('rm-playing');
+            const disp = (o.list[0] && o.list[0].disp) || 'pt';
+            const today = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+            await stage.run({
+                pads: o.list, display: disp, seed: (Number(w.id) || 1) * 1000 + today,   // 同一天同一个词，底座分配不变
+                clue: { emoji: em, zh }, preview: mode === 'preview', autoGrab: true,
+                grabRange: n.grab_range || 1.4, hints: n.hints || {},
+                onApproach: pad => {                                                      // 预习：靠近物件时读它的葡语（测验不读，会泄露答案）
+                    const rec = pad.ok ? w : (ctx.pool || []).find(p => p.id === pad.id);
+                    if (rec && ctx.speak) ctx.speak(rec, 'word', null);
+                },
+                onGrab: async x => {
+                    if (!ctx.evaluateChoice) x.passed = x.ok;
+                    else {
+                        try {
+                            const r = await ctx.evaluateChoice(w, x.ok ? w.id : x.id);    // 干扰项传它自己的词 id（兜底项 -1），绝不传目标 id
+                            x.passed = !!(r && r.passed);
+                        } catch (err) {                                                   // 提交失败：不计错，物件不动，可以再抓
+                            if (alive) roamNotice((err && err.message) || '提交失败，请重试。', 3000);
+                            return 'error';
+                        }
+                    }
+                    if (!alive) return 'error';
+                    if (x.passed) { st.chosen = x; return 'correct'; }
+                    o.wrong++; x.picked = true;
+                    if (o.wrong === RULEOUT_AT) {
+                        const left = o.list.filter(y => !y.ok && !y.picked && !y.out);
+                        if (left.length) { left[Math.floor(Math.random() * left.length)].out = true; st.note = '已经帮你排除了一个错误选项。'; }
+                    }
+                    if (o.wrong >= REVEAL_AT && mode === 'preview') o.list.find(y => y.ok).hint = true;   // 只有预习才会高亮正确项
+                    if (mode === 'assessment' && o.wrong >= SKIP_AT) st.skipAttn = true;
+                    roamNotice(n.wrong_feedback || { pt: '', zh: '不是这个，再找找看' });
+                    return 'wrong';
+                }
+            });
+            guard();
+            return n.on_correct;
+        }
+        /* --- 节点：roam_deliver（带着抓对的物件走进交付环） --- */
+        async function doRoamDeliver(id, n) {
+            say(id, n, fillPt(n.pt), fillZh(n.zh), false);
+            st.lastSpeech = (n.speech || 'none') === 'auto' ? speakNode(id) : null;
+            clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, 4200);
+            setCtl(null); root.classList.add('rm-playing');
+            await stage.deliver(); guard();
+            root.classList.remove('rm-playing');
+            dialogueBubble.className = 'sc-dialogue-bubble';
+            speakWord(null); await wait(1100);                                    // 交付成功：读一遍这个词，再进入"谢谢"
+            return n.next;
+        }
+
         /* --- 节点：complete（结果卡） --- */
         async function doComplete(id, n) {
             shelf.style.pointerEvents = 'none';
@@ -504,7 +581,7 @@
         }
 
         /* --- 主循环 --- */
-        const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, actor_tap: doActorTap, hotspot_choice: doHotspots, word_choice: doChoice, complete: doComplete };
+        const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, actor_tap: doActorTap, hotspot_choice: doHotspots, word_choice: doChoice, roam_choice: doRoamChoice, roam_deliver: doRoamDeliver, complete: doComplete };
         const completeId = Object.keys(tpl.nodes).find(k => tpl.nodes[k].type === 'complete');
         async function run() {
             if (stageWait) { await stageWait; guard(); }

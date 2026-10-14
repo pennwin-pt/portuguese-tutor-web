@@ -20,6 +20,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   scene-lab.html / js/scene-lab.js                                          场景模板调试预览页（复用已发布模板，测验预览不提交判分）
   js/scene.js / css/scene.css                                               场景演练 DOM 层（台词气泡、热点按钮、人物点击锚点、篮子、选词面板）；只支持 3D；对外 Scene.canPlay / play / emojiOf
   js/stage3d.js / js/stage3d-layouts.js / js/vendor/three-bundle.js         3D 舞台（Three.js）与每个模板的 3D 布局 LAYOUTS[模板id]；模型放 models/<路径>.glb，缺文件时用兜底几何体
+  js/roam/{index,arena,physics,input}.js / css/roam.css                    派对闯关（roam）：自由走动的 3D 场地，tpl.roam 时由 scene.js 动态加载（样式由 loadRoam 自动插入，不用改 HTML）
 后端:
   main.py                  FastAPI入口,挂聊天/用户/单词/管理 API 路由 + startup 初始化各 manager(SQLite)
   run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
@@ -45,7 +46,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   memory/word_task_manager.py     每日"是否完成"记录(word_task_done)
   memory/word_error_manager.py    错词事件流(word_errors)
   memory/word_example_manager.py  ★生成例句缓存(P4):word_examples/word_example_use 两张表 + norm_sentence/pick_example 轮换
-  scenes/*.json            场景模板（15 个，启动时由注册表加载，改完要重启后端）；3D 布局不在这里，在前端 stage3d-layouts.js
+  scenes/*.json            场景模板（16 个，启动时由注册表加载，改完要重启后端）；3D 布局不在这里，在前端 stage3d-layouts.js
   memory/scene_registry.py 场景模板注册表与校验（tools/validate_scenes.py 调用）
   prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona, focus_words=None)
   prompts/helper_prompts.py 中文求助翻译/语法解析/单词拆解提示词
@@ -330,6 +331,17 @@ WordMemorizer.Core/
 - **用户自己准备 3D 模型**:凡是布局里新增模型,回复里要给**清单**——相对 `models/` 的文件名、新增还是复用、外观要求、高度/比例、朝向、面数/体积建议、通用要求(单个 `.glb`、贴图内嵌、不需要骨骼动画、风格与现有低多边形模型一致)。
 - 选词面板（`word_choice`）所有模板统一样式（偏下居中的米色面板）,不再有按模板区分的底色/位置。
 
+### 派对闯关（`roam_party`，`tpl.roam === true`）
+- **玩法**:全屏横屏,浮动摇杆 + 跳 + 抓,小人在漂浮岛上找答案;**一次抓取 = 一次 `ctx.evaluateChoice`**(和 `word_choice` 判分一致),已答对(`pad.scored`)的物件掉下去后再抓不再请求;抓错只给气泡反馈,不用走回去。自动抓取**默认开**(速度 < 0.5 m/s、物件在面前 60° 内、站满 0.8 秒,读条可反悔;`localStorage.roam_autograb='0'` 关闭,暂停菜单里可切)。
+- **节点**:`roam_choice`(`options` 必须 correct=1/distractors=3、`grab_range` 0.8–3、`hints`、`wrong_feedback{pt,zh}`、`on_correct` 指向 `roam_deliver`)和 `roam_deliver`;模板要 `roam: true` + `arena`(= `js/roam/arena.js` 的 `ARENAS` 键);校验器 `scene_registry.py` 里 `ROAM_NODE_TYPES`,roam 模板不允许 `hotspot_choice` / `actor_tap` / `word_choice`,`applies_to.pos` 只能是 `["noun"]`。v1 只做名词,`manualOnly`(只给在管理端明确选了它的词用)。
+- **接口**:`roam/index.js` 的 `create()` 返回和 stage3d 兼容的对象(`follow / enter / talk / cheer / cameraTo / dispose / fail`)+ `run(opts)`(答对时 resolve)+ `deliver()`;复用 `stage3d.js` 导出的 `shared3d`(渲染器单例、`loadModel`、`normalize`、`blobShadow`…)和 `claimActive / releaseActive`(WebGL 上下文丢失时走 `fail()` → 错误卡)。
+- **文件**:`arena.js`(场地数据 `ARENAS` + 构建;缺模型用兜底几何体)、`physics.js`(固定步长 1/60;球 vs AABB、弹跳垫、旋转杆击退;**手感参数都在 `PHYS`**)、`input.js`(Pointer Events 摇杆/按钮/视角拖动 + 键盘 WASD、空格、E 调试)、`index.js`(渲染循环、角色程序动画、跟随镜头、物件与标签、HUD、抓取/搬运/交付状态机)。
+- **场地 v1(最小版)**:出生台 → 中枢(交付环 + 朋友)→ N(三个弹跳垫上 2 m 高台)、E(2.6 m 宽桥 + 旋转杆)两个障碍岛,S、A 两个平地岛;四个底座按 `word.id*1000+YYYYMMDD` 种子洗牌。传送带、移动平台、空中岛留到以后。掉下去(y<-6)黑屏 0.5 秒回最近的"重生点"(`tiles[].rp`),搬运中的物件回原底座。
+- **实测过的手感**(`/tmp` 里的无浏览器脚本):弹跳垫起跳时机窗口很宽;旋转杆原参数(6 m、1.2 rad/s)几乎过不去(约 1%),现在 3.6 m / 0.8 rad/s / 高 0.4 m,随便跑约 6 成能过。改旋转杆或桥的参数要重新验证通过率。
+- **bundle 限制**:`js/vendor/three-bundle.js` 只导出 30 个名字(Box/Capsule/Cone/Cylinder/Plane/Sphere 几何体、`Fog`、`HemisphereLight`、`LoopOnce`…),**没有** `TorusGeometry` / `CircleGeometry` / `RingGeometry` / `Vector2` / `DoubleSide`;圆环用 `arena.js` 的 `makeRing()`(一圈小长方体)。要用别的类先查 bundle 导出。
+- **资源**(缺文件静默退化):模型 `models/roam/{player,platform_tile,bounce_pad,spinner,pedestal,delivery_ring}.glb`(+ 可选 `cloud`,复用 `characters/friend`),音效 `sounds/roam/{jump,land,bounce,grab,wrong,deliver,respawn,bump}.wav`。`player.glb` 为蛋形静态网格(动画全是程序的,可选节点 `HandL`/`HandR`);`spinner.glb` 原点在立柱中心、横杆沿 x 轴。
+- **本地存储**:`roam_autograb`、`roam_dpr`(自适应画质:帧时间 > 20/28 ms 把 DPR 降到 1.5/1;**一次变慢会被记住**,可清掉)。v1 没做:镜头自动回正、首次教程、触觉开关、传送带/移动平台。
+
 ### 场景模板（`scenes/*.json`，注册表 `memory/scene_registry.py` 启动时加载；改完要重启后端）
 
 **目标结构**：每个场景有 3 次有意义的操作——点人物问线索 → 选地点（探索）→ 选词（评判）。只有最后的 `word_choice` 会提交 `/words/scene/evaluate`；点人物、点错地点都不发请求、不计错。
@@ -351,6 +363,7 @@ WordMemorizer.Core/
 | `verb_park` | 动词 | 草地 / 湖边 / 长椅 |
 | `verb_restaurant` | 动词 | 菜单板 / 柜台 / 厨房窗口 |
 | `verb_persuade` | 动词（`roomOnly`、`manualOnly`） | 足球 / 冰淇淋 / 小鸭子 |
+| `roam_party` | 名词（`manualOnly`、`roam`） | 没有热点：跑去四个岛抓答案（见「派对闯关」小节） |
 
 最后一步 `word_choice` 的选项由词性决定；`manualOnly` 的模板不参加自动轮换，只在词里明确选了它时才用。模板 JSON 里**没有** `root` / `scenery` 字段了（那是 2D 背景用的，已随 2D 一起删除）；`cast`（人物配色）保留，3D 没有模型时用它给兜底小人上色。
 

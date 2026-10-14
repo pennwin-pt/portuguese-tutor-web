@@ -401,3 +401,9 @@ export async function create(opts) {
     if (missing.size) console.info('stage3d: 以下模型未找到，已用兜底几何体代替：', [...missing].map(m => `models/${m}.glb`));
     return api;
 }
+
+/* ---------- 给 js/roam/ 复用：同一个 WebGL 上下文、模型缓存、兜底几何体 ---------- */
+export const shared3d = { getRenderer, loadModel, normalize, blobShadow, fallbackPerson, mat, ease, reduced };
+/* roam 登记自己为"当前舞台"：getRenderer 的 webglcontextlost 会调用 active.fail()；也会让旧舞台先 dispose */
+export function claimActive(api) { if (active && active !== api) active.dispose(); active = api; }
+export function releaseActive(api) { if (active === api) active = null; }
