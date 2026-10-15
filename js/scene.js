@@ -115,6 +115,7 @@
     };
     const adjectiveForm = (w, c) => w[`adjective_${c.gender}_${c.number}`] || w.pt_word || '';
     const adjectiveIdx = c => (c.gender === 'm' ? 0 : 1) + (c.number === 'singular' ? 0 : 2);
+    const adjectiveField = c => `adjective_${c.gender}_${c.number}`;     // 词形字段名；朗读接口的 form 参数只认这四个名字（后端 word_routes.ADJECTIVE_FORM_FIELDS）
 
     let templateRequest = null;
     function loadTemplates() {
@@ -176,6 +177,10 @@
         const mode = ctx.mode === 'assessment' || ctx.mode === 'preview' ? ctx.mode : (ctx.evaluateChoice ? 'assessment' : 'preview');
         const pool = ctx.pool || [], zh = w.cn_meaning || '', em = emojiOf(w), CANCEL = {};
         const nounCtx = tpl.adjectiveOnly ? adjectiveContext(w, tpl) : { noun: '', nounZh: '', article: '', index: 0 };
+        // 形容词走路版：roam_choice 带 variant_by:"noun_context" → 场地按名词语境换摆件（序号 = nounCtx.index，和 speakNode 给 line-audio 的 variant 是同一个）
+        const variantIdx = Object.values(tpl.nodes || {}).some(x => x && x.type === 'roam_choice' && x.variant_by === 'noun_context') ? nounCtx.index : undefined;
+        // 词牌读音要读牌上显示的词形（而不是词典原形 pt_word）；只有形容词、且语境带性数时才有
+        const formField = tpl.adjectiveOnly && nounCtx.gender && nounCtx.number ? adjectiveField(nounCtx) : null;
         let alive = true;
         const guard = () => { if (!alive) throw CANCEL; };
         const wait = async ms => { await sleep(ms); guard(); };
@@ -220,7 +225,7 @@
         }
         root.classList.add('is3d-wait');
         const stageWait = (tpl.roam ? loadRoam() : loadStage3D())
-            .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(), ctx,
+            .then(mod => mod.create({ view, tpl, hotspots: tpl.hotspots || [], debug: debug3D(), ctx, variant: variantIdx,
                 onLost: () => showStageError('3D 画面丢失（显卡上下文被系统回收），请退出后重新进入场景。') }))
             .then(s3 => {
                 if (!s3) throw new Error('这个场景的 3D 画面不可用（浏览器不支持 WebGL，或模板缺少 3D 布局）。');
@@ -262,6 +267,7 @@
             try { return Promise.resolve(ctx.speakLine(tpl.id, nodeId, variant, btn)).catch(() => false); } catch (e) { return null; }
         };
         const speakWord = btn => { if (ctx.speak) ctx.speak(w, 'word', btn || null); };
+        const speakForm = btn => { if (ctx.speak) ctx.speak(w, 'word', btn || null, formField); };   // 形容词走路版交付后：读这张牌的词形
 
         /* --- 控制条：主按钮（可选）+ “退出场景”（始终在） --- */
         function setCtl(label) {
@@ -516,14 +522,16 @@
             setCtl(null); root.classList.add('rm-playing');
             const disp = (o.list[0] && o.list[0].disp) || 'pt';
             const today = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+            const nounClue = variantIdx != null && nounCtx.icon ? { icon: nounCtx.icon, zh: `${nounCtx.nounZh}${nounCtx.number === 'plural' ? '（几个）' : ''}` } : null;
             await stage.run({
                 pads: o.list, display: disp, seed: (Number(w.id) || 1) * 1000 + today,   // 同一天同一个词，底座分配不变
-                clue: { emoji: em, zh }, preview: mode === 'preview', autoGrab: true,
+                // 形容词走路版：线索卡 = 名词图标 + 名词中文 + "找“{target_zh}”的词牌"（名词图标不泄露答案，预习 / 测验都显示）；variant = 展台 / 舞台上摆哪一组
+                clue: nounClue ? { emoji: em, zh: `找“${zh}”的词牌`, noun: nounClue } : { emoji: em, zh }, variant: variantIdx, preview: mode === 'preview', autoGrab: true,
                 correctSlot: n.slot_by_zone ? (w.scene_zone || null) : null,       // shop：正确答案放在这个词所属的货架区（没配置就随机）
                 grabRange: n.grab_range || 1.4, hints: n.hints || {},
                 onApproach: pad => {                                                      // 预习：靠近物件时读它的葡语（测验不读，会泄露答案）
                     const rec = pad.ok ? w : (ctx.pool || []).find(p => p.id === pad.id);
-                    if (rec && ctx.speak) ctx.speak(rec, 'word', null);
+                    if (rec && ctx.speak) ctx.speak(rec, 'word', null, formField);       // 形容词：读牌上显示的词形；通用池的牌（id=-1）没有词记录，不读
                 },
                 onGrab: async x => {
                     if (!ctx.evaluateChoice) x.passed = x.ok;
@@ -561,7 +569,8 @@
             await stage.deliver(); guard();
             root.classList.remove('rm-playing');
             dialogueBubble.className = 'sc-dialogue-bubble';
-            speakWord(null); await wait(1100);                                    // 交付成功：读一遍这个词，再进入"谢谢"
+            if (formField) speakForm(null); else speakWord(null);                 // 交付成功：读一遍这个词（形容词读牌上的词形），再进入"谢谢"
+            await wait(1100);
             return n.next;
         }
 

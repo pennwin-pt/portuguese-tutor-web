@@ -65,10 +65,11 @@ const player = $('#player');
 const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 function unlock() { player.src = SILENT; player.play().catch(() => {}); primeSfx(); }   // 在用户手势内解锁 iOS 自动播放（朗读 + 音效）
 let spkBtn = null;
-function speak(w, kind, btn) {                     // kind: 'word' | 'sentence'；后端按 word_id 取文本合成，前端不传文本
+function speak(w, kind, btn, form) {               // kind: 'word' | 'sentence'；后端按 word_id 取文本合成，前端不传文本；form（可选，仅 word）：形容词词形字段名，读牌上显示的那个词形
     spkBtn?.classList.remove('play'); spkBtn = btn || null;
     const c = ttsCfg(), q = new URLSearchParams({ kind, tts_provider: c.provider });
     if (c.voice) q.set('tts_voice', c.voice);
+    if (kind === 'word' && form) q.set('form', form);          // 形容词走路版的词牌读音（后端白名单：adjective_{m|f}_{singular|plural}）
     if (kind === 'sentence' && w.ex) q.set('ex', w.ex);       // 填空题用的是第 ex 条生成例句：读的必须和屏幕上显示的是同一句（ex 为 0 / 没有 = 原例句）
     player.src = `${API}/api/words/${w.id}/audio?${q}`;
     player.play().then(() => spkBtn?.classList.add('play')).catch(() => toast('朗读失败，点喇叭重试'));

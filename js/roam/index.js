@@ -30,9 +30,10 @@ function sfx(name) {
     } catch { /* 没有音效文件就静默 */ }
 }
 
-export async function create({ view, tpl, debug, onLost, ctx }) {
+export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     const sh = getRenderer(), renderer = sh.renderer, canvas = sh.canvas;
     const arena = await buildArena(tpl.arena, tpl);
+    if (arena.variantCount) arena.setVariant(Number.isInteger(variant) ? variant : 0);      // 形容词走路版：从开场对话起展台上就摆着本词语境的名词
     const playerGltf = await loadModel('roam/player');
 
     const scene = new T.Scene();
@@ -64,8 +65,9 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
 
     const world = { boxes: arena.boxes, spinners: arena.spinners, fallY: arena.fallY };
     const P = createPlayer(arena.spawn);
-    P.facing = Math.PI / 2;                                        // 出生朝东（朝中枢）
-    let yaw = -Math.PI / 2;                                         // 镜头水平角：镜头在人物西侧、朝东（中枢方向）看；0 = 镜头在南侧朝北看
+    const startFacing = arena.startYaw != null ? arena.startYaw + Math.PI : Math.PI / 2;   // 场地写了 startYaw（形容词展台 / 舞台：朝北）就按它出生，否则朝东
+    P.facing = startFacing;                                        // 出生朝东（朝中枢）
+    let yaw = arena.startYaw != null ? arena.startYaw : -Math.PI / 2;   // 镜头水平角：镜头在人物西侧、朝东（中枢方向）看；0 = 镜头在南侧朝北看
 
     /* ---------- DOM：HUD + 标签层 ---------- */
     const labelsLayer = el('div', 'rm-labels');
@@ -156,7 +158,7 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
         const rest = shuffle(all.filter(i => i !== okSlot)); let k = 0;
         return pads.map((_, i) => i === okI ? okSlot : rest[k++ % rest.length]);
     }
-    function makeOrbs(pads, display, seed, correctSlot) {
+    function makeOrbs(pads, display, seed, correctSlot, fitLong) {
         const slotIdx = assignSlots(pads, seed, correctSlot);
         pads.forEach((pad, i) => {
             const slot = arena.slots[slotIdx[i]];
@@ -167,6 +169,7 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
             const label = el('div', 'rm-label');
             if (display !== 'pt' && pad.emoji) label.append(el('span', 'rm-l-emoji', pad.emoji));
             label.append(el('span', 'rm-l-text', pad.text), el('i', 'rm-l-prog'));
+            if (fitLong && pad.text && pad.text.length >= 10) label.classList.add(pad.text.length >= 13 ? 'xl' : 'long');   // 形容词词形较长（inteligentes）：字号收一档，不溢出
             labelsLayer.append(label);
             orbs.push({ pad, slot, mesh, halo, label, home: mesh.position.clone(), phase: i * 1.7, scale: 1, heard: false, prog: 0, carried: false });
         });
@@ -283,12 +286,12 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
             const d = Math.hypot(arena.ring.pos.x - P.x, arena.ring.pos.z - P.z);
             if (d <= arena.ringR && Math.abs(P.y - PLAYER_R - arena.ring.pos.y) < 1.2) {
                 mode = 'delivering'; sfx('deliver'); arena.ring.active = false; arrow.hidden = true;
-                const o = carrying, from = o.mesh.position.clone(), fp = arena.friend.root.position; let k = 0;
+                const o = carrying, from = o.mesh.position.clone(), dv = arena.delivery(), fp = dv.target || arena.friend.root.position, endY = dv.target ? dv.target.y : 1.4; let k = 0;   // 有变体：飞向展台 / 舞台上的名词；否则飞向朋友（老行为）
                 const fly = () => {
                     if (!alive) return; k += 0.05; const e = ease(Math.min(1, k));
-                    o.mesh.position.set(from.x + (fp.x - from.x) * e, from.y + (1.4 - from.y) * e + Math.sin(e * Math.PI) * 0.8, from.z + (fp.z - from.z) * e);
+                    o.mesh.position.set(from.x + (fp.x - from.x) * e, from.y + (endY - from.y) * e + Math.sin(e * Math.PI) * 0.8, from.z + (fp.z - from.z) * e);
                     o.mesh.scale.setScalar(1 - e * 0.8);
-                    if (k < 1) requestAnimationFrame(fly); else { if (arena.deliverProp) arena.bounce(arena.deliverProp); o.mesh.visible = false; o.label.remove(); carrying = null; arena.ring.obj.visible = false; setHud(false); mode = 'idle'; const r = deliverResolve; deliverResolve = null; r && r(); }
+                    if (k < 1) requestAnimationFrame(fly); else { if (dv.bounce.length) arena.bounce(dv.bounce); o.mesh.visible = false; o.label.remove(); carrying = null; arena.ring.obj.visible = false; setHud(false); mode = 'idle'; const r = deliverResolve; deliverResolve = null; r && r(); }
                 };
                 fly();
             }
@@ -384,9 +387,13 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
             return new Promise(resolve => {
                 clearOrbs();
                 opts.hints = opts.hints || {};
-                makeOrbs(opts.pads, opts.display, opts.seed || 1, opts.correctSlot);
-                clueEmoji.textContent = opts.clue && opts.clue.emoji && opts.display !== 'pt' ? opts.clue.emoji : '';
-                clueZh.textContent = (opts.clue && opts.clue.zh) || '';
+                if (arena.variantCount && Number.isInteger(opts.variant)) arena.setVariant(opts.variant);
+                makeOrbs(opts.pads, opts.display, opts.seed || 1, opts.correctSlot, opts.variant != null);
+                /* 线索卡：形容词走路版带 clue.noun（名词图标 + 名词中文），图标不受 display 控制（名词图标不泄露答案）；其余场景保持原样 */
+                const noun = opts.clue && opts.clue.noun;
+                clueEmoji.textContent = noun && noun.icon ? noun.icon : (opts.clue && opts.clue.emoji && opts.display !== 'pt' ? opts.clue.emoji : '');
+                clueEmoji.classList.toggle('multi', [...clueEmoji.textContent].length > 2);
+                clueZh.textContent = noun && noun.zh ? `${noun.zh}\n${(opts.clue && opts.clue.zh) || ''}` : ((opts.clue && opts.clue.zh) || '');
                 run = { opts, resolve, t: 0, since: 0, wrong: 0, cool: 0, near: null, range: opts.grabRange || 1.4 };
                 mode = 'free'; setHud(true);
                 if (!reduced()) introT = run_introDur;
@@ -405,7 +412,7 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
         }
     };
     claimActive(api);
-    P.facing = Math.PI / 2; pv.rotation.y = P.facing;
+    P.facing = startFacing; pv.rotation.y = P.facing;
     raf = requestAnimationFrame(frame);
     return api;
 }

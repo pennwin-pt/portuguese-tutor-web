@@ -348,6 +348,70 @@ export const ARENAS = {
         ],
         slots: [{ id: 'field', pos: [-8, 0, -2.4] }, { id: 'picnic', pos: [0, 0, -1.9] }, { id: 'school', pos: [8.2, 0, -3.4] }, { id: 'camera', pos: [11, 0, 0.9] }],
         camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
+    },
+
+    /* ---- 形容词走路版（describe_object / describe_person）----
+       玩法：名词（物件 / 人）摆在场地中央，4 张形容词词牌挂在四角，抓对的带到交付环，词牌飞到名词上"贴"上去。
+       variants：长度必须等于模板 noun_contexts 的个数（4），顺序和模板一致；scene.js 把本词的语境序号传进来，只显示那一组。
+         每组 { props / people, deliver: 词牌飞向的终点, bounce: 交付成功时一起弹一下的摆件 id }；摆件和人物都登记进 props，所以人物也能弹。
+       startYaw：镜头起始水平角（0 = 镜头在南侧朝北看，正对中央的展台 / 舞台）；不写则沿用默认（朝东）。 */
+    /* describe_object：展台广场。variants 0 杯子 / 1 房子 / 2 书（两摞）/ 3 几座房子（三座）。 */
+    adj_plaza: {
+        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
+        ring: { pos: [0, 0, 1.2], r: 1.3 }, friend: { pos: [3.4, 0, 1.6], rotY: -2.3 },
+        tiles: [{ x: 0, z: 0, w: 24, d: 14, thick: 0.6, color: '#e7e1d6', flat: true, rp: [0, 0, 5.5] }],
+        decor: [{ pos: [0, 0.02, -2.4], size: [5.6, 0.04, 5.0], color: '#d4ccbc' }],
+        pads: [], spinners: [],
+        props: [
+            // 圆形展台（直径约 2.4 m、高 0.5 m）：有 roam/podium.glb 用模型，没有就用圆柱兜底；solid 是碰撞盒（跳得上去，但不用上去）
+            { id: 'podium', model: 'roam/podium', pos: [0, 0, -2.4], h: 0.5, solid: [2.4, 0.5, 2.4],
+              fb: { parts: [{ shape: 'cyl', size: [2.7, 0.5], pos: [0, 0.25, 0], color: '#f5efe6' }, { shape: 'cyl', size: [2.3, 0.06], pos: [0, 0.53, 0], color: '#e5b86b' }] } },
+            { model: 'street/tree_1', pos: [-10.6, 0, -5.6], h: 3.2, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [10.6, 0, -5.8], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] }
+        ],
+        variants: [
+            { props: [{ id: 'cup', model: 'room/cup', pos: [0, 0.5, -2.4], h: 0.5, fb: 'cup' }], deliver: [0, 1.3, -2.4], bounce: ['cup'] },
+            { props: [{ id: 'house', model: 'street/building_1', pos: [0, 0.5, -2.4], h: 1.3, fb: { w: 1.1, color: '#f2c7a5', house: true } }], deliver: [0, 2.2, -2.4], bounce: ['house'] },
+            { props: [{ id: 'booksL', model: 'room/books', pos: [-0.5, 0.5, -2.4], h: 0.45, fb: 'books' }, { id: 'booksR', model: 'room/books', pos: [0.5, 0.5, -2.4], h: 0.45, rotY: 0.5, fb: 'books' }],
+              deliver: [0, 1.3, -2.4], bounce: ['booksL', 'booksR'] },
+            { props: [{ id: 'h1', model: 'street/building_1', pos: [-0.8, 0.5, -2.3], h: 0.85, fb: { w: 0.7, color: '#f2c7a5', house: true } },
+                      { id: 'h2', model: 'street/building_1', pos: [0, 0.5, -2.7], h: 0.85, fb: { w: 0.7, color: '#a7c7e7', house: true } },
+                      { id: 'h3', model: 'street/building_1', pos: [0.8, 0.5, -2.3], h: 0.85, fb: { w: 0.7, color: '#f5d98b', house: true } }],
+              deliver: [0, 1.8, -2.5], bounce: ['h1', 'h2', 'h3'] }
+        ],
+        slots: [{ id: 'nw', pos: [-7, 0, -3.8] }, { id: 'ne', pos: [7, 0, -3.8] }, { id: 'sw', pos: [-7, 0, 3.2] }, { id: 'se', pos: [7, 0, 3.2] }],
+        camIntro: { pos: [0, 16, 12], look: [0, 0, -1] }
+    },
+
+    /* describe_person：舞台操场。variants 0 一个男孩 / 1 一个女孩 / 2 三个男孩 / 3 三个女孩。
+       舞台高 0.2 m（≤ PHYS.step 0.25，走过去自动上台阶，不用跳）；人站在舞台上（y = 0.2）。 */
+    adj_stage: {
+        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
+        ring: { pos: [0, 0, 1.6], r: 1.3 }, friend: { pos: [3.8, 0, 2.0], rotY: -2.3 },
+        tiles: [{ x: 0, z: 0, w: 26, d: 15, thick: 0.6, color: '#cfe7c4', flat: true, rp: [0, 0, 5.5] }],
+        decor: [
+            { pos: [0, 0.1, -2.9], size: [6.4, 0.2, 3.2], color: '#e8c98a', solid: true },        // 矮舞台
+            { pos: [0, 0.205, -2.9], size: [6.0, 0.01, 2.8], color: '#f3dfb0' }                    // 台面（浅色一圈，看得出是舞台）
+        ],
+        pads: [], spinners: [],
+        props: [
+            { model: 'street/tree_1', pos: [-11.2, 0, -6.2], h: 3.4, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [11.2, 0, -6.4], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] }
+        ],
+        variants: [
+            { people: [{ id: 'a', model: 'people/boy_a', pos: [0, 0.2, -2.9], h: 1.5, look: { shirt: '#3b82f6', hair: '#3b2a20' } }], deliver: [0, 2.1, -2.9], bounce: ['a'] },
+            { people: [{ id: 'a', model: 'people/girl_a', pos: [0, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } }], deliver: [0, 2.0, -2.9], bounce: ['a'] },
+            { people: [{ id: 'a', model: 'people/boy_a', pos: [-1.3, 0.2, -2.9], h: 1.5, look: { shirt: '#3b82f6', hair: '#3b2a20' } },
+                       { id: 'b', model: 'people/boy_b', pos: [0, 0.2, -2.9], h: 1.5, look: { shirt: '#ef4444', hair: '#111827' } },
+                       { id: 'c', model: 'people/boy_a', pos: [1.3, 0.2, -2.9], h: 1.5, look: { shirt: '#22c55e', hair: '#3b2a20' } }],
+              deliver: [0, 2.1, -2.9], bounce: ['a', 'b', 'c'] },
+            { people: [{ id: 'a', model: 'people/girl_a', pos: [-1.3, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
+                       { id: 'b', model: 'people/girl_b', pos: [0, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } },
+                       { id: 'c', model: 'people/girl_a', pos: [1.3, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#f97316', hair: '#111827' } }],
+              deliver: [0, 2.0, -2.9], bounce: ['a', 'b', 'c'] }
+        ],
+        slots: [{ id: 'nw', pos: [-8, 0, -4.6] }, { id: 'ne', pos: [8, 0, -4.6] }, { id: 'sw', pos: [-8, 0, 3.4] }, { id: 'se', pos: [8, 0, 3.4] }],
+        camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
     }
 };
 
@@ -369,7 +433,8 @@ export async function buildArena(arenaId, tpl) {
     const A = ARENAS[arenaId];
     if (!A) throw new Error(`没有名为 ${arenaId} 的场地（js/roam/arena.js 的 ARENAS）`);
     const loaded = {};
-    const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model).filter(Boolean), ...(A.people || []).map(p => p.model).filter(Boolean)])];
+    const variantItems = (A.variants || []).flatMap(v => [...(v.props || []), ...(v.people || [])]);
+    const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model).filter(Boolean), ...(A.people || []).map(p => p.model).filter(Boolean), ...variantItems.map(p => p.model).filter(Boolean)])];
     await Promise.all(wanted.map(async p => { loaded[p] = await loadModel(p); }));
     const clone = p => T.cloneSkinned(loaded[p].scene);
 
@@ -463,6 +528,24 @@ export async function buildArena(arenaId, tpl) {
         g.position.set(...p.pos); g.rotation.y = p.rotY || 0; root.add(g);
     }
 
+    /* ---- 变体（形容词走路版：按名词语境换摆件 / 人物，一次只显示一组）----
+       摆件和人物都登记进 props（键 "变体序号:id"），交付时和普通道具一样"弹一下"；变体里的东西不参与碰撞（站在展台 / 舞台上）。 */
+    const variants = (A.variants || []).map((v, i) => {
+        const group = new T.Group(); group.visible = false; root.add(group);
+        const put = (p, person) => {
+            const spec = { h: p.h, fb: typeof p.fb === 'string' ? { parts: PARTS[p.fb] } : (p.fb || {}) };
+            const obj = person
+                ? (loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackPerson(p.look || null), { h: p.h }))
+                : (p.model && loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackProp(spec), { h: p.h }));
+            obj.position.set(...p.pos); obj.rotation.y = p.rotY || 0; group.add(obj);
+            props[`${i}:${p.id}`] = { obj, base: obj.scale.clone(), bounce: 0 };
+        };
+        (v.props || []).forEach(p => put(p, false));
+        (v.people || []).forEach(p => put(p, true));
+        return { group, deliver: v.deliver ? new T.Vector3(...v.deliver) : null, bounce: (v.bounce || []).map(id => `${i}:${id}`) };
+    });
+    let variant = -1;
+
     /* ---- 交付环 ---- */
     let ringObj;
     if (loaded['roam/delivery_ring']) ringObj = normalize(clone('roam/delivery_ring'), { w: A.ring.r * 2 });
@@ -516,9 +599,12 @@ export async function buildArena(arenaId, tpl) {
     let t = 0;
     return {
         root, boxes, spinners, slots, ring, friend, pads, spawn: A.spawn, fallY: A.fallY, sky: A.sky, camIntro: A.camIntro, ringR: A.ring.r,
-        deliverProp: A.deliverProp,
+        deliverProp: A.deliverProp, startYaw: A.startYaw, variantCount: variants.length,
         padHit(i) { if (pads[i]) pads[i].squash = 1; },
-        bounce(id) { if (props[id]) props[id].bounce = 1; },                  // 交付成功：宝箱之类的道具弹一下
+        bounce(id) { for (const k of [].concat(id)) if (props[k]) props[k].bounce = 1; },   // 交付成功：宝箱之类的道具弹一下（id 可以是数组：复数名词的几个摆件 / 几个人一起弹）
+        setVariant(i) { variant = variants[i] ? i : -1; variants.forEach((v, k) => { v.group.visible = k === variant; }); },   // 形容词走路版：只显示本词名词语境对应的那一组
+        /* 交付成功时词牌飞向哪里、哪些东西弹一下：有变体用变体的；没有变体保持老行为（target=null → 飞向朋友，弹 deliverProp） */
+        delivery() { const v = variants[variant]; return v ? { target: v.deliver, bounce: v.bounce } : { target: null, bounce: A.deliverProp ? [A.deliverProp] : [] }; },
         update(dt) {
             t += dt;
             for (const s of spinners) { s.obj.rotation.y = -s.angle; }

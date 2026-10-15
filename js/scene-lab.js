@@ -16,8 +16,8 @@
         player.pause(); player.src = `/api/scene/line-audio?${q}`;
         return player.play().then(() => true).catch(() => false);
     };
-    const sayWord = word => {
-        player.pause(); player.src = `/api/words/${word.id}/audio?kind=word&tts_provider=piper`;
+    const sayWord = (word, kind, btn, form) => {
+        player.pause(); player.src = `/api/words/${word.id}/audio?kind=word&tts_provider=piper${form ? `&form=${encodeURIComponent(form)}` : ''}`;
         player.play().catch(() => {});
     };
     function populateTemplates(preferred) {
