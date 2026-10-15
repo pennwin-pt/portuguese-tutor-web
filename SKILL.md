@@ -333,10 +333,10 @@ WordMemorizer.Core/
 
 ### 派对闯关（`roam_party`，`tpl.roam === true`）
 - **玩法**:全屏横屏,浮动摇杆 + 跳 + 抓,小人在漂浮岛上找答案;**一次抓取 = 一次 `ctx.evaluateChoice`**(和 `word_choice` 判分一致),已答对(`pad.scored`)的物件掉下去后再抓不再请求;抓错只给气泡反馈,不用走回去。自动抓取**默认开**(速度 < 0.5 m/s、物件在面前 60° 内、站满 0.8 秒,读条可反悔;`localStorage.roam_autograb='0'` 关闭,暂停菜单里可切)。
-- **节点**:`roam_choice`(`options` 必须 correct=1/distractors=3、`grab_range` 0.8–3、`hints`、`wrong_feedback{pt,zh}`、`on_correct` 指向 `roam_deliver`)和 `roam_deliver`;模板要 `roam: true` + `arena`(= `js/roam/arena.js` 的 `ARENAS` 键);校验器 `scene_registry.py` 里 `ROAM_NODE_TYPES`,roam 模板不允许 `hotspot_choice` / `actor_tap` / `word_choice`,`applies_to.pos` 只能是 `["noun"]` 或 `["verb"]`(形容词要名词语境,暂不支持)。目前 6 个 roam 模板:`roam_party`(名词,`manualOnly`)、`find` / `shop` / `restaurant`(名词)、`verb_treasure` / `verb_park`(动词);除 `roam_party` 外**保持原来的自动轮换身份**(没有 `manualOnly`)——走一圈 40–75 秒,比点选慢很多,嫌慢就在对应 json 里加 `"manualOnly": true`(代价:它们不再参与自动轮换,名词/动词的自动场景会变少)。这 5 个老场景原来的 3D 布局(`LAYOUTS.find` 等)现在没人用了,可以删。
+- **节点**:`roam_choice`(`options` 必须 correct=1/distractors=3、`grab_range` 0.8–3、`hints`、`wrong_feedback{pt,zh}`、`on_correct` 指向 `roam_deliver`)和 `roam_deliver`;模板要 `roam: true` + `arena`(= `js/roam/arena.js` 的 `ARENAS` 键);校验器 `scene_registry.py` 里 `ROAM_NODE_TYPES`,roam 模板不允许 `hotspot_choice` / `actor_tap` / `word_choice`,`applies_to.pos` 只能是 `["noun"]` 或 `["verb"]`(形容词要名词语境,暂不支持)。目前 13 个 roam 模板(16 个里只剩 `describe_object` / `describe_person`(形容词,需要名词语境)和 `verb_persuade` 还是点选):`roam_party`(名词,`manualOnly`)、`find` / `shop` / `restaurant` / `find_room` / `group_photo`(名词,`group_photo` 是 `manualOnly`)、`verb_treasure` / `verb_park` / `verb_restaurant` / `verb_magic` / `verb_home` / `verb_school` / `verb_note`(动词);除 `roam_party` 和 `group_photo` 外**保持原来的自动轮换身份**(没有 `manualOnly`;**注意:现在所有自动轮换的场景都是走路版**,只有形容词的 `describe_*` 和手动的 `verb_persuade` 还是点选)——走一圈 40–75 秒,比点选慢很多,嫌慢就在对应 json 里加 `"manualOnly": true`(代价:它们不再参与自动轮换,名词/动词的自动场景会变少)。这 12 个老场景原来的 3D 布局(`LAYOUTS.find` 等)现在没人用了,可以删。
 - **接口**:`roam/index.js` 的 `create()` 返回和 stage3d 兼容的对象(`follow / enter / talk / cheer / cameraTo / dispose / fail`)+ `run(opts)`(答对时 resolve)+ `deliver()`;复用 `stage3d.js` 导出的 `shared3d`(渲染器单例、`loadModel`、`normalize`、`blobShadow`…)和 `claimActive / releaseActive`(WebGL 上下文丢失时走 `fail()` → 错误卡)。
 - **文件**:`arena.js`(场地数据 `ARENAS` + 构建;缺模型用兜底几何体)、`physics.js`(固定步长 1/60;球 vs AABB、弹跳垫、旋转杆击退;**手感参数都在 `PHYS`**)、`input.js`(Pointer Events 摇杆/按钮/视角拖动 + 键盘 WASD、空格、E 调试)、`index.js`(渲染循环、角色程序动画、跟随镜头、物件与标签、HUD、抓取/搬运/交付状态机)。
-- **多个场地**:`ARENAS` 里每个键一个场地:`roam_party`(跑酷岛)、`treasure_island`、`street_find`、`shop_inside`、`restaurant_inside`、`park`。通用字段:`tiles`(地面,`flat:true` 用纯色盒子)、`decor`(地上的路/草坪/墙,`solid:true` 才有碰撞)、`props`(道具,`solid` 碰撞盒,`fb` 可写 PARTS 的键或 fallbackProp 参数)、`slots`(正好 4 个,`randomTarget:false` 表示正确答案不会被随机放到这里)、`seaY:null`(无海面)。`roam_party` 是跑酷岛;`treasure_island`(海岛寻宝)用了 `props`(棕榈树/岩石/小船/木桶/宝箱,模型 `beach/*`,缺了用 `stage3d-layouts.js` 导出的 `PARTS` 兜底;`solid` 是碰撞盒)、`slotPedestal:false`(钥匙直接挂在道具前面)、`tiles[].flat:true`(用纯色盒子,不用 platform_tile 模型)、`seaColor`。交付成功时 `arena.bounce('chest')` 让宝箱弹一下。新场地的流程:加 `ARENAS` 项 + 模板 JSON(`roam:true`、`arena`)+ 必要时补 `PARTS`。
+- **多个场地**:`ARENAS` 里每个键一个场地:`roam_party`(跑酷岛)、`treasure_island`、`street_find`、`shop_inside`、`restaurant_inside`(`restaurant` 和 `verb_restaurant` 共用)、`park`、`magic_room`、`home_house`、`classroom`(`verb_school` 和 `verb_note` 共用)、`study_room`、`schoolyard`(带 `people`);室内场地用 `roomShell()` 生成地板和单面墙;一个场地可以被多个模板共用,`deliverProp` 指交付成功时弹一下的道具 id。通用字段:`tiles`(地面,`flat:true` 用纯色盒子)、`decor`(地上的路/草坪;`solid:true` 才有碰撞;**墙用 `wall:true`**:单面平面,只从屋内看得见,镜头在墙外不会被挡,碰撞靠 `collide` 盒;不要用实心长方体当墙)、`props`(道具,`solid` 碰撞盒,`fb` 可写 PARTS 的键或 fallbackProp 参数)、`slots`(正好 4 个,`randomTarget:false` 表示正确答案不会被随机放到这里)、`seaY:null`(无海面)。`roam_party` 是跑酷岛;`treasure_island`(海岛寻宝)用了 `props`(棕榈树/岩石/小船/木桶/宝箱,模型 `beach/*`,缺了用 `stage3d-layouts.js` 导出的 `PARTS` 兜底;`solid` 是碰撞盒)、`slotPedestal:false`(钥匙直接挂在道具前面)、`tiles[].flat:true`(用纯色盒子,不用 platform_tile 模型)、`seaColor`。交付成功时 `arena.bounce('chest')` 让宝箱弹一下。新场地的流程:加 `ARENAS` 项 + 模板 JSON(`roam:true`、`arena`)+ 必要时补 `PARTS`。
 - **场地 v1(最小版)**:出生台 → 中枢(交付环 + 朋友)→ N(三个弹跳垫上 2 m 高台)、E(2.6 m 宽桥 + 旋转杆)两个障碍岛,S、A 两个平地岛;四个底座按 `word.id*1000+YYYYMMDD` 种子洗牌。传送带、移动平台、空中岛留到以后。掉下去(y<-6)黑屏 0.5 秒回最近的"重生点"(`tiles[].rp`),搬运中的物件回原底座。
 - **实测过的手感**(`/tmp` 里的无浏览器脚本):弹跳垫起跳时机窗口很宽;旋转杆原参数(6 m、1.2 rad/s)几乎过不去(约 1%),现在 3.6 m / 0.8 rad/s / 高 0.4 m,随便跑约 6 成能过。改旋转杆或桥的参数要重新验证通过率。
 - **bundle 限制**:`js/vendor/three-bundle.js` 只导出 30 个名字(Box/Capsule/Cone/Cylinder/Plane/Sphere 几何体、`Fog`、`HemisphereLight`、`LoopOnce`…),**没有** `TorusGeometry` / `CircleGeometry` / `RingGeometry` / `Vector2` / `DoubleSide`;圆环用 `arena.js` 的 `makeRing()`(一圈小长方体)。要用别的类先查 bundle 导出。
@@ -352,17 +352,17 @@ WordMemorizer.Core/
 | `shop` | 名词（`roam`） | 走路版（arena `shop_inside`）：四个货架区 fruit / bakery / drinks / digital，**正确答案放在这个词的 `scene_zone` 货架区**（`slot_by_zone`；没配置就随机，digital 不参与随机） |
 | `restaurant` | 名词（`foodOnly`、`roam`） | 走路版（arena `restaurant_inside`）：菜单板 / 厨房出餐口 / 柜台 / 餐桌 |
 | `find` | 名词（`roam`） | 走路版（arena `street_find`）：街上 4 处东西散落在 垃圾桶 / 长椅 / 邮筒 / 树 旁边，抓对的带给朋友 |
-| `find_room` | 名词（`roomOnly`） | 朋友 → 桌子 / 书架 / 背包 |
-| `group_photo` | 名词（`roomOnly`、`manualOnly`） | 球场 / 野餐桌 / 教学楼 |
+| `find_room` | 名词（`roam`） | 走路版（arena `study_room`）：桌子 / 书架 / 背包 / 床（第 4 个是新补的） |
+| `group_photo` | 名词（`roam`、`manualOnly`） | 走路版（arena `schoolyard`）：球场边 / 野餐桌 / 教学楼前 / 三脚架相机（第 4 个是新补的），场景里有三组人（没有 people/ 模型时用 look 画简易小人） |
 | `describe_object` | 形容词（`adjectiveOnly`） | 一个杯子 / 一座房子 / 几本书 / 几座房子（名词语境） |
 | `describe_person` | 形容词（`adjectiveOnly`） | 一个男孩 / 一个女孩 / 几个男孩 / 几个女孩 |
-| `verb_home` | 动词（`roomOnly`） | 厨房 / 卧室 / 客厅 |
-| `verb_school` | 动词（`roomOnly`） | 黑板 / 书架 / 书包 |
-| `verb_note` | 动词（`roomOnly`，任意动词形式） | 黑板 / 书架 / 书包 |
-| `verb_magic` | 动词（`roomOnly`，任意动词形式） | 魔法书 / 药水瓶 / 水晶球 / 大锅 |
+| `verb_home` | 动词（`roam`） | 走路版（arena `home_house`）：厨房 / 卧室 / 客厅 / 书房（第 4 个是新补的） |
+| `verb_school` | 动词（`roam`） | 走路版（arena `classroom`，和 `verb_note` 共用）：黑板 / 书架 / 书包 / 讲台（第 4 个是新补的） |
+| `verb_note` | 动词（`roam`，任意动词形式） | 走路版（arena `classroom`）：字条挂在 黑板 / 书架 / 书包 / 讲台 |
+| `verb_magic` | 动词（`roam`，任意动词形式） | 走路版（arena `magic_room`）：咒语卷轴挂在 魔法书桌 / 药水桌 / 水晶球桌 / 扫帚 前面，抓对的放进屋子中间的大锅（`deliverProp:'cauldron'`，交付时大锅弹一下） |
 | `verb_treasure` | 动词（`roam`，任意动词形式） | 派对闯关式：海岛上 4 处挂着钥匙（棕榈树 / 岩石 / 小船 / 木桶），抓对的带到宝箱；arena `treasure_island`；原来的"先找钥匙在哪"（hotspot_choice）这一步去掉了 |
 | `verb_park` | 动词（`roam`） | 走路版（arena `park`）：草坪 / 湖边 / 长椅 / 冰淇淋车 |
-| `verb_restaurant` | 动词 | 菜单板 / 柜台 / 厨房窗口 |
+| `verb_restaurant` | 动词（`roam`） | 走路版：**和 `restaurant` 共用 arena `restaurant_inside`**（菜单板 / 厨房出餐口 / 柜台 / 餐桌） |
 | `verb_persuade` | 动词（`roomOnly`、`manualOnly`） | 足球 / 冰淇淋 / 小鸭子 |
 | `roam_party` | 名词（`manualOnly`、`roam`） | 没有热点：跑去四个岛抓答案（见「派对闯关」小节） |
 

@@ -21,6 +21,20 @@ export function makeRing(r, tube, color, n = 32, opacity = 1) {
     return g;
 }
 
+/* 室内场地的公共外壳：一块地板 + 后墙 / 左右墙（单面墙，镜头在墙外不会被挡）。w×d 是地板大小，中心 (0, -0.5) */
+function roomShell(floor, wall, w = 22, d = 13) {
+    const z0 = -0.5 - d / 2, hw = w / 2;
+    return {
+        tile: { x: 0, z: -0.5, w, d, thick: 0.6, color: floor, flat: true, rp: [-hw + 2, 0, 3] },
+        walls: [
+            { wall: true, pos: [0, 2.2, z0], size: [w, 4.4], rotY: 0, color: wall, collide: [w, 4.4, 0.4] },
+            { wall: true, pos: [-hw, 2.2, -0.5], size: [d, 4.4], rotY: Math.PI / 2, color: wall, collide: [0.4, 4.4, d] },
+            { wall: true, pos: [hw, 2.2, -0.5], size: [d, 4.4], rotY: -Math.PI / 2, color: wall, collide: [0.4, 4.4, d] }
+        ]
+    };
+}
+const HOME = roomShell('#e6cfa8', '#f3dccb', 26), CLASS = roomShell('#d9c7a3', '#e2e8f0'), STUDY = roomShell('#e0c79a', '#ead9bd');
+
 export const ARENAS = {
     roam_party: {
         sky: '#bfe3ff', seaY: -5, fallY: -6,
@@ -54,7 +68,7 @@ export const ARENAS = {
     treasure_island: {
         sky: '#cfe9ff', seaY: -0.5, seaColor: '#5aaee8', fallY: -2.5,
         spawn: [-9.5, 0, 2],
-        ring: { pos: [0, 0, 2.0], r: 1.3 },
+        ring: { pos: [0, 0, 2.0], r: 1.3 }, deliverProp: 'chest',
         friend: { pos: [2.8, 0, 2.0], rotY: -2.0 },
         tiles: [{ x: 0, z: 0, w: 22, d: 14, thick: 1.2, color: '#f1dfaa', flat: true, rp: [-8, 0, 2] }],
         pads: [], spinners: [], slotPedestal: false,
@@ -196,6 +210,144 @@ export const ARENAS = {
         ],
         slots: [{ id: 'lawn', pos: [-8.5, 0, -1.9] }, { id: 'lake', pos: [5, 0, -0.6] }, { id: 'bench', pos: [-1.5, 0, -4.7] }, { id: 'cart', pos: [11, 0, -0.8] }],
         camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
+    },
+
+    /* verb_magic：魔法小屋。大锅在屋子中间（交付环绕着它）；四个咒语卷轴挂在 魔法书桌 / 药水桌 / 水晶球桌 / 扫帚 前面。
+       墙用单面墙（见 decor.wall）；夜空窗户是后墙上的装饰。 */
+    magic_room: {
+        sky: '#4c3a6b', seaY: null, fallY: -3,
+        spawn: [-9.5, 0, 3],
+        ring: { pos: [0, 0, 1.5], r: 1.3 }, deliverProp: 'cauldron',
+        friend: { pos: [3.4, 0, 2.9], rotY: -2.4 },
+        tiles: [{ x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#8b6f9e', flat: true, rp: [-9, 0, 3] }],
+        decor: [
+            { wall: true, pos: [0, 2.2, -7.0], size: [22, 4.4], rotY: 0, color: '#5b4580', collide: [22, 4.4, 0.4] },
+            { wall: true, pos: [-11.0, 2.2, -0.5], size: [13, 4.4], rotY: Math.PI / 2, color: '#5b4580', collide: [0.4, 4.4, 13] },
+            { wall: true, pos: [11.0, 2.2, -0.5], size: [13, 4.4], rotY: -Math.PI / 2, color: '#5b4580', collide: [0.4, 4.4, 13] },
+            { pos: [0, 0.03, 1.5], size: [7, 0.04, 4.4], color: '#7c3aed' },                         // 大锅下面的地毯
+            { pos: [5, 2.8, -6.96], size: [1.7, 1.5, 0.05], color: '#ffffff' },                      // 夜空窗户：窗框 + 夜色 + 两颗星
+            { pos: [5, 2.8, -6.92], size: [1.5, 1.3, 0.05], color: '#1e1b4b' },
+            { pos: [4.6, 3.1, -6.88], size: [0.12, 0.12, 0.03], color: '#fde68a' },
+            { pos: [5.4, 2.6, -6.88], size: [0.1, 0.1, 0.03], color: '#fde68a' }
+        ],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'room/table', pos: [-7.5, 0, -5.0], h: 0.8, fb: 'table', solid: [1.3, 0.8, 0.8] },
+            { model: 'magic/book', pos: [-7.5, 0.8, -5.0], h: 0.25, fb: 'spellbook' },
+            { model: 'room/table', pos: [-2.5, 0, -5.0], h: 0.8, fb: 'table', solid: [1.3, 0.8, 0.8] },
+            { model: 'magic/potion', pos: [-2.9, 0.8, -5.0], h: 0.4, fb: { parts: PARTS.potion('#f472b6') } },
+            { model: 'magic/potion', pos: [-2.5, 0.8, -5.0], h: 0.4, fb: { parts: PARTS.potion('#60a5fa') } },
+            { model: 'magic/potion', pos: [-2.1, 0.8, -5.0], h: 0.4, fb: { parts: PARTS.potion('#4ade80') } },
+            { model: 'room/table', pos: [2.5, 0, -5.0], h: 0.8, fb: 'table', solid: [1.3, 0.8, 0.8] },
+            { model: 'magic/crystal', pos: [2.5, 0.8, -5.0], h: 0.6, fb: 'crystal' },
+            { model: 'magic/broom', pos: [7.5, 0, -5.2], h: 1.6, rotY: 0.3, fb: 'broom', solid: [0.4, 1.6, 0.4] },
+            { id: 'cauldron', model: 'magic/cauldron', pos: [0, 0, 1.5], h: 1.1, fb: 'cauldron', solid: [1.1, 1.1, 1.1] }
+        ],
+        slots: [{ id: 'book', pos: [-7.5, 0, -3.5] }, { id: 'potion', pos: [-2.5, 0, -3.5] }, { id: 'crystal', pos: [2.5, 0, -3.5] }, { id: 'broom', pos: [7.5, 0, -3.7] }],
+        camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
+    },
+
+    /* verb_home：在家。四个区：厨房 / 卧室 / 客厅 / 书房（第 4 个是新补的，原来只有前三个）。 */
+    home_house: {
+        sky: '#fbeee6', seaY: null, fallY: -3, spawn: [-11.5, 0, 3],
+        ring: { pos: [0, 0, 2.2], r: 1.3 }, friend: { pos: [2.8, 0, 3.0], rotY: -2.3 },
+        tiles: [HOME.tile],
+        decor: [...HOME.walls,
+            { pos: [-8.4, 0.03, -3.8], size: [4.6, 0.04, 5.2], color: '#e2e8f0' },     // 厨房：浅灰地砖
+            { pos: [-2.8, 0.03, -3.8], size: [4.6, 0.04, 5.2], color: '#fecdd3' },     // 卧室：粉色地毯
+            { pos: [2.8, 0.03, -3.8], size: [4.6, 0.04, 5.2], color: '#bfdbfe' },      // 客厅：蓝色地毯
+            { pos: [8.4, 0.03, -3.8], size: [4.6, 0.04, 5.2], color: '#fde68a' },      // 书房：黄色地毯
+            { pos: [-2.8, 2.8, -6.96], size: [1.7, 1.5, 0.05], color: '#ffffff' }, { pos: [-2.8, 2.8, -6.92], size: [1.5, 1.3, 0.05], color: '#bfe3ff' }],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'room/stove', pos: [-8.8, 0, -5.8], h: 1.0, fb: 'stove', solid: [0.9, 0.9, 0.7] },
+            { model: 'shop/counter', pos: [-7.4, 0, -5.7], h: 1.0, fb: { w: 1.2, color: '#b9824a' }, solid: [1.2, 1.0, 0.6] },
+            { model: 'room/bed', pos: [-2.8, 0, -5.4], h: 0.9, fb: 'bed', solid: [1.7, 0.6, 2.0] },
+            { model: 'room/sofa', pos: [2.8, 0, -5.9], h: 0.95, fb: 'sofa', solid: [2.0, 0.9, 0.9] },
+            { model: 'room/table', pos: [2.8, 0, -4.0], h: 0.45, fb: 'table', solid: [1.1, 0.45, 0.6] },
+            { model: 'room/desk', pos: [8.4, 0, -5.8], h: 0.8, fb: 'desk', solid: [1.3, 0.8, 0.7] },
+            { model: 'room/chair', pos: [8.4, 0, -4.7], h: 0.95, rotY: Math.PI, fb: 'chair', solid: [0.5, 0.9, 0.5] }
+        ],
+        slots: [{ id: 'kitchen', pos: [-8.1, 0, -3.9] }, { id: 'bedroom', pos: [-2.8, 0, -3.0] }, { id: 'living', pos: [2.8, 0, -2.6] }, { id: 'study', pos: [8.4, 0, -3.3] }],
+        camIntro: { pos: [0, 17, 15], look: [0, 0, -1] }
+    },
+
+    /* verb_school + verb_note 共用：教室。四个位置：黑板 / 书架 / 书包（在课桌上）/ 讲台（第 4 个，新补的）。 */
+    classroom: {
+        sky: '#eef2f7', seaY: null, fallY: -3, spawn: [-9.5, 0, 3],
+        ring: { pos: [0, 0, 2.0], r: 1.3 }, friend: { pos: [3.0, 0, 2.8], rotY: -2.3 },
+        tiles: [CLASS.tile],
+        decor: [...CLASS.walls, { pos: [0, 0.03, 0.8], size: [8, 0.04, 4], color: '#bfdbfe' }],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { id: 'board', pos: [-7.5, 1.45, -6.85], h: 1.5, fb: { parts: PARTS.board('#1e4d3a', 3) } },       // 黑板（挂在墙上，不用下载）
+            { model: 'shop/shelf', pos: [-2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
+            { model: 'room/desk', pos: [2.5, 0, -5.0], h: 0.8, fb: 'desk', solid: [1.3, 0.8, 0.7] },
+            { model: 'room/bag', pos: [2.1, 0.8, -5.0], h: 0.5, rotY: 0.3, fb: 'bag' },                       // 书包放在课桌上
+            { model: 'room/chair', pos: [2.5, 0, -3.9], h: 0.95, rotY: Math.PI, fb: 'chair', solid: [0.5, 0.9, 0.5] },
+            { model: 'room/desk', pos: [7.5, 0, -5.0], h: 0.8, fb: 'desk', solid: [1.3, 0.8, 0.7] },          // 讲台
+            { pos: [7.5, 0.8, -5.0], h: 0.3, fb: 'books' },
+            { model: 'room/desk', pos: [-8.5, 0, 4.8], h: 0.8, fb: 'desk', solid: [1.3, 0.8, 0.7] },          // 角落的学生桌椅（不挡主通道）
+            { model: 'room/chair', pos: [-8.5, 0, 3.7], h: 0.95, rotY: Math.PI, fb: 'chair', solid: [0.5, 0.9, 0.5] }
+        ],
+        slots: [{ id: 'board', pos: [-7.5, 0, -5.0] }, { id: 'shelf', pos: [-2.5, 0, -4.6] }, { id: 'bag', pos: [2.5, 0, -3.1] }, { id: 'desk', pos: [7.5, 0, -3.3] }],
+        camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
+    },
+
+    /* find_room：房间里找东西。四个位置：桌子 / 书架 / 背包 / 床（第 4 个，新补的）。 */
+    study_room: {
+        sky: '#f4ead8', seaY: null, fallY: -3, spawn: [-9.5, 0, 3],
+        ring: { pos: [0, 0, 2.0], r: 1.3 }, friend: { pos: [2.8, 0, 2.8], rotY: -2.3 },
+        tiles: [STUDY.tile],
+        decor: [...STUDY.walls, { pos: [0, 0.03, 0.4], size: [7, 0.04, 3.6], color: '#fde68a' },
+            { pos: [5.0, 2.8, -6.96], size: [1.7, 1.5, 0.05], color: '#ffffff' }, { pos: [5.0, 2.8, -6.92], size: [1.5, 1.3, 0.05], color: '#bfe3ff' }],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'room/desk', pos: [-7.5, 0, -5.6], h: 0.8, fb: 'desk', solid: [1.3, 0.8, 0.7] },
+            { model: 'room/chair', pos: [-7.5, 0, -4.4], h: 0.95, rotY: Math.PI, fb: 'chair', solid: [0.5, 0.9, 0.5] },
+            { model: 'shop/shelf', pos: [-2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
+            { model: 'room/bag', pos: [2.5, 0, -5.0], h: 0.5, rotY: -0.4, fb: 'bag', solid: [0.5, 0.5, 0.4] },
+            { model: 'room/bed', pos: [7.5, 0, -5.6], h: 0.9, fb: 'bed', solid: [1.7, 0.6, 2.0] }
+        ],
+        slots: [{ id: 'desk', pos: [-7.5, 0, -2.9] }, { id: 'shelf', pos: [-2.5, 0, -4.6] }, { id: 'bag', pos: [2.5, 0, -3.3] }, { id: 'bed', pos: [7.5, 0, -3.5] }],
+        camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
+    },
+
+    /* group_photo：学校操场拍集体照。四个位置：球场边的孩子 / 野餐桌一家人 / 教学楼前的同学 / 三脚架相机（第 4 个，新补的）。 */
+    schoolyard: {
+        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [-11, 0, 4],
+        ring: { pos: [-1, 0, 3.2], r: 1.3 }, friend: { pos: [1.8, 0, 3.6], rotY: -2.3 },
+        tiles: [{ x: 0, z: 0, w: 28, d: 18, thick: 0.6, color: '#cfe7c4', flat: true, rp: [-10, 0, 4] }],
+        decor: [
+            { pos: [0, 0.02, -2.6], size: [7, 0.04, 4.6], color: '#e6d3a3' },                        // 野餐的空地
+            { pos: [-8, 0.03, -4.2], size: [6, 0.04, 4.4], color: '#7ec96b' },                       // 小球场
+            { pos: [-8, 0.05, -4.2], size: [5.8, 0.01, 0.08], color: '#ffffff' },
+            { pos: [-8, 0.05, -4.2], size: [0.08, 0.01, 4.2], color: '#ffffff' }
+        ],
+        pads: [], spinners: [], slotPedestal: false,
+        props: [
+            { model: 'street/building_2', pos: [8.5, 0, -7.6], h: 5.2, fb: { w: 3.8, color: '#a7c7e7' }, solid: [3.8, 4, 2.4] },
+            { model: 'street/building_1', pos: [3.5, 0, -8.0], h: 4.6, fb: { w: 3.2, color: '#f2c7a5' }, solid: [3.2, 4, 2.4] },
+            { model: 'street/tree_1', pos: [-12.4, 0, -7.0], h: 3.4, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [12.6, 0, -6.0], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { pos: [-8, 0, -7.0], h: 1.2, fb: 'goal' },
+            { pos: [-6.2, 0.05, -3.4], h: 0.35, fb: 'ball' },
+            { id: 'picnic', pos: [0, 0, -3.3], h: 0.8, fb: 'picnic', solid: [1.4, 0.8, 0.9] },
+            { model: 'shop/camera', pos: [11, 0, 2.2], h: 1.1, fb: 'camera', solid: [0.5, 1.1, 0.5] }
+        ],
+        people: [
+            { model: 'people/boy_a', pos: [-9.0, 0.03, -4.4], h: 1.5, look: { shirt: '#ef4444', hair: '#3b2a20' } },       // 球场边的三个孩子
+            { model: 'people/boy_b', pos: [-8.0, 0.03, -4.8], h: 1.5, look: { shirt: '#ef4444', hair: '#111827' } },
+            { model: 'people/girl_b', pos: [-7.0, 0.03, -4.4], h: 1.5, look: { girl: true, shirt: '#ef4444', hair: '#fbbf24' } },
+            { model: 'people/man', pos: [-0.9, 0, -4.4], h: 1.75, look: { shirt: '#22c55e', hair: '#1f2937' } },             // 野餐桌后面的一家人
+            { model: 'people/girl_a', pos: [0, 0, -4.4], h: 1.3, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
+            { model: 'people/woman', pos: [0.9, 0, -4.4], h: 1.65, look: { girl: true, shirt: '#a855f7', hair: '#451a03' } },
+            { model: 'people/girl_a', pos: [7.2, 0, -5.2], h: 1.5, look: { girl: true, shirt: '#3b82f6', hair: '#7c2d12' } },   // 教学楼前的同学
+            { model: 'people/boy_a', pos: [8.2, 0, -5.4], h: 1.5, look: { shirt: '#3b82f6', hair: '#3b2a20' } },
+            { model: 'people/girl_b', pos: [9.2, 0, -5.2], h: 1.5, look: { girl: true, shirt: '#3b82f6', hair: '#111827' } }
+        ],
+        slots: [{ id: 'field', pos: [-8, 0, -2.4] }, { id: 'picnic', pos: [0, 0, -1.9] }, { id: 'school', pos: [8.2, 0, -3.4] }, { id: 'camera', pos: [11, 0, 0.9] }],
+        camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
     }
 };
 
@@ -217,7 +369,7 @@ export async function buildArena(arenaId, tpl) {
     const A = ARENAS[arenaId];
     if (!A) throw new Error(`没有名为 ${arenaId} 的场地（js/roam/arena.js 的 ARENAS）`);
     const loaded = {};
-    const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model).filter(Boolean)])];
+    const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model).filter(Boolean), ...(A.people || []).map(p => p.model).filter(Boolean)])];
     await Promise.all(wanted.map(async p => { loaded[p] = await loadModel(p); }));
     const clone = p => T.cloneSkinned(loaded[p].scene);
 
@@ -305,6 +457,12 @@ export async function buildArena(arenaId, tpl) {
         if (p.solid) boxes.push({ min: [p.pos[0] - p.solid[0] / 2, 0, p.pos[2] - p.solid[2] / 2], max: [p.pos[0] + p.solid[0] / 2, p.solid[1], p.pos[2] + p.solid[2] / 2] });
     }
 
+    /* ---- 人群（group_photo 的球场边 / 野餐桌 / 教学楼前的人；没有 people/ 模型就用 look 画简易小人；不参与碰撞） ---- */
+    for (const p of A.people || []) {
+        const g = loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackPerson(p.look || null), { h: p.h });
+        g.position.set(...p.pos); g.rotation.y = p.rotY || 0; root.add(g);
+    }
+
     /* ---- 交付环 ---- */
     let ringObj;
     if (loaded['roam/delivery_ring']) ringObj = normalize(clone('roam/delivery_ring'), { w: A.ring.r * 2 });
@@ -358,6 +516,7 @@ export async function buildArena(arenaId, tpl) {
     let t = 0;
     return {
         root, boxes, spinners, slots, ring, friend, pads, spawn: A.spawn, fallY: A.fallY, sky: A.sky, camIntro: A.camIntro, ringR: A.ring.r,
+        deliverProp: A.deliverProp,
         padHit(i) { if (pads[i]) pads[i].squash = 1; },
         bounce(id) { if (props[id]) props[id].bounce = 1; },                  // 交付成功：宝箱之类的道具弹一下
         update(dt) {

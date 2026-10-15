@@ -288,7 +288,7 @@ export async function create({ view, tpl, debug, onLost, ctx }) {
                     if (!alive) return; k += 0.05; const e = ease(Math.min(1, k));
                     o.mesh.position.set(from.x + (fp.x - from.x) * e, from.y + (1.4 - from.y) * e + Math.sin(e * Math.PI) * 0.8, from.z + (fp.z - from.z) * e);
                     o.mesh.scale.setScalar(1 - e * 0.8);
-                    if (k < 1) requestAnimationFrame(fly); else { arena.bounce('chest'); o.mesh.visible = false; o.label.remove(); carrying = null; arena.ring.obj.visible = false; setHud(false); mode = 'idle'; const r = deliverResolve; deliverResolve = null; r && r(); }
+                    if (k < 1) requestAnimationFrame(fly); else { if (arena.deliverProp) arena.bounce(arena.deliverProp); o.mesh.visible = false; o.label.remove(); carrying = null; arena.ring.obj.visible = false; setHud(false); mode = 'idle'; const r = deliverResolve; deliverResolve = null; r && r(); }
                 };
                 fly();
             }
