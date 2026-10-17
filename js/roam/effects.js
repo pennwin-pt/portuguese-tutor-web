@@ -6,10 +6,16 @@
      fx.clear();                                        // 立即复位
      fx.tick(dt, camera);                               // 每帧调用
    作用对象 = arena.variantTargets()（当前显示的那一组摆件 / 人物，复数时多个一起变）。
-   约定：同一时刻只有一个效果在播；播新的会先立即复位旧的，所以重复触发不会叠加。 */
+   约定：同一时刻只有一个效果在播；播新的会先立即复位旧的，所以重复触发不会叠加。
+   M6：新增 tag（头顶价签）、emote 的 jitter 动作、tint 的 shine（金属闪光）；createEffects 多了可选的 hooks（音效 / 变形机联动）：
+     createEffects({ scene, arena, sfx, sfxDelay, onStart, onEnd })
+       sfx(name)        播 sounds/roam/<name>.wav（缺文件静默）；效果开始时播 sfxOf(spec)，非 hold 的效果开始复位时播 fx_revert
+       sfxDelay         效果音相对开场延后多少毫秒（有变形机时给机器的"咔哒"声让出一点时间）
+       onStart(spec,dur) / onEnd()   效果开始 / 结束（roam/index.js 用它驱动变形机装饰的灯和齿轮）
+     不传 hooks 时行为和 M5 完全一样。 */
 import * as T from '../vendor/three-bundle.js';
 
-export const EFFECT_KINDS = ['scale', 'tint', 'aura', 'dirt', 'age', 'weight', 'emote', 'speed'];
+export const EFFECT_KINDS = ['scale', 'tint', 'aura', 'dirt', 'age', 'weight', 'emote', 'speed', 'tag'];
 const MAX_PARTICLES = 30;                                       // 同屏粒子上限（低端手机）
 const RAMP_IN = 0.45, RAMP_OUT = 0.4;
 
@@ -17,6 +23,22 @@ const clamp01 = k => Math.max(0, Math.min(1, k));
 const lerp = (a, b, k) => a + (b - a) * k;
 const easeInOut = k => (k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2);
 const backOut = k => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+
+/* 效果 → 音效文件名（sounds/roam/<name>.wav）。同类效果共用，缺文件时 sfx() 静默 */
+export function sfxOf(spec) {
+    switch (spec && spec.kind) {
+        case 'scale': { const to = spec.to || [1, 1, 1]; return (to[0] + to[1] + to[2]) / 3 >= 1 ? 'fx_grow' : 'fx_shrink'; }
+        case 'tint': return spec.shine ? 'fx_sparkle' : 'fx_tint';
+        case 'aura': return 'fx_aura';
+        case 'dirt': return spec.clean ? 'fx_sparkle' : 'fx_dirt';
+        case 'age': return spec.fresh ? 'fx_sparkle' : 'fx_old';
+        case 'weight': return spec.light ? 'fx_light' : 'fx_heavy';
+        case 'emote': return 'fx_pop';
+        case 'speed': return spec.fast === false ? 'fx_slow' : 'fx_zip';
+        case 'tag': return 'fx_cash';
+        default: return null;
+    }
+}
 
 /* emoji → 贴图（缓存）；字体不支持时会画成方框，但不影响玩法 */
 const texCache = new Map();
@@ -32,7 +54,26 @@ function emojiTexture(ch) {
     return tex;
 }
 
-export function createEffects({ scene, arena }) {
+/* 价签贴图（缓存，键 = 文字 + 底色）：圆角牌子 + 左边一个小孔 + 白色粗体价格；宽高比 2:1 */
+function tagTexture(text, bg) {
+    const key = `tag:${text}:${bg}`;
+    let tex = texCache.get(key);
+    if (tex) return tex;
+    const c = document.createElement('canvas'); c.width = 256; c.height = 128;
+    const g = c.getContext('2d'), r = 26, x0 = 8, y0 = 12, w = 240, h = 104;
+    g.beginPath();                                              // 手写圆角矩形（roundRect 在旧浏览器里没有）
+    g.moveTo(x0 + r, y0); g.arcTo(x0 + w, y0, x0 + w, y0 + h, r); g.arcTo(x0 + w, y0 + h, x0, y0 + h, r); g.arcTo(x0, y0 + h, x0, y0, r); g.arcTo(x0, y0, x0 + w, y0, r); g.closePath();
+    g.fillStyle = bg; g.fill(); g.lineWidth = 7; g.strokeStyle = '#ffffff'; g.stroke();
+    g.fillStyle = '#ffffff'; g.beginPath(); g.arc(x0 + 34, 64, 11, 0, Math.PI * 2); g.fill();
+    g.fillStyle = bg; g.beginPath(); g.arc(x0 + 34, 64, 6, 0, Math.PI * 2); g.fill();
+    g.font = 'bold 56px system-ui,\"Segoe UI\",Arial,sans-serif'; g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(String(text).slice(0, 8), x0 + 34 + (w - 34) / 2 + 6, 66, w - 64);
+    tex = new T.CanvasTexture(c); tex.colorSpace = T.SRGBColorSpace;
+    texCache.set(key, tex);
+    return tex;
+}
+
+export function createEffects({ scene, arena, sfx = null, sfxDelay = 0, onStart = null, onEnd = null }) {
     let cur = null;                                              // 正在播的效果
     const particles = [];                                        // { mesh, vy, vx, life, age, size }
     const bubbles = [];                                          // 表情气泡 { mesh, target, k }
@@ -67,6 +108,12 @@ export function createEffects({ scene, arena }) {
         mesh.renderOrder = 20; scene.add(mesh);
         return mesh;
     }
+    function tagBillboard(text, bg, size) {
+        const mat = new T.MeshBasicMaterial({ map: tagTexture(text, bg), transparent: true, depthWrite: false });
+        const mesh = new T.Mesh(new T.PlaneGeometry(size * 2, size), mat);
+        mesh.renderOrder = 20; scene.add(mesh);
+        return mesh;
+    }
     function dropMesh(mesh) { scene.remove(mesh); if (mesh.geometry) mesh.geometry.dispose(); if (mesh.material) mesh.material.dispose(); }
     function emit(ch, x, y, z, { vy = 0.8, vx = 0, life = 1.2, size = 0.28 } = {}) {
         if (particles.length >= MAX_PARTICLES) return;
@@ -86,7 +133,11 @@ export function createEffects({ scene, arena }) {
         for (const p of particles) dropMesh(p.mesh); particles.length = 0;
         for (const b of bubbles) dropMesh(b.mesh); bubbles.length = 0;
     }
-    function finish(c) { restore(c); if (cur === c) cur = null; if (c.res) { const r = c.res; c.res = null; r(); } }
+    function finish(c) {
+        restore(c); if (cur === c) { cur = null; if (onEnd) onEnd(); }
+        if (c.timer) { clearTimeout(c.timer); c.timer = 0; }
+        if (c.res) { const r = c.res; c.res = null; r(); }
+    }
 
     /* 开场：一次性的准备（斑点、气泡） */
     function init(c) {
@@ -102,6 +153,11 @@ export function createEffects({ scene, arena }) {
                     spot.scale.set(0.9 + rand() * 0.8, 0.5, 0.9 + rand() * 0.8);
                     t.obj.add(spot); f.extra.push(spot);
                 }
+            }
+            if (s.kind === 'tag' && s.text && bubbles.length < 3) {                // 价签：和表情气泡一样挂在摆件头顶、弹出并浮动
+                const mesh = tagBillboard(s.text, s.tint || '#16a34a', 0.6);
+                mesh.position.set(f.midX, f.top + 0.6, f.midZ); mesh.scale.setScalar(0.01);
+                bubbles.push({ mesh, target: t, k: 0 });
             }
             if (s.kind === 'emote' && s.icon && bubbles.length < 3) {
                 const mesh = billboard(s.icon, 1.0);
@@ -122,7 +178,13 @@ export function createEffects({ scene, arena }) {
                     o.scale.set(t.base.x * lerp(1, to[0], e), t.base.y * lerp(1, to[1], e), t.base.z * lerp(1, to[2], e));
                     break;
                 }
-                case 'tint': tintAll(t, s.color || '#ffffff', (s.mix == null ? 0.85 : s.mix) * e); break;
+                case 'tint':
+                    tintAll(t, s.color || '#ffffff', (s.mix == null ? 0.85 : s.mix) * e);
+                    if (s.shine) {                                                  // 金属色（dourado / prateado）：变色的同时飘闪光
+                        c.acc[i] = (c.acc[i] || 0) + dt;
+                        if (c.phase !== 'out' && c.acc[i] > 0.13) { c.acc[i] = 0; emit('✨', f.midX + (Math.random() - 0.5) * f.w, f.top * (0.2 + Math.random() * 0.7), f.midZ + f.d * 0.55, { vy: 0.25, life: 0.9, size: 0.26 }); }
+                    }
+                    break;
                 case 'aura':
                     tintAll(t, s.tint || '#ffffff', 0.4 * e);
                     c.acc[i] = (c.acc[i] || 0) + dt;
@@ -170,6 +232,11 @@ export function createEffects({ scene, arena }) {
                     else if (m === 'droop') { o.rotation.z = f.rot.z + 0.12 * e; o.scale.set(t.base.x, t.base.y * (1 - 0.08 * e), t.base.z); }
                     else if (m === 'sway') o.rotation.z = f.rot.z + Math.sin(c.t * 2.5 + i) * 0.1 * e;
                     else if (m === 'shake') o.position.x = f.pos.x + Math.sin(c.t * 40 + i) * 0.04 * e;
+                    else if (m === 'jitter') {                                      // 坐立不安：x / z 小幅高频乱抖 + 左右转头（和 zangado 的单轴 shake 区分）
+                        o.position.x = f.pos.x + (Math.sin(c.t * 31 + i * 1.7) + Math.sin(c.t * 23 + i)) * 0.022 * e;
+                        o.position.z = f.pos.z + Math.sin(c.t * 27 + i * 2.3) * 0.03 * e;
+                        o.rotation.y = f.rot.y + Math.sin(c.t * 17 + i) * 0.16 * e;
+                    }
                     break;
                 }
                 case 'speed': {
@@ -178,6 +245,9 @@ export function createEffects({ scene, arena }) {
                     o.rotation.y = f.rot.y + (Math.cos(ph) > 0 ? 1 : -1) * 0.9 * e;
                     break;
                 }
+                case 'tag':                                                         // 价签：牌子在 init 里挂好了，摆件只轻轻晃一晃（让人注意到价格）
+                    o.rotation.y = f.rot.y + Math.sin(c.t * 3 + i) * 0.1 * e;
+                    break;
                 default: break;
             }
         });
@@ -212,8 +282,11 @@ export function createEffects({ scene, arena }) {
             if (!targets.length) return Promise.resolve();
             targets.forEach(t => { prep(t); t.bounce = 0; });     // 交付时的"弹一下"会改缩放，先掐掉，免得和效果打架
             return new Promise(res => {
-                cur = { spec, targets, t: 0, p: 0, dur, hold, res, phase: 'in', acc: [] };
+                cur = { spec, targets, t: 0, p: 0, dur, hold, res, phase: 'in', acc: [], timer: 0 };
                 init(cur);
+                if (onStart) onStart(spec, dur);
+                const name = sfx ? sfxOf(spec) : null;
+                if (name) { if (sfxDelay > 0) cur.timer = setTimeout(() => { cur.timer = 0; sfx(name); }, sfxDelay); else sfx(name); }
             });
         },
         clear() { if (cur) finish(cur); },
@@ -223,7 +296,7 @@ export function createEffects({ scene, arena }) {
                 if (c.phase === 'in') { c.p = Math.min(1, c.p + dt / RAMP_IN); if (c.p >= 1) c.phase = 'hold'; }
                 if (c.phase === 'hold' && c.t >= c.dur) {
                     if (c.hold) { if (c.res) { const r = c.res; c.res = null; r(); } }      // 保持：只 resolve，样子留着
-                    else c.phase = 'out';
+                    else { c.phase = 'out'; if (sfx) sfx('fx_revert'); }
                 }
                 if (c.phase === 'out') { c.p = Math.max(0, c.p - dt / RAMP_OUT); if (c.p <= 0) { finish(c); updateParticles(dt, camera); return; } }
                 const e = c.phase === 'in' ? backOut(c.p) : easeInOut(c.p);

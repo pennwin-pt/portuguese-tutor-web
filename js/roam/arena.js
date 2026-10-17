@@ -355,7 +355,8 @@ export const ARENAS = {
        玩法：名词（物件 / 人）摆在场地中央，4 张形容词词牌挂在四角，抓对的带到交付环，词牌飞到名词上"贴"上去。
        variants：长度必须等于模板 noun_contexts 的个数（4），顺序和模板一致；scene.js 把本词的语境序号传进来，只显示那一组。
          每组 { props / people, deliver: 词牌飞向的终点, bounce: 交付成功时一起弹一下的摆件 id }；摆件和人物都登记进 props，所以人物也能弹。
-       startYaw：镜头起始水平角（0 = 镜头在南侧朝北看，正对中央的展台 / 舞台）；不写则沿用默认（朝东）。 */
+       startYaw：镜头起始水平角（0 = 镜头在南侧朝北看，正对中央的展台 / 舞台）；不写则沿用默认（朝东）。
+       machine（M6，可选）：{ pos, rotY } 变形机装饰（纯程序几何体，不用模型）；只在模板带 effects 时才建；效果播放时灯闪、齿轮转（arena.machineRun）。 */
     /* describe_object：展台广场。variants 0 杯子 / 1 房子 / 2 书（两摞）/ 3 几座房子（三座）。 */
     adj_plaza: {
         sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
@@ -381,6 +382,7 @@ export const ARENAS = {
                 deliver: [0, 1.8, -2.5], bounce: ['h1', 'h2', 'h3'] }
         ],
         slots: [{ id: 'nw', pos: [-7, 0, -3.8] }, { id: 'ne', pos: [7, 0, -3.8] }, { id: 'sw', pos: [-7, 0, 3.2] }, { id: 'se', pos: [7, 0, 3.2] }],
+        machine: { pos: [-4.6, 0, -3.6], rotY: 0.5 },          // M6 变形机装饰：只在带 effects 的模板（变形工坊）里出现；贴词牌版 describe_object 共用本场地但看不到它
         camIntro: { pos: [0, 16, 12], look: [0, 0, -1] }
     },
 
@@ -412,6 +414,7 @@ export const ARENAS = {
                 deliver: [0, 2.0, -2.9], bounce: ['a', 'b', 'c'] }
         ],
         slots: [{ id: 'nw', pos: [-8, 0, -4.6] }, { id: 'ne', pos: [8, 0, -4.6] }, { id: 'sw', pos: [-8, 0, 3.4] }, { id: 'se', pos: [8, 0, 3.4] }],
+        machine: { pos: [-5.8, 0, -3.0], rotY: 0.4 },
         camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
     },
     /* ---- 性数配对（adj_agree_object / adj_agree_person）----
@@ -610,6 +613,28 @@ export async function buildArena(arenaId, tpl) {
     });
     const stallColor = new T.Color();
 
+    /* ---- 变形机（M6 装饰）：只在变形工坊（模板带 effects）里出现；效果播放时亮灯、转齿轮、天线球跳动。纯程序几何体，缺模型也不影响；有碰撞盒，别穿过去 ---- */
+    let machine = null;
+    if (A.machine && tpl && tpl.effects) {
+        const g = new T.Group(); g.position.set(A.machine.pos[0], A.machine.pos[1], A.machine.pos[2]); g.rotation.y = A.machine.rotY || 0;
+        const add = (geo, color, x, y, z, basic) => { const m = new T.Mesh(geo, basic ? new T.MeshBasicMaterial({ color }) : mat(color)); m.position.set(x, y, z); g.add(m); return m; };
+        add(new T.BoxGeometry(1.5, 0.5, 1.0), '#64748b', 0, 0.25, 0);                      // 底座
+        add(new T.BoxGeometry(1.3, 0.8, 0.9), '#94a3b8', 0, 0.9, 0);                       // 机身
+        add(new T.CylinderGeometry(0.45, 0.25, 0.4, 14), '#f59e0b', 0, 1.5, 0);            // 顶上的漏斗
+        add(new T.CylinderGeometry(0.03, 0.03, 0.5, 6), '#475569', 0.45, 1.6, 0.1);        // 天线
+        const ball = add(new T.SphereGeometry(0.1, 12, 10), '#f472b6', 0.45, 1.9, 0.1, true);
+        add(new T.BoxGeometry(0.55, 0.55, 0.04), '#1e293b', 0.3, 0.95, 0.46);               // 灯板
+        const LAMPS = ['#ef4444', '#facc15', '#22c55e'], DIM = ['#7f1d1d', '#713f12', '#14532d'];
+        const lamps = LAMPS.map((c, i) => add(new T.SphereGeometry(0.065, 10, 8), DIM[i], 0.3, 1.1 - i * 0.15, 0.5, true));
+        const gear = new T.Group(); gear.position.set(-0.3, 0.95, 0.47); g.add(gear);        // 齿轮：圆盘 + 8 个齿
+        const hub = new T.Mesh(new T.CylinderGeometry(0.2, 0.2, 0.06, 14), mat('#fbbf24')); hub.rotation.x = Math.PI / 2; gear.add(hub);
+        for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2, tooth = new T.Mesh(new T.BoxGeometry(0.09, 0.1, 0.06), mat('#f59e0b')); tooth.position.set(Math.cos(a) * 0.26, Math.sin(a) * 0.26, 0); tooth.rotation.z = a; gear.add(tooth); }
+        root.add(g);
+        const mp = A.machine.pos;
+        boxes.push({ min: [mp[0] - 0.85, 0, mp[2] - 0.7], max: [mp[0] + 0.85, 1.6, mp[2] + 0.7] });      // 碰撞盒（略大于机身，忽略旋转）
+        machine = { group: g, gear, lamps, LAMPS, DIM, ball, run: 0, baseY: g.position.y };
+    }
+
     /* ---- 交付环 ---- */
     let ringObj;
     if (loaded['roam/delivery_ring']) ringObj = normalize(clone('roam/delivery_ring'), { w: A.ring.r * 2 });
@@ -665,6 +690,8 @@ export async function buildArena(arenaId, tpl) {
         root, boxes, spinners, slots, ring, friend, pads, spawn: A.spawn, fallY: A.fallY, sky: A.sky, camIntro: A.camIntro, ringR: A.ring.r,
         deliverProp: A.deliverProp, startYaw: A.startYaw, variantCount: variants.length,
         padHit(i) { if (pads[i]) pads[i].squash = 1; },
+        hasMachine: !!machine,
+        machineRun(dur) { if (machine) machine.run = Math.max(machine.run, (dur || 1.5) + 0.4); },       // 变形效果开始时调用：灯闪、齿轮转、天线球跳，持续 dur + 0.4 秒
         bounce(id) { for (const k of [].concat(id)) if (props[k]) props[k].bounce = 1; },   // 交付成功：宝箱之类的道具弹一下（id 可以是数组：复数名词的几个摆件 / 几个人一起弹）
         setVariant(i) { variant = variants[i] ? i : -1; variants.forEach((v, k) => { v.group.visible = k === variant; }); },   // 形容词走路版：只显示本词名词语境对应的那一组
         stalls, stallCount: stalls.length,
@@ -686,6 +713,14 @@ export async function buildArena(arenaId, tpl) {
             for (const p of pads) { if (p.squash > 0) { p.squash = Math.max(0, p.squash - dt * 4); const k = 1 - 0.35 * Math.sin(p.squash * Math.PI); p.obj.scale.set(1 + (1 - k) * 0.6, k, 1 + (1 - k) * 0.6); } }
             for (const pr of Object.values(props)) { if (pr.bounce > 0) { pr.bounce = Math.max(0, pr.bounce - dt * 1.6); const k = 1 + Math.sin(pr.bounce * Math.PI * 3) * 0.18 * pr.bounce; pr.obj.scale.set(pr.base.x * (2 - k), pr.base.y * k, pr.base.z * (2 - k)); } }
             if (ring.active) { const k = 1 + Math.sin(t * 5) * 0.06; ring.obj.scale.set(k, 1, k); }
+            if (machine) {                                                  // 变形机：空闲时齿轮慢转、灯暗；效果播放中齿轮飞转、三盏灯轮流亮、天线球跳、机身轻轻抖
+                const on = machine.run > 0; if (on) machine.run = Math.max(0, machine.run - dt);
+                machine.gear.rotation.z -= dt * (on ? 7 : 0.4);
+                const lit = on ? Math.floor(t * 7) % 3 : -1;
+                machine.lamps.forEach((l, i) => l.material.color.set(i === lit ? machine.LAMPS[i] : machine.DIM[i]));
+                const k = on ? 1 + Math.sin(t * 16) * 0.28 : 1 + Math.sin(t * 2) * 0.06; machine.ball.scale.setScalar(k);
+                machine.group.position.y = machine.baseY + (on ? Math.abs(Math.sin(t * 38)) * 0.012 : 0);
+            }
             if (friend.mixer) friend.mixer.update(dt);
             if (friend.hop > 0) { friend.hop = Math.max(0, friend.hop - dt * 2.2); friend.root.position.y = A.friend.pos[1] + Math.sin(friend.hop * Math.PI) * 0.35; }
         },

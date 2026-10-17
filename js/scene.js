@@ -106,7 +106,14 @@
         ['verde', 'verde', 'verdes', 'verdes'], ['branco', 'branca', 'brancos', 'brancas'], ['preto', 'preta', 'pretos', 'pretas'],
         ['rosa', 'rosa', 'rosas', 'rosas'], ['comprido', 'comprida', 'compridos', 'compridas'], ['curto', 'curta', 'curtos', 'curtas'],
         ['quente', 'quente', 'quentes', 'quentes'], ['frio', 'fria', 'frios', 'frias'], ['cansado', 'cansada', 'cansados', 'cansadas'],
-        ['zangado', 'zangada', 'zangados', 'zangadas'], ['rápido', 'rápida', 'rápidos', 'rápidas'], ['lento', 'lenta', 'lentos', 'lentas']];
+        ['zangado', 'zangada', 'zangados', 'zangadas'], ['rápido', 'rápida', 'rápidos', 'rápidas'], ['lento', 'lenta', 'lentos', 'lentas'],
+        // M6 扩展的 16 个效果词（barato / caro 上面已有）：颜色、深浅、宽窄、轻重、味道、情绪；也是它们的反义词（claro↔escuro 等）预习收尾时要显示的词形来源
+        ['roxo', 'roxa', 'roxos', 'roxas'], ['laranja', 'laranja', 'laranjas', 'laranjas'], ['castanho', 'castanha', 'castanhos', 'castanhas'],
+        ['cinzento', 'cinzenta', 'cinzentos', 'cinzentas'], ['dourado', 'dourada', 'dourados', 'douradas'], ['prateado', 'prateada', 'prateados', 'prateadas'],
+        ['claro', 'clara', 'claros', 'claras'], ['escuro', 'escura', 'escuros', 'escuras'], ['largo', 'larga', 'largos', 'largas'],
+        ['estreito', 'estreita', 'estreitos', 'estreitas'], ['pesado', 'pesada', 'pesados', 'pesadas'], ['leve', 'leve', 'leves', 'leves'],
+        ['doce', 'doce', 'doces', 'doces'], ['salgado', 'salgada', 'salgados', 'salgadas'], ['contente', 'contente', 'contentes', 'contentes'],
+        ['agitado', 'agitada', 'agitados', 'agitadas']];
     const GENERIC_VERB = [
         ['correr', '🏃'], ['comer', '🍽️'], ['beber', '🥤'], ['dormir', '😴'], ['ler', '📖'], ['escrever', '✍️'],
         ['nadar', '🏊'], ['cantar', '🎤'], ['dançar', '💃'], ['lavar', '🧼'], ['pagar', '💳'], ['abrir', '🔓']

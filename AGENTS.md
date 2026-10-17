@@ -19,6 +19,7 @@ scene-lab.html  js/scene-lab.js                                      场景模�
 models/<路径>.glb  models/MODELS*.md  models/*.bat|*.js|*.ps1       3D 模型与模型清单 / 下载与修复脚本；缺文件时用兜底几何体，不会报错
 sounds/success.wav, fail.wav                                         答对/答错音效（缺文件静默不播）
 sounds/roam/{jump,land,bounce,grab,wrong,deliver,respawn,bump}.wav   走路版音效（缺文件静默不播）
+sounds/roam/fx_*.wav, machine.wav, sounds/gen_fx_sounds.py             变形工坊效果音（M6，共 15 个，程序合成；换成自己的同名 wav 即可；缺文件静默不播）
 ```
 - `words.css` 只补单词页独有样式；单词页标题栏放大等覆盖写在 `words.css` 里（`#app > header`），**不要为单词页改 `index.css`**（聊天页共用）。
 
@@ -61,10 +62,10 @@ sounds/roam/{jump,land,bounce,grab,wrong,deliver,respawn,bump}.wav   走路版�
 - **场景判分**：`evaluateSceneChoice` 提交 `POST /api/words/scene/evaluate`（只认 `selected_word_id`）：`attempts++`、答错 `markMissed(w)`（影响原题答对后的 `hard` 结果）、答对按 `earned` / `round_score` 更新积分栏；**提交失败（抛错）不计错、可重试**；场景不单独结算进度，答对也不代替原题。只有 `word_choice` 和走路版的“抓取答案 / 性数配对整局”会提交；点人物、点错地点不发请求。
 - **选模板**（`chooseTemplate`）：词里 `scene_template` 有值就照办（模板不存在 / 词性不符 / 变形工坊没有这个词的效果 / 性数配对四词形有重复，都抛错页，**不静默降级**）；没设就按词性在 `manualOnly` 以外的已发布模板里选。形容词走 `chooseAdjectiveTemplate`：`scene_noun` 是人物名词 → 人物系，否则物体系；效果表里有这个词 → 变形工坊，没有 → 贴词牌 `describe_*`；没配 `scene_noun` 且只有人物系有效果的词（feliz、rápido…）→ 人物系变形工坊。
 - **走路版（roam）**：一次抓取 = 一次 `evaluateChoice`；自动抓取默认开（`localStorage.roam_autograb='0'` 关）；`localStorage.roam_dpr` 记住自适应画质（一次变慢会被记住，可清掉）。URL 带 `?debug` 时暴露 `window.__roam`，`scene-lab` 出现「效果调试面板」。
-- **形容词三种玩法**：`describe_*` 贴词牌；`adj_workshop_*` 变形工坊（`scene.js` 的 `buildOptions` 在原选项上加“反义词 1 + 不同维度 2、排除 conflicts”，每个选项带 `fx`；抓对 / 抓错的词牌都飞到展台并按词义变化；效果引擎在 `roam/effects.js`，变体摆件要克隆材质，粒子同屏 ≤ 30）；`adj_agree_*` 性数配对（`roam_match`，4 张词形牌送到 4 个展台，整局只判一次：错误 ≤ `pass_max_errors` 传 `w.id`，否则传 `-1`；每送对一张读一句整句，带 `variant`）。形容词词牌读音：`speak(w, 'word', btn, form)` 的 `form` 是 `adjective_*` 字段名，读牌上显示的那个词形。`GENERIC_ADJ` 是干扰项兜底词表（[阳单, 阴单, 阳复, 阴复]）。
+- **形容词三种玩法**：`describe_*` 贴词牌；`adj_workshop_*` 变形工坊（`scene.js` 的 `buildOptions` 在原选项上加“反义词 1 + 不同维度 2、排除 conflicts”，每个选项带 `fx`；抓对 / 抓错的词牌都飞到展台并按词义变化；效果引擎在 `roam/effects.js`，变体摆件要克隆材质，粒子同屏 ≤ 30）；`adj_agree_*` 性数配对（`roam_match`，4 张词形牌送到 4 个展台，整局只判一次：错误 ≤ `pass_max_errors` 传 `w.id`，否则传 `-1`；每送对一张读一句整句，带 `variant`）。形容词词牌读音：`speak(w, 'word', btn, form)` 的 `form` 是 `adjective_*` 字段名，读牌上显示的那个词形。`GENERIC_ADJ` 是干扰项兜底词表（[阳单, 阴单, 阳复, 阴复]；M6 起含效果表里的全部词，新增效果词时这里要补，否则它的反义词在预习收尾没有词形可显示）。变形工坊的 `effects.js` 有 9 种 `kind`（M6 加了 `tag` 价签）、`emote` 的 `jitter` 动作、`tint` 的 `shine`；`createEffects` 可传 `hooks`（`sfx` / `sfxDelay` / `onStart` / `onEnd`），`roam/index.js` 用它播效果音并驱动场地里的变形机（`arena.machineRun`；`ARENAS.adj_plaza` / `adj_stage` 的 `machine` 字段，只在模板带 `effects` 时才建）。
 - **词字段**：由 `/api/words/today` 的 `words` / `preview` 返回：`emoji`、`pos`、`gender` / `number`（名词）、`scene_ok`、`scene_confirmed`、`scene_template`、`scene_noun`（形容词的形容对象）、`scene_zone`（shop 的货架区），形容词另有 `adjective_m_singular` / `adjective_f_singular` / `adjective_m_plural` / `adjective_f_plural`。不规则变化必须逐项人工审核；不变化的形式可以重复（但不能玩性数配对）；抽象形容词不应启用场景。
 - **台词与泄露保护**：任何要显示 / 朗读的固定葡语，若整词命中目标词（含形容词四个词形）→ 换成 ______ 并不朗读；热点标签撞词只留图标。只有场景字段已确认且 `gender` 为 `m` / `f` 时才加不定冠词。
-- **改场景的同步点**：模板 JSON（服务端）↔ `roam/arena.js` 的 `ARENAS`（模板的 `arena` 字段 = 它的键）↔ `effects.js` 的 `EFFECT_KINDS`（服务端 `EFFECT_PARAMS` 一一对应）。部署顺序：先前端，再后端校验器 / 接口，最后模板 JSON 并重启后端；反了旧前端会在 `roam_choice` / `roam_match` 卡住。要新增 3D 模型时给**清单**（相对 `models/` 的文件名、新增还是复用、外观 / 高度 / 朝向要求、单个 `.glb`、贴图内嵌、不需要骨骼动画、低多边形风格）。
+- **改场景的同步点**：模板 JSON（服务端）↔ `roam/arena.js` 的 `ARENAS`（模板的 `arena` 字段 = 它的键）↔ `effects.js` 的 `EFFECT_KINDS` / `sfxOf`（服务端 `EFFECT_PARAMS` 一一对应；新增 `kind` 还要补一个效果音名）。部署顺序：先前端，再后端校验器 / 接口，最后模板 JSON 并重启后端；反了旧前端会在 `roam_choice` / `roam_match` 卡住。要新增 3D 模型时给**清单**（相对 `models/` 的文件名、新增还是复用、外观 / 高度 / 朝向要求、单个 `.glb`、贴图内嵌、不需要骨骼动画、低多边形风格）。
 - 动画只用 CSS `transform/opacity` 并支持 `prefers-reduced-motion`（DOM 层）；词和中文一律 `textContent`。
 
 ## 录音与音频（iOS/安卓踩过的坑）

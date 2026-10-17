@@ -77,7 +77,11 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             dust.push({ m, vx: Math.cos(a) * spread, vz: Math.sin(a) * spread, vy: up, t: 0 });
         }
     }
-    const fx = createEffects({ scene, arena });                    // 形容词变形工坊：摆件按词义变化（没有 pad.fx / playFx 时完全不运行）
+    // 形容词变形工坊：摆件按词义变化（没有 pad.fx / playFx 时完全不运行）。M6：效果音按 kind 播；有变形机时先"咔哒"一声、效果音延后 0.3 秒，并让机器的灯和齿轮动起来
+    const fx = createEffects({
+        scene, arena, sfx, sfxDelay: arena.hasMachine ? 300 : 0,
+        onStart: (spec, dur) => { if (arena.hasMachine) { arena.machineRun(dur); sfx('machine'); } }
+    });
     const flights = [];                                            // 抓错后飞向展台的词牌副本 { m, from, to, k, done }
     const startFacing = arena.startYaw != null ? arena.startYaw + Math.PI : Math.PI / 2;   // 场地写了 startYaw（形容词展台 / 舞台：朝北）就按它出生，否则朝东
     P.facing = startFacing;                                        // 出生朝东（朝中枢）
