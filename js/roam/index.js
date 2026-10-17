@@ -385,6 +385,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     function visuals(dt, paused) {
         arena.update(paused ? 0 : dt);
         fx.tick(paused ? 0 : dt, camera);
+        if (arena.faceTrophy) arena.faceTrophy(camera);
         for (let i = flights.length - 1; i >= 0; i--) {                        // 抓错的词牌副本：弧线飞向展台，到了就触发效果
             const f = flights[i]; f.k += (paused ? 0 : dt) / 0.55; const e = ease(Math.min(1, f.k));
             f.m.position.set(lerpN(f.from.x, f.to.x, e), lerpN(f.from.y, f.to.y, e) + Math.sin(e * Math.PI) * 0.8, lerpN(f.from.z, f.to.z, e));

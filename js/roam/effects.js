@@ -42,15 +42,16 @@ export function sfxOf(spec) {
 
 /* emoji → 贴图（缓存）；字体不支持时会画成方框，但不影响玩法 */
 const texCache = new Map();
-export function emojiTexture(ch) {
-    let tex = texCache.get(ch);
+export function emojiTexture(ch, px = 96) {                    // px：贴图边长。粒子 / 气泡很小，用默认 96 就够；放大展示的奖品用 256，否则会糊
+    const key = px === 96 ? ch : `${ch}@${px}`;
+    let tex = texCache.get(key);
     if (tex) return tex;
-    const c = document.createElement('canvas'); c.width = c.height = 96;
+    const c = document.createElement('canvas'); c.width = c.height = px;
     const g = c.getContext('2d');
-    g.font = '64px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, 48, 52);
+    g.font = `${Math.round(px * 2 / 3)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(ch, px / 2, Math.round(px * 52 / 96));
     tex = new T.CanvasTexture(c); tex.colorSpace = T.SRGBColorSpace;
-    texCache.set(ch, tex);
+    texCache.set(key, tex);
     return tex;
 }
 

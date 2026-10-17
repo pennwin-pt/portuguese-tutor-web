@@ -686,18 +686,17 @@ export async function buildArena(arenaId, tpl) {
     root.add(new T.HemisphereLight('#ffffff', '#b6d4ff', 1.5));
     const sun = new T.DirectionalLight('#ffffff', 1.6); sun.position.set(-6, 12, 8); root.add(sun);
 
-    /* ---- 奖品（名词 / 动词的奖励型场景）：交付成功后，在交付环上方摆一个十字交叉的 emoji 面片（从任何角度都看得见），奖励效果作用在它身上；形容词场地仍用 variants ---- */
+    /* ---- 奖品（名词 / 动词的奖励型场景）：交付成功后，在交付环上方摆一个始终朝向镜头的 emoji 面片，奖励效果作用在它身上；形容词场地仍用 variants。
+       注意：three-bundle.js 是精简打包的，没有导出 DoubleSide，所以不能用双面材质，改为每帧让它朝向镜头（faceTrophy）。 ---- */
     let trophy = null;
     const popOut = k => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
     function makeTrophy(ch) {
         if (trophy) { root.remove(trophy.obj); trophy.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); trophy = null; }
         const g = new T.Group(), inner = new T.Group();                // g 给效果引擎（缩放 / 变色），inner 只做弹出和上下漂浮
         g.position.set(A.ring.pos[0], (A.ring.pos[1] || 0) + 1.7, A.ring.pos[2]);
-        const tex = emojiTexture(ch);
-        for (const ry of [0, Math.PI / 2]) {
-            const m = new T.Mesh(new T.PlaneGeometry(1.5, 1.5), new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: T.DoubleSide }));
-            m.rotation.y = ry; m.renderOrder = 20; inner.add(m);
-        }
+        const m = new T.Mesh(new T.PlaneGeometry(1.5, 1.5), new T.MeshBasicMaterial({ map: emojiTexture(ch, 256), transparent: true, depthWrite: false }));
+        m.renderOrder = 20; inner.add(m);
+        const sizer = new T.Mesh(new T.PlaneGeometry(1.5, 1.5), new T.MeshBasicMaterial()); sizer.visible = false; g.add(sizer);     // 不显示，只让效果引擎量到完整尺寸（弹出动画开始时 inner 还很小）
         inner.scale.setScalar(0.01); g.add(inner); root.add(g);
         trophy = { obj: g, inner, base: g.scale.clone(), bounce: 0, pop: 0 };
         return trophy;
@@ -722,7 +721,8 @@ export async function buildArena(arenaId, tpl) {
             }
         },
         stallTargets(i) { return stalls[i] ? stalls[i].keys.map(k => props[k]) : []; },
-        showTrophy(ch) { makeTrophy(ch); },                              // 奖励型场景（名词 / 动词）：交付成功后摆出奖品
+        showTrophy(ch) { makeTrophy(ch); },
+        faceTrophy(camera) { if (trophy && camera) trophy.obj.quaternion.copy(camera.quaternion); },     // 每帧让奖品朝向镜头（index.js 在 fx.tick 之后调用）                              // 奖励型场景（名词 / 动词）：交付成功后摆出奖品
         rewardTargets() { const v = variants[variant]; return v ? v.keys.map(k => props[k]) : (trophy ? [trophy] : []); },   // 奖励效果的作用对象：形容词 = 当前摆件，名词 / 动词 = 奖品
         variantTargets() { const v = variants[variant]; return v ? v.keys.map(k => props[k]) : []; },     // 当前显示的那一组摆件 / 人物（效果引擎的作用对象）
         /* 交付成功时词牌飞向哪里、哪些东西弹一下：有变体用变体的；没有变体保持老行为（target=null → 飞向朋友，弹 deliverProp） */
