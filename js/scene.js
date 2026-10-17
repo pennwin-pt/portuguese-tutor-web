@@ -59,7 +59,7 @@
     const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun', 'scene_zone',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
-    const ADJECTIVE_TEMPLATES = new Set(['describe_object', 'describe_person']);   // 形容词场景：描述物件 / 描述人物（服务端 scene_registry.CONTEXT_SCENES）
+    const ADJECTIVE_TEMPLATES = new Set(['describe_object', 'describe_person', 'adj_workshop_object', 'adj_workshop_person', 'adj_agree_object', 'adj_agree_person']);   // 形容词场景（服务端 scene_registry.CONTEXT_SCENES）
     function emojiOf(w) {
         if (!w) return '';
         if (w.scene_confirmed === true && typeof w.emoji === 'string' && w.emoji.trim()) return w.emoji.trim();
@@ -100,7 +100,13 @@
     const GENERIC_ADJ = [['bonito', 'bonita', 'bonitos', 'bonitas'], ['grande', 'grande', 'grandes', 'grandes'], ['pequeno', 'pequena', 'pequenos', 'pequenas'],
         ['novo', 'nova', 'novos', 'novas'], ['velho', 'velha', 'velhos', 'velhas'], ['caro', 'cara', 'caros', 'caras'], ['barato', 'barata', 'baratos', 'baratas'],
         ['alto', 'alta', 'altos', 'altas'], ['baixo', 'baixa', 'baixos', 'baixas'], ['limpo', 'limpa', 'limpos', 'limpas'], ['sujo', 'suja', 'sujos', 'sujas'],
-        ['feliz', 'feliz', 'felizes', 'felizes'], ['triste', 'triste', 'tristes', 'tristes'], ['bom', 'boa', 'bons', 'boas']];
+        ['feliz', 'feliz', 'felizes', 'felizes'], ['triste', 'triste', 'tristes', 'tristes'], ['bom', 'boa', 'bons', 'boas'],
+        // 变形工坊的效果表里有、上面还没有的词：小批次也能凑够"带效果"的干扰项
+        ['vermelho', 'vermelha', 'vermelhos', 'vermelhas'], ['azul', 'azul', 'azuis', 'azuis'], ['amarelo', 'amarela', 'amarelos', 'amarelas'],
+        ['verde', 'verde', 'verdes', 'verdes'], ['branco', 'branca', 'brancos', 'brancas'], ['preto', 'preta', 'pretos', 'pretas'],
+        ['rosa', 'rosa', 'rosas', 'rosas'], ['comprido', 'comprida', 'compridos', 'compridas'], ['curto', 'curta', 'curtos', 'curtas'],
+        ['quente', 'quente', 'quentes', 'quentes'], ['frio', 'fria', 'frios', 'frias'], ['cansado', 'cansada', 'cansados', 'cansadas'],
+        ['zangado', 'zangada', 'zangados', 'zangadas'], ['rápido', 'rápida', 'rápidos', 'rápidas'], ['lento', 'lenta', 'lentos', 'lentas']];
     const GENERIC_VERB = [
         ['correr', '🏃'], ['comer', '🍽️'], ['beber', '🥤'], ['dormir', '😴'], ['ler', '📖'], ['escrever', '✍️'],
         ['nadar', '🏊'], ['cantar', '🎤'], ['dançar', '💃'], ['lavar', '🧼'], ['pagar', '💳'], ['abrir', '🔓']
@@ -132,11 +138,43 @@
     // 变位 / 过去分词 / 反身（decidiu、acontecido、lembrar-se）自动轮换时只进 verbForms: 'any' 的模板（如 verb_note）。
     // 抽象的不定式（confirmar、resolver）套进公园/餐厅语义别扭，在管理端把场景模板固定成 verb_note 即可。
     const isPlainInfinitive = s => /^\p{L}*(ar|er|ir|or|ôr)$/iu.test(String(s || '').trim());
+    /* ---------- 形容词变形工坊：效果表索引（键统一去重音小写；opposite / conflicts 同样规整）---------- */
+    const fxCache = new WeakMap();
+    function fxIndex(tpl) {
+        let m = fxCache.get(tpl);
+        if (!m) {
+            m = new Map();
+            for (const [k, spec] of Object.entries(tpl.effects || {})) {
+                m.set(norm(k), { spec, key: norm(k), family: spec.family, opposite: spec.opposite ? norm(spec.opposite) : '', conflicts: new Set((spec.conflicts || []).map(norm)) });
+            }
+            fxCache.set(tpl, m);
+        }
+        return m;
+    }
+    const adjectiveLemma = w => w.adjective_m_singular || w.pt_word;
+    /* 自动选形容词模板：① 管理端 scene_noun 是人物名词 → 人物系，否则物体系；② 该系变形工坊的效果表里有这个词 → 变形工坊；
+       ③ 没配 scene_noun 且只有人物系有效果（feliz、rápido…）→ 人物系变形工坊；④ 否则该系的贴词牌版（describe_*）。manualOnly 的（性数配对）不参加。 */
+    function chooseAdjectiveTemplate(w, available) {
+        const key = norm(adjectiveLemma(w));
+        const workshops = available.filter(t => t.effects), plain = available.filter(t => !t.effects);
+        const personNoun = !!w.scene_noun && available.some(t => t.adjective_family === 'person' && (t.noun_contexts || []).some(c => c.noun === w.scene_noun));
+        const family = personNoun ? 'person' : 'object';
+        const has = t => fxIndex(t).has(key);
+        let pick = workshops.find(t => t.adjective_family === family && has(t));
+        if (!pick && !w.scene_noun) pick = workshops.find(t => t.adjective_family === 'person' && has(t));
+        if (!pick) pick = plain.find(t => t.adjective_family === family);
+        return pick || available[0];
+    }
     function chooseTemplate(w, templates) {
         if (w.scene_template) {
             const selected = templates.find(t => t.id === w.scene_template);
             if (!selected) throw new Error(`场景模板 ${w.scene_template} 当前不可用`);
             if (!(selected.applies_to?.pos || []).includes(w.pos)) throw new Error('所选场景模板不适用于当前词性');
+            if (selected.effects && !fxIndex(selected).has(norm(adjectiveLemma(w)))) throw new Error('这个词没有变形效果（效果表里没有它），请在管理端改选别的场景模板。');
+            if (Object.values(selected.nodes || {}).some(x => x && x.type === 'roam_match')) {     // 性数配对：四个词形互不相同才玩得了（阴阳同形 / 单复数同形的词会有重复的牌）
+                const forms = ['adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'].map(k => String(w[k] || '').trim().toLowerCase());
+                if (forms.some(f => !f) || new Set(forms).size < 4) throw new Error('这个词的四个词形不全不同（阴阳同形或单复数同形），不适用性数配对，请在管理端改选别的场景模板。');
+            }
             return selected;
         }
         const pos = ['noun', 'adjective', 'verb'].includes(w.pos) ? w.pos : 'noun';
@@ -144,7 +182,7 @@
             && (!t.foodOnly || isFood(w)) && !t.manualOnly);          // manualOnly（如 verb_persuade）不参加自动轮换，只在词里明确选了它时才用
         if (!available.length) throw new Error(`没有适用于${({ noun: '名词', adjective: '形容词', verb: '动词' })[pos]}的已发布场景模板`);
         if (!hasSceneData(w)) return available.find(t => t.id === 'shop') || available[0];
-        if (pos === 'adjective') return available[0];
+        if (pos === 'adjective') return chooseAdjectiveTemplate(w, available);
         let candidates = available;
         if (pos === 'verb' && !isPlainInfinitive(w.pt_word)) {
             const anyForm = available.filter(t => t.verbForms === 'any');
@@ -172,7 +210,7 @@
         return import(new URL('roam/index.js', SCRIPT_SRC || location.href).href);
     })().catch(e => { roamModule = null; throw e; }));
 
-    function playTemplate(w, ctx, tpl) {
+    function playTemplate(w, ctx, tpl, templates) {
         ctx = ctx || {};
         const mode = ctx.mode === 'assessment' || ctx.mode === 'preview' ? ctx.mode : (ctx.evaluateChoice ? 'assessment' : 'preview');
         const pool = ctx.pool || [], zh = w.cn_meaning || '', em = emojiOf(w), CANCEL = {};
@@ -434,9 +472,9 @@
             let mine, batch, fallback;
             if (tpl.adjectiveOnly) {
                 const idx = adjectiveIdx(nounCtx);
-                mine = { id: w.id, pt: adjectiveForm(w, nounCtx), ok: true };
-                batch = pool.filter(x => x.pos === 'adjective' && canPlay(x)).map(x => ({ id: x.id, pt: adjectiveForm(x, nounCtx) }));
-                fallback = GENERIC_ADJ.map(g => ({ id: -1, pt: g[idx] }));
+                mine = { id: w.id, pt: adjectiveForm(w, nounCtx), ok: true, key: norm(adjectiveLemma(w)) };
+                batch = pool.filter(x => x.pos === 'adjective' && canPlay(x)).map(x => ({ id: x.id, pt: adjectiveForm(x, nounCtx), key: norm(adjectiveLemma(x)) }));
+                fallback = GENERIC_ADJ.map(g => ({ id: -1, pt: g[idx], key: norm(g[0]) }));
             } else if (w.pos === 'verb') {
                 mine = { id: w.id, pt: w.pt_word, emoji: em, ok: true };
                 batch = pool.filter(x => x.pos === 'verb' && canPlay(x)).map(x => ({ id: x.id, pt: x.pt_word, emoji: emojiOf(x) }));
@@ -448,13 +486,34 @@
                 fallback = (tpl.foodOnly ? GENERIC.filter(g => FOOD_EMOJI.has(g.emoji)) : GENERIC).map(g => ({ id: -1, pt: g.pt, emoji: g.emoji }));
             }
             const seen = new Set([sameKey(mine.pt)]), seenEmoji = new Set(hasEmoji ? [em] : []), picked = [];
-            for (const c of [...shuffle(batch), ...shuffle(fallback)]) {
+            const FX = tpl.effects && n.fx ? fxIndex(tpl) : null;
+            if (FX && FX.has(mine.key)) {
+                /* 变形工坊：1 个反义词 + 不同维度的带效果词，避开"视觉上也说得通"的（conflicts）；拿不到就逐级降级 */
+                const mf = FX.get(mine.key);
+                const clash = c => { const cf = FX.get(c.key); return mf.conflicts.has(c.key) || (cf && cf.conflicts.has(mine.key)); };
+                const take = c => { seen.add(sameKey(c.pt)); picked.push({ ...c, ok: false }); };
+                const cands = [...shuffle(batch), ...shuffle(fallback)].filter(c => c.pt && c.key !== mine.key && !seen.has(sameKey(c.pt)) && !clash(c));
+                const ant = mf.opposite && cands.find(c => c.key === mf.opposite);
+                if (ant) take(ant);
+                const families = new Set([mf.family]);
+                for (const c of cands) {
+                    if (picked.length >= DISTRACTORS) break;
+                    const cf = FX.get(c.key);
+                    if (!cf || families.has(cf.family) || seen.has(sameKey(c.pt))) continue;
+                    families.add(cf.family); take(c);
+                }
+                for (const c of [...cands.filter(c => FX.has(c.key)), ...cands.filter(c => !FX.has(c.key))]) {
+                    if (picked.length >= DISTRACTORS) break;
+                    if (!seen.has(sameKey(c.pt))) take(c);
+                }
+            } else for (const c of [...shuffle(batch), ...shuffle(fallback)]) {
                 if (picked.length >= DISTRACTORS) break;
                 if (!c.pt || seen.has(sameKey(c.pt)) || leaks(c.pt) && !tpl.adjectiveOnly) continue;
                 if (hasEmoji && (!c.emoji || seenEmoji.has(c.emoji))) continue;          // 目标有 emoji，干扰项也必须有，且互不相同
                 seen.add(sameKey(c.pt)); if (c.emoji) seenEmoji.add(c.emoji); picked.push({ ...c, ok: false });
             }
-            return shuffle([mine, ...picked]).map(o => ({ ...o, disp: useEmoji ? disp : 'pt', fly: (useEmoji && o.emoji) ? o.emoji : o.pt, picked: false, out: false, hint: false }));
+            const fxOf = o => { if (!FX) return null; const e = FX.get(o.key); return e ? e.spec : null; };      // 每张牌带它自己的效果：抓错也会让展台上的东西变一下
+            return shuffle([mine, ...picked]).map(o => ({ ...o, disp: useEmoji ? disp : 'pt', fly: (useEmoji && o.emoji) ? o.emoji : o.pt, picked: false, out: false, hint: false, fx: fxOf(o) }));
         }
         function optionButton(o) {
             const b = el('button', 'sc-item' + (o.disp === 'pt' ? ' txt' : o.disp === 'emoji_pt' ? ' both' : '')); b.type = 'button';
@@ -553,12 +612,57 @@
                     }
                     if (o.wrong >= REVEAL_AT && mode === 'preview') o.list.find(y => y.ok).hint = true;   // 只有预习才会高亮正确项
                     if (mode === 'assessment' && o.wrong >= SKIP_AT) st.skipAttn = true;
-                    roamNotice(n.wrong_feedback || { pt: '', zh: '不是这个，再找找看' });
+                    roamNotice(n.wrong_feedback ? { ...n.wrong_feedback, zh: fillZh(n.wrong_feedback.zh) } : { pt: '', zh: '不是这个，再找找看' });   // zh 里可以带 {noun_zh} 等占位符
                     return 'wrong';
                 }
             });
             guard();
             return n.on_correct;
+        }
+        /* --- 节点：roam_match（性数配对：同一个形容词的 4 个词形牌，送到 4 个名词展台，性数对得上才算对）---
+           整局判一次：错误 <= pass_max_errors → 传本词 id（通过），否则传 -1（兜底项）；服务端判分入口和 roam_choice 完全一样。 */
+        const FORM_FIELDS = ['adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];   // 顺序 = noun_contexts 的序号（阳单 / 阴单 / 阳复 / 阴复）
+        async function doRoamMatch(id, n) {
+            if (!stage || !stage.runMatch) throw new Error('性数配对需要 3D 场地（舞台没有就绪）。');
+            const texts = FORM_FIELDS.map(k => String(w[k] || '').trim());
+            if (new Set(texts.map(t => t.toLowerCase())).size < 4) throw new Error('这个词的四个词形不全不同（阴阳同形或单复数同形），不适用性数配对，请在管理端改选别的场景模板。');
+            // 展台上的名词按这个词的意思变一下：效果表在同一"系"的变形工坊模板里；这个词没有效果就不变
+            const src = (templates || []).find(t => t.effects && t.adjective_family === tpl.adjective_family);
+            const entry = src ? fxIndex(src).get(norm(adjectiveLemma(w))) : null;
+            const pads = texts.map((text, i) => ({ id: w.id, idx: i, text, pt: text, ok: false, fx: entry ? entry.spec : null }));
+            showPrompt(n.prompt_zh);
+            clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, 4200);
+            setCtl(null); root.classList.add('rm-playing');
+            const today = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ''));
+            let lastSpeech = null;                                                // 最后一句读音：整局结束后要等它读完，不然会被紧接着的"谢谢"台词顶掉
+            const res = await stage.runMatch({
+                pads, seed: (Number(w.id) || 1) * 1000 + today, preview: mode === 'preview', grabRange: n.grab_range || 1.4, hints: n.hints || {},
+                clue: { zh: n.prompt_zh ? fillZh(n.prompt_zh) : '' },
+                onApproach: pad => { if (ctx.speak) ctx.speak(w, 'word', null, FORM_FIELDS[pad.idx]); },        // 预习：靠近词牌读牌上的词形
+                onMistake: () => roamNotice(n.wrong_feedback ? { ...n.wrong_feedback, zh: fillZh(n.wrong_feedback.zh) } : { pt: '', zh: '性数对不上，再试一次' }),
+                onPlaced: (pad, stallIdx) => { if (ctx.speakSceneSentence) lastSpeech = ctx.speakSceneSentence(w, tpl.id, null, stallIdx); }   // 送对一张：读整句（如 uma casa pequena）
+            });
+            guard();
+            root.classList.remove('rm-playing');
+            if (lastSpeech) { await Promise.race([lastSpeech, wait(2500)]); guard(); }
+            const passed = res.errors <= (n.pass_max_errors == null ? 1 : n.pass_max_errors);
+            if (ctx.evaluateChoice) {                                             // 整局判一次；提交失败重试一次，仍失败就不计错继续
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try { await ctx.evaluateChoice(w, passed ? w.id : -1); break; }
+                    catch (err) { guard(); if (attempt === 1) roamNotice((err && err.message) || '提交失败，已跳过判分。', 3000); }
+                }
+                guard();
+            }
+            return n.on_complete;
+        }
+        /* 本词的反义词（变形工坊预习收尾用）：词形取本语境的；批里有这个词就能读音，通用池里的只显示不读 */
+        function oppositeOf() {
+            const FX = tpl.effects ? fxIndex(tpl) : null, me = FX && FX.get(norm(adjectiveLemma(w))), opp = me && me.opposite && FX.get(me.opposite);
+            if (!opp) return null;
+            const rec = pool.find(x => x.pos === 'adjective' && canPlay(x) && norm(adjectiveLemma(x)) === opp.key) || null;
+            const g = GENERIC_ADJ.find(x => norm(x[0]) === opp.key);
+            const pt = rec ? adjectiveForm(rec, nounCtx) : (g ? g[adjectiveIdx(nounCtx)] : '');
+            return pt ? { spec: opp.spec, pt, rec } : null;
         }
         /* --- 节点：roam_deliver（带着抓对的物件走进交付环） --- */
         async function doRoamDeliver(id, n) {
@@ -566,11 +670,22 @@
             st.lastSpeech = (n.speech || 'none') === 'auto' ? speakNode(id) : null;
             clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, 4200);
             setCtl(null); root.classList.add('rm-playing');
+            const chosenFx = st.chosen && st.chosen.fx;                            // 变形工坊：抓对的词牌带着它的效果
             await stage.deliver(); guard();
             root.classList.remove('rm-playing');
             dialogueBubble.className = 'sc-dialogue-bubble';
             if (formField) speakForm(null); else speakWord(null);                 // 交付成功：读一遍这个词（形容词读牌上的词形），再进入"谢谢"
-            await wait(1100);
+            if (chosenFx && stage.playFx) {
+                await stage.playFx(chosenFx, { dur: 2.2, hold: true }); guard();   // 物体按词义变，保持到"谢谢"
+                const opp = mode === 'preview' ? oppositeOf() : null;
+                if (opp) {                                                         // 预习收尾：摆到反义词状态再回来，读一下反义词
+                    roamNotice({ pt: opp.pt, zh: '反义词 ↔' }, 2600);
+                    if (opp.rec && ctx.speak) ctx.speak(opp.rec, 'word', null, formField);
+                    await stage.playFx(opp.spec, { dur: 1.8 }); guard();
+                    await stage.playFx(chosenFx, { dur: 0.9, hold: true }); guard();
+                }
+                await wait(500);
+            } else await wait(1100);
             return n.next;
         }
 
@@ -591,7 +706,7 @@
         }
 
         /* --- 主循环 --- */
-        const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, actor_tap: doActorTap, hotspot_choice: doHotspots, word_choice: doChoice, roam_choice: doRoamChoice, roam_deliver: doRoamDeliver, complete: doComplete };
+        const HANDLERS = { dialogue: doDialogue, feedback: doDialogue, actor_tap: doActorTap, hotspot_choice: doHotspots, word_choice: doChoice, roam_choice: doRoamChoice, roam_deliver: doRoamDeliver, roam_match: doRoamMatch, complete: doComplete };
         const completeId = Object.keys(tpl.nodes).find(k => tpl.nodes[k].type === 'complete');
         async function run() {
             if (stageWait) { await stageWait; guard(); }
@@ -620,7 +735,7 @@
         const done = loadTemplates().then(templates => {
             if (!alive) return new Promise(() => {});
             const tpl = chooseTemplate(w, templates);
-            child = playTemplate(w, ctx, tpl);
+            child = playTemplate(w, ctx, tpl, templates);
             if (root.parentNode) root.replaceWith(child.root);
             return child.done;
         }).catch(error => {
@@ -649,5 +764,5 @@
         if (w.pos === 'adjective') return '形容词的场景模板，或四种词形不完整';
         return '缺少 emoji 或中文释义';
     };
-    window.Scene = { canPlay, play, emojiOf, whyNot };
+    window.Scene = { canPlay, play, emojiOf, whyNot, chooseTemplate };      // chooseTemplate 只读，给自动化测试用
 })();

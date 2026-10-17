@@ -91,10 +91,11 @@ function speakLine(sceneId, nodeId, variant, btn) {   // 场景台词只传注�
         });
     });
 }
-function speakSceneSentence(w, template, btn) {
+function speakSceneSentence(w, template, btn, variant) {      // variant（可选）：形容词名词语境序号，性数配对每送对一张牌读一句
     spkBtn?.classList.remove('play'); spkBtn = btn || null;
     const c = ttsCfg(), q = new URLSearchParams({ word_id: String(w.id), scene_template: template, tts_provider: c.provider });
     if (c.provider === 'edge' && c.voice) q.set('tts_voice', c.voice);
+    if (Number.isInteger(variant)) q.set('variant', String(variant));
     player.src = `${API}/api/scene/sentence-audio?${q}`;
     return new Promise(resolve => {
         const finish = () => {

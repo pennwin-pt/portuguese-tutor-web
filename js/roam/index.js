@@ -6,6 +6,7 @@
 import * as T from '../vendor/three-bundle.js';
 import { shared3d, claimActive, releaseActive } from '../stage3d.js';
 import { buildArena, makeRing, PLAYER_R } from './arena.js';
+import { createEffects } from './effects.js';
 import { createInput } from './input.js';
 import { PHYS, createPlayer, respawn, stepPlayer } from './physics.js';
 
@@ -18,6 +19,7 @@ const AUTO_GRAB_S = 0.8, AUTO_GRAB_SPEED = 0.5, AUTO_GRAB_CONE = 60 * Math.PI / 
 const lsGet = k => { try { return localStorage.getItem(k); } catch { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 无痕模式等 */ } };
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const lerpN = (a, b, k) => a + (b - a) * k;
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -65,6 +67,8 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
 
     const world = { boxes: arena.boxes, spinners: arena.spinners, fallY: arena.fallY };
     const P = createPlayer(arena.spawn);
+    const fx = createEffects({ scene, arena });                    // 形容词变形工坊：摆件按词义变化（没有 pad.fx / playFx 时完全不运行）
+    const flights = [];                                            // 抓错后飞向展台的词牌副本 { m, from, to, k, done }
     const startFacing = arena.startYaw != null ? arena.startYaw + Math.PI : Math.PI / 2;   // 场地写了 startYaw（形容词展台 / 舞台：朝北）就按它出生，否则朝东
     P.facing = startFacing;                                        // 出生朝东（朝中枢）
     let yaw = arena.startYaw != null ? arena.startYaw : -Math.PI / 2;   // 镜头水平角：镜头在人物西侧、朝东（中枢方向）看；0 = 镜头在南侧朝北看
@@ -147,6 +151,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
 
     /* ---------- 答案物件（orb）与标签 ---------- */
     const orbs = [];
+    if (debug) window.__roam = { fx, arena, P, flights, orbs };      // 调试用（URL 带 ?debug）：scene-lab 的效果面板和自动化测试要用
     /* 选项放到哪个底座：正确项放 correctSlot（shop 的"词属于哪个货架区"）；没指定就在 randomTarget≠false 的底座里随机；干扰项随机填满剩下的 */
     function assignSlots(pads, seed, correctSlot) {
         const r = rng(seed), all = arena.slots.map((_, i) => i);
@@ -181,23 +186,59 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     const heldPos = new T.Vector3();
     function pickUp(o) {
         carrying = o; o.carried = true; mode = 'carrying';
-        arena.ring.active = true; arena.ring.obj.visible = true; sfx('grab');
+        if (run && run.match) arena.setStallRings(true, matchGlowIdx());        // 性数配对：显示还没放好的展台环
+        else { arena.ring.active = true; arena.ring.obj.visible = true; }
+        sfx('grab');
     }
     function dropBack() {                                         // 掉下去 / 重生：物件回到原底座
         if (!carrying) return;
         carrying.carried = false; carrying.mesh.position.copy(carrying.home); carrying.mesh.scale.setScalar(1);
         carrying = null; mode = run ? 'free' : 'idle'; arena.ring.active = false; arena.ring.obj.visible = false;
+        if (arena.setStallRings) arena.setStallRings(false);
+    }
+    /* ---------- 性数配对（roam_match）：4 张词形牌 → 4 个名词展台 ---------- */
+    const matchGlowIdx = () => (run && run.match && carrying && (run.opts.preview || run.wrong >= (run.opts.hints.arrow_after_wrong || 2))) ? carrying.pad.idx : -1;   // 预习总是提示；测验错 2 次后才提示
+    function matchDeliver(s) {
+        const o = carrying;
+        if (o.pad.idx !== s.idx) {                                             // 送错：词牌弹回原架子，错误 +1
+            run.wrong++; sfx('wrong'); dropBack(); run.cool = 1.4;
+            if (run.opts.onMistake) run.opts.onMistake(o.pad, s.idx);
+            return;
+        }
+        mode = 'delivering'; sfx('deliver'); arena.setStallRings(false); arrow.hidden = true;
+        const from = o.mesh.position.clone(), to = s.deliver; let k = 0;
+        const fly = () => {
+            if (!alive) return;
+            k += 0.05; const e = ease(Math.min(1, k));
+            o.mesh.position.set(lerpN(from.x, to.x, e), lerpN(from.y, to.y, e) + Math.sin(e * Math.PI) * 0.8, lerpN(from.z, to.z, e)); o.mesh.scale.setScalar(0.8 - 0.55 * e);
+            if (k < 1) { requestAnimationFrame(fly); return; }
+            o.mesh.visible = false; o.label.remove(); o.carried = false; o.pad.out = true; carrying = null; s.done = true; mode = 'free'; run.placed++;
+            if (o.pad.fx) fx.play(o.pad.fx, { dur: 1.4, targets: arena.stallTargets(s.idx) });      // 展台上的名词按这个词的意思变一下
+            if (run.opts.onPlaced) run.opts.onPlaced(o.pad, s.idx);
+            if (run.placed >= orbs.length) { const r = run.resolve; run.resolve = null; mode = 'idle'; if (r) r({ errors: run.wrong }); }
+        };
+        requestAnimationFrame(fly);
     }
     async function grab(o) {
         if (mode !== 'free' || !run) return;
+        if (run.match) { pickUp(o); return; }                    // 性数配对：抓起来就走，送到展台才算对错
         if (o.pad.scored) { pickUp(o); return; }                  // 已答对的物件重抓：不再判分
         mode = 'locked'; input.reset(); sfx('grab'); if (navigator.vibrate) navigator.vibrate(15);
         let result = 'error';
         try { result = await run.opts.onGrab(o.pad); } catch { result = 'error'; }
         if (!alive) return;
         if (result === 'correct') { o.pad.scored = true; pickUp(o); const r = run.resolve; run.resolve = null; r && r({ pad: o.pad }); }
-        else if (result === 'wrong') { o.pad.dead = true; run.wrong++; mode = 'free'; sfx('wrong'); }
+        else if (result === 'wrong') {
+            o.pad.dead = true; run.wrong++; mode = 'free'; sfx('wrong');
+            const dv = arena.delivery();
+            if (o.pad.fx && dv.target) flyCopy(o, dv.target, () => fx.play(o.pad.fx, { dur: 1.6 }));   // 变形工坊：抓错的词牌也飞到展台，物体按"错词"的意思变一下再变回来（只是反馈，不影响判分）
+        }
         else { mode = 'free'; run.cool = 1.2; }
+    }
+    function flyCopy(o, to, done) {
+        const m = new T.Mesh(new T.SphereGeometry(0.32, 16, 12), o.mesh.material.clone());
+        m.position.copy(o.mesh.position); scene.add(m);
+        flights.push({ m, from: o.mesh.position.clone(), to: to.clone(), k: 0, done });
     }
     const inRange = o => {
         if (o.pad.dead || o.pad.out || o.carried) return false;
@@ -272,15 +313,27 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         for (const o of orbs) o.label.style.setProperty('--p', String(Math.min(1, o.prog)));
         run.since += dt;
         /* 提示：抓错 N 次后出箭头；总时长到了出"快速通道" */
-        const target = orbs.find(o => o.pad.ok && !o.pad.dead);
+        const target = run.match ? null : orbs.find(o => o.pad.ok && !o.pad.dead);
         const showArrow = !!target && mode === 'free' && run.wrong >= (run.opts.hints.arrow_after_wrong || 2);
-        arrow.hidden = !(showArrow || (mode === 'carrying' && !!carrying));
+        const matchStall = run.match && mode === 'carrying' && carrying ? arena.stalls[carrying.pad.idx] : null;
+        if (run.match) {                                                       // 性数配对：携带时，预习 / 错 2 次后箭头指向该去的展台，对应的环亮绿色
+            const glow = matchGlowIdx();
+            if (mode === 'carrying' && glow !== run.glow) arena.setStallRings(true, glow);
+            run.glow = glow; arrow.hidden = !(matchStall && glow >= 0);
+        } else arrow.hidden = !(showArrow || (mode === 'carrying' && !!carrying));
         if (!arrow.hidden) {
-            const tp = mode === 'carrying' ? arena.ring.pos : target.slot.pos;
+            const tp = run.match ? matchStall.pos : (mode === 'carrying' ? arena.ring.pos : target.slot.pos);
             const vx = tp.x - P.x, vz = tp.z - P.z, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
             arrow.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(vx * rx + vz * rz, vx * fx + vz * fz)}rad)`;
         }
         fastBtn.hidden = !(mode === 'free' && run.t > (run.opts.hints.fast_track_s || 60));
+        /* 性数配对：进了某个展台环 = 把手里的词牌送给这个展台 */
+        if (run.match && mode === 'carrying' && carrying) {
+            for (const s of arena.stalls) {
+                if (s.done) continue;
+                if (Math.hypot(s.pos.x - P.x, s.pos.z - P.z) <= s.r && Math.abs(P.y - PLAYER_R - s.pos.y) < 1.2) { matchDeliver(s); break; }
+            }
+        }
         /* 交付 */
         if (mode === 'carrying' && deliverResolve) {
             const d = Math.hypot(arena.ring.pos.x - P.x, arena.ring.pos.z - P.z);
@@ -317,6 +370,13 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     }
     function visuals(dt, paused) {
         arena.update(paused ? 0 : dt);
+        fx.tick(paused ? 0 : dt, camera);
+        for (let i = flights.length - 1; i >= 0; i--) {                        // 抓错的词牌副本：弧线飞向展台，到了就触发效果
+            const f = flights[i]; f.k += (paused ? 0 : dt) / 0.55; const e = ease(Math.min(1, f.k));
+            f.m.position.set(lerpN(f.from.x, f.to.x, e), lerpN(f.from.y, f.to.y, e) + Math.sin(e * Math.PI) * 0.8, lerpN(f.from.z, f.to.z, e));
+            f.m.scale.setScalar(1 - e * 0.6);
+            if (f.k >= 1) { scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); flights.splice(i, 1); if (alive && f.done) f.done(); }
+        }
         /* 玩家 */
         const hs = Math.hypot(P.vx, P.vz), run01 = Math.min(1, hs / PHYS.maxSpeed);
         pv.position.set(P.x, P.y - PLAYER_R, P.z);
@@ -383,6 +443,21 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         talk() { arena.friend.play('talk'); },
         cheer() { arena.friend.play('cheer'); },
         cameraTo() { },
+        /* 性数配对：opts = { pads:[{text, idx, fx}], hints, preview, seed, clue:{zh}, onApproach, onMistake, onPlaced }；全部送对后 resolve({ errors }) */
+        runMatch(opts) {
+            return new Promise(resolve => {
+                clearOrbs();
+                opts.hints = opts.hints || {};
+                makeOrbs(opts.pads, 'pt', opts.seed || 1, undefined, true);
+                clueEmoji.textContent = ''; clueEmoji.classList.remove('multi'); clueZh.textContent = (opts.clue && opts.clue.zh) || '';
+                for (const s of arena.stalls) s.done = false;
+                run = { opts, resolve, t: 0, since: 0, wrong: 0, cool: 0, near: null, range: opts.grabRange || 1.4, match: true, placed: 0, glow: -1 };
+                mode = 'free'; setHud(true);
+                if (!reduced()) introT = run_introDur;
+            });
+        },
+        playFx(spec, opts) { return fx.play(spec, opts); },          // 形容词变形工坊：scene.js 在交付后播放"正确词"的效果 / 预习收尾播放反义词
+        clearFx() { fx.clear(); },
         run(opts) {
             return new Promise(resolve => {
                 clearOrbs();
@@ -406,6 +481,8 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         dispose() {
             if (!alive) return; alive = false;
             cancelAnimationFrame(raf); ro.disconnect(); input.destroy();
+            if (debug && window.__roam && window.__roam.P === P) window.__roam = null;                   // 调试钩子随场景释放
+            fx.dispose(); for (const f of flights) { scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); } flights.length = 0;
             clearOrbs(); hud.remove(); labelsLayer.remove(); rotate.remove(); if (canvas.parentNode === view) view.removeChild(canvas);
             scene.remove(pv, shadow); arena.dispose(); fade.classList.remove('on');
             releaseActive(api);

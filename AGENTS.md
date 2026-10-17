@@ -10,10 +10,15 @@
 
 ## 文件
 ```
-index.html  css/index.css  css/touch-protection.css  js/index.js     聊天页
-words.html  css/words.css  js/words.js                              单词任务页（复用 index.css）
-css/scene.css  js/scene.js                                           预习用的场景演练（words.html 里先于 words.js 引入）
+index.html  css/index.css  css/touch-protection.css  js/index.js      聊天页
+words.html  css/words.css  js/words.js                               单词任务页（复用 index.css）；words.html 里 scene.js 先于 words.js 引入
+css/scene.css  js/scene.js                                           场景演练的 DOM 层（台词气泡、热点按钮、人物点击区、选词面板）
+js/stage3d.js  js/stage3d-layouts.js  js/vendor/three-bundle.js     3D 舞台（Three.js）与各模板的布局 LAYOUTS；现在只有点选模板 verb_persuade 在用
+js/roam/{index,arena,physics,input,effects}.js  css/roam.css          走路版场景：自由走动的 3D 场地 + 形容词变形效果引擎；tpl.roam 时由 scene.js 动态加载（样式自动插入，不用改 HTML）
+scene-lab.html  js/scene-lab.js                                      场景模板调试页（复用已发布模板，测验预览不提交判分）
+models/<路径>.glb  models/MODELS*.md  models/*.bat|*.js|*.ps1       3D 模型与模型清单 / 下载与修复脚本；缺文件时用兜底几何体，不会报错
 sounds/success.wav, fail.wav                                         答对/答错音效（缺文件静默不播）
+sounds/roam/{jump,land,bounce,grab,wrong,deliver,respawn,bump}.wav   走路版音效（缺文件静默不播）
 ```
 - `words.css` 只补单词页独有样式；单词页标题栏放大等覆盖写在 `words.css` 里（`#app > header`），**不要为单词页改 `index.css`**（聊天页共用）。
 
@@ -47,17 +52,20 @@ sounds/success.wav, fail.wav                                         答对/答�
 - 顶部 `#points` 读 `GET /api/admin/points`（累计 / 今日 / 余额 / 本轮得分）。
 - words.js 里有一小段从 index.js 精简拷贝的 `NAME_RE` / guestSid / 主题 / `ttsCfg()`，改这些要两个 JS 一起改。
 
-## 场景演练（预习与正式测验，scene.*）
-- 预习有两种展示：`scene`（场景，默认）和 `preview`（列表）。入口统一走 `enterPreview()`：学完当天任务后的"预习明天的词"先进场景；列表页顶部有「🎬 用场景练习这些词」；场景页底部「📋 看列表」随时切回列表。**周日首页的"只看列表"仍直接进列表。**预习跟读只调无写入的 `/api/scene/check`。
-- 正式测验仅在第一轮 `new` / `review` 原题前给已确认启用的名词或形容词增加一次场景测验。名词要求 `scene_confirmed === true && pos === "noun" && scene_ok === true`；形容词还要求 `pos === "adjective"` 且四种 `adjective_*` 性数形式齐全。不带场景字段的旧词也必须跳过正式测验场景。`Scene.canPlay()` 对旧数据的兼容只用于预习。`weekly`、`extra` 不增加场景。答错计入 `attempts`、标记本轮错词，并影响原题答对后的 `hard` 结果；答对不代替原题，仍需完成原测试。错词重测不会重复场景。
-- 学习/复习场景答对可按现有 `WordQuizAward` 发分，同一 run 的同一个单词最多一分；原题答对仍照常请求发分，唯一键避免重复得分。场景不单独结算进度；每天仍按原计划 mode 对每词结算一条 outcome。
-- 预习场景完成走 `previewDone()`。正式测验场景完成或跳过则返回当前词的原测试，不调用 `next()`；跳过场景本身不记错，之前已经发生的错误保留。
-- `scene.js` 独立：对外只有 `Scene.canPlay(w)`、`Scene.play(w, ctx)`（返回 `{root, done, cancel}`）、`Scene.emojiOf(w)`；不依赖 words.js 的全局，朗读、来源按钮都由 `ctx` 传入。
-- 场景模板由 `scene.js` 的 `TEMPLATES` 数据驱动：商店购物、餐厅点单、帮朋友找东西、描述特征。名词可用前三种；形容词使用 `describe`，由前端按词条 ID 选择 `um copo / uma casa / uns livros / umas casas` 的性数语境。管理端可指定兼容模板或自动轮换；形容词未指定时自动使用 `describe`。台词经 `{pt}`、`{zh}`、`{art}`、`{emoji}`、`{noun}`、`{nounZh}`、`{adj}` 占位符填充；固定台词通过 `ctx.speakText(text, btn)` 请求 `/api/tts`，只在用户点击时触发，合成失败静默保留文字。
-- 场景词字段由后端随 `/api/words/today` 的 `words` / `preview` 返回：`emoji`、`pos`、名词用 `gender`/`number`、`scene_ok`、`scene_confirmed`、`scene_template`。形容词另有 `adjective_m_singular`、`adjective_f_singular`、`adjective_m_plural`、`adjective_f_plural` 四种词形。不规则变化必须逐项人工审核；不变化的形式可以重复。抽象形容词不应启用场景。
-- 场景答题方式：预习默认跟读，使用 `/api/scene/check`，无写入。正式测验默认回忆着说：先显示中文提示，不展示或播放目标葡语句；也可切换「选一句」或「看和听」，这些均为正式测验尝试并调用 `/api/words/scene/evaluate`。录音复用单词页 `getMic()` / `waitMicLive()` 和 iOS/安卓流策略，场景取消时停止录音。
-- 台词：只有场景字段已确认且 `gender` 为 `m` / `f` 时才加不定冠词；`number` 为 `singular` / `plural`，缺省按单数，分别使用 `um/uma/uns/umas`。字段未确认或缺少性别时保留旧台词。
-- 动画只用 CSS `transform/opacity`，并支持 `prefers-reduced-motion`；SVG 人物里只拼颜色常量，词和中文一律 `textContent`。
+## 场景演练（预习与正式测验，scene.* / roam/*）
+- **只支持 3D，没有 2D 回退，也不用录音判分**：场景全部是点选 / 走路抓取，不再有 `/api/scene/check`、`/api/tts`、`TEMPLATES` 内置模板、`?stage=2d`、SVG 人物。WebGL 不可用或模板加载失败时只显示错误卡 + 退出按钮。**不要加回 2D 或跟读 / 录音作答。**
+- **数据驱动**：模板只从 `GET /api/scene/templates`（带 ETag，304）加载，前端没有内置副本；节点图（`dialogue` / `feedback` / `hotspot_choice` / `word_choice` / `actor_tap` / `roam_choice` / `roam_deliver` / `roam_match` / `complete`）的字段说明在 `scene.js` 文件头注释。固定台词经 `/api/scene/line-audio`（只传模板 id + 节点 id + variant，不传文本）；跟读句经 `/api/scene/sentence-audio`。
+- **对外接口**：`window.Scene = { canPlay, play, emojiOf, whyNot, chooseTemplate }`；`Scene.play(w, ctx)` 返回 `{root, done, cancel}`，`ctx` 的字段见 `scene.js` 文件头注释（`mode`、`speak`、`speakLine`、`speakSceneSentence`、`pool`、`evaluateChoice`、`onExit`、`cancelAudio`…）。`scene.js` 不依赖 words.js 的全局，朗读和来源按钮都由 `ctx` 传入。`chooseTemplate` 只读导出，给自动化测试用。
+- **预习**：预习页默认是单词列表，每个 `Scene.canPlay(w)` 的词有「🎬 预习场景」按钮（`startPreviewScene`）；场景里「📋 看单词列表」退回列表；走完回到列表。预习不评分、不写进度。**周日首页的“只看列表”仍直接进列表。**
+- **正式测验**：仅第 1 轮、`kind` 为 `new` / `review`、`canUseAssessmentScene(w)`（`scene_confirmed === true`、`scene_ok === true`、`pos` 是名词 / 形容词 / 动词、`Scene.canPlay`）的词，在原题前多一次场景（`sceneSeen` 保证每词一次；`weekly`、`extra` 不加；错词重测不再来）。场景走完或点“跳过场景”都回到**当前词的原测试**，不调用 `next()`。不带场景字段的旧词一律跳过正式测验场景。
+- **场景判分**：`evaluateSceneChoice` 提交 `POST /api/words/scene/evaluate`（只认 `selected_word_id`）：`attempts++`、答错 `markMissed(w)`（影响原题答对后的 `hard` 结果）、答对按 `earned` / `round_score` 更新积分栏；**提交失败（抛错）不计错、可重试**；场景不单独结算进度，答对也不代替原题。只有 `word_choice` 和走路版的“抓取答案 / 性数配对整局”会提交；点人物、点错地点不发请求。
+- **选模板**（`chooseTemplate`）：词里 `scene_template` 有值就照办（模板不存在 / 词性不符 / 变形工坊没有这个词的效果 / 性数配对四词形有重复，都抛错页，**不静默降级**）；没设就按词性在 `manualOnly` 以外的已发布模板里选。形容词走 `chooseAdjectiveTemplate`：`scene_noun` 是人物名词 → 人物系，否则物体系；效果表里有这个词 → 变形工坊，没有 → 贴词牌 `describe_*`；没配 `scene_noun` 且只有人物系有效果的词（feliz、rápido…）→ 人物系变形工坊。
+- **走路版（roam）**：一次抓取 = 一次 `evaluateChoice`；自动抓取默认开（`localStorage.roam_autograb='0'` 关）；`localStorage.roam_dpr` 记住自适应画质（一次变慢会被记住，可清掉）。URL 带 `?debug` 时暴露 `window.__roam`，`scene-lab` 出现「效果调试面板」。
+- **形容词三种玩法**：`describe_*` 贴词牌；`adj_workshop_*` 变形工坊（`scene.js` 的 `buildOptions` 在原选项上加“反义词 1 + 不同维度 2、排除 conflicts”，每个选项带 `fx`；抓对 / 抓错的词牌都飞到展台并按词义变化；效果引擎在 `roam/effects.js`，变体摆件要克隆材质，粒子同屏 ≤ 30）；`adj_agree_*` 性数配对（`roam_match`，4 张词形牌送到 4 个展台，整局只判一次：错误 ≤ `pass_max_errors` 传 `w.id`，否则传 `-1`；每送对一张读一句整句，带 `variant`）。形容词词牌读音：`speak(w, 'word', btn, form)` 的 `form` 是 `adjective_*` 字段名，读牌上显示的那个词形。`GENERIC_ADJ` 是干扰项兜底词表（[阳单, 阴单, 阳复, 阴复]）。
+- **词字段**：由 `/api/words/today` 的 `words` / `preview` 返回：`emoji`、`pos`、`gender` / `number`（名词）、`scene_ok`、`scene_confirmed`、`scene_template`、`scene_noun`（形容词的形容对象）、`scene_zone`（shop 的货架区），形容词另有 `adjective_m_singular` / `adjective_f_singular` / `adjective_m_plural` / `adjective_f_plural`。不规则变化必须逐项人工审核；不变化的形式可以重复（但不能玩性数配对）；抽象形容词不应启用场景。
+- **台词与泄露保护**：任何要显示 / 朗读的固定葡语，若整词命中目标词（含形容词四个词形）→ 换成 ______ 并不朗读；热点标签撞词只留图标。只有场景字段已确认且 `gender` 为 `m` / `f` 时才加不定冠词。
+- **改场景的同步点**：模板 JSON（服务端）↔ `roam/arena.js` 的 `ARENAS`（模板的 `arena` 字段 = 它的键）↔ `effects.js` 的 `EFFECT_KINDS`（服务端 `EFFECT_PARAMS` 一一对应）。部署顺序：先前端，再后端校验器 / 接口，最后模板 JSON 并重启后端；反了旧前端会在 `roam_choice` / `roam_match` 卡住。要新增 3D 模型时给**清单**（相对 `models/` 的文件名、新增还是复用、外观 / 高度 / 朝向要求、单个 `.glb`、贴图内嵌、不需要骨骼动画、低多边形风格）。
+- 动画只用 CSS `transform/opacity` 并支持 `prefers-reduced-motion`（DOM 层）；词和中文一律 `textContent`。
 
 ## 录音与音频（iOS/安卓踩过的坑）
 - 录音手势：按住录、松开发、上滑取消；iOS 优先 `audio/mp4`。
@@ -65,7 +73,6 @@ sounds/success.wav, fail.wav                                         答对/答�
 - **不要给 `#hold` 设 `touch-action: manipulation`**（`touch-protection.css` 里尤其不能）：会覆盖 `index.css` 的 `none`，iOS 上手指稍动就 `pointercancel`，录音被悄悄丢掉。
 - 单词页 `getMic()` 在整个测试期间复用同一个 MediaStream（`begin()` 预热；`finish()` / 切后台 / `pagehide` 时 `releaseMic()`；`onstop` 里**不要 stop 轨道**）。按下时流被系统静音要 `waitMicLive` 等 1.5s，不行就丢弃重新申请。聊天页仍是每次申请，没改。
 - 答错先播失败音效，播完（≤1.5s）再朗读单词。
-- 场景录音使用自己的 `.sc-hold`；若改录音手势，仍需遵守同样的 iOS 音频会话与取消规则，不能给单词测试的 `#hold` 覆盖 `touch-action:none`。
 
 ## 前端用到的接口（字段别随意改）
 | 接口 | 要点 |
@@ -82,16 +89,17 @@ sounds/success.wav, fail.wav                                         答对/答�
 | `DELETE /api/session/{session_id}` | 清空历史 |
 | `POST /api/user/bind` | JSON `{username}`（前端没有 PIN 界面） → profile |
 | `GET /api/user/{u}` · `POST …/theme` · `…/background`(FormData file ≤5MB) · `…/tts` · `…/persona` | 主题/背景/音色/人设同步 |
-| `GET /api/words/today?session_id=` | `{words,preview,meta,completed}`；词带 `kind`，mode 3 带 `cloze`，可能带 `ex`；可选场景字段 `emoji,pos,gender,number,scene_ok,scene_confirmed,scene_template`，其约定见上文 |
+| `GET /api/words/today?session_id=` | `{words,preview,meta,completed}`；词带 `kind`，mode 3 带 `cloze`，可能带 `ex`；可选场景字段 `emoji,pos,gender,number,scene_ok,scene_confirmed,scene_template,scene_noun,scene_zone` 与形容词四词形 `adjective_*`，其约定见上文 |
 | `POST /api/words/run` | JSON `{session_id,restart?}` → `{run_id,batch_number,round_score}` |
 | `POST /api/words/evaluate` | FormData：audio, word_id, mode(1-4), session_id?, run_id? → `{passed,recognized_text,comment}`；mode 4 另带 `corrected`；422 没听清 |
-| `POST /api/scene/check` | FormData：audio, word_id → `{word_id,passed,recognized_text,comment}`；仅预习跟读判定，不写错题、进度或积分；形容词接受已审核的四种性数词形 |
-| `POST /api/words/scene/evaluate` | FormData：`audio` 或 `selected_word_id`、`word_id`、`session_id`、`run_id` → `{word_id,passed,recognized_text,comment,earned,round_score?}`；仅正式场景测验使用，答对时申请本 run 单词积分，不单独写日结进度；形容词语音判定接受已审核的四种词形 |
-| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 仅为已确认场景词按受支持模板合成跟读句；支持 noun 模板及 adjective `describe`，词和模板由服务端校验，按音源/音色缓存 |
+| `GET /api/scene/templates` | 已发布场景模板；带 `ETag`，前端 `If-None-Match` / 304；失败就显示错误卡，没有内置副本 |
+| `POST /api/words/scene/evaluate` | FormData：`selected_word_id`、`word_id`、`session_id`、`run_id` → `{word_id,passed,recognized_text,comment,earned,round_score?}`；**不再接受 `audio`**；仅正式场景测验使用，答对时申请本 run 单词积分，不单独写日结进度 |
+| `GET /api/scene/line-audio?scene_id=&node_id=&variant=&tts_provider=&tts_voice=` | 固定台词朗读，只传模板 id + 节点 id；`variant` 仅台词里带 `{art}` / `{noun}` 的节点才传（名词语境序号），其余传了会 422 |
+| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=&variant=` | 为已确认场景词按受支持模板合成跟读句；词和模板由服务端校验；`variant`（可选）= 形容词名词语境序号，性数配对每送对一张牌读一句，越界 422，不传 = 本词自己的语境；请求的模板必须等于词里设置的 `scene_template` |
 | `POST /api/words/complete` · `record_error` · `mark_mastered` | 均为 **JSON** |
-| `GET /api/words/{id}/audio?kind=word\|sentence&ex=` | 朗读，`ex` 仅 sentence 有效，前端只在 `w.ex` 为真时才带 |
-| `GET /api/tts?text=&tts_provider=&tts_voice=` | 仅支持场景模板中的固定台词；长度、句子白名单、音源/音色白名单和频率限制由后端校验；按文本 + 音源 + 音色缓存 |
+| `GET /api/words/{id}/audio?kind=word\|sentence&ex=&form=` | 朗读，`ex` 仅 sentence 有效，前端只在 `w.ex` 为真时才带；`form`（可选，仅 word）= `adjective_*` 字段名，读牌上显示的词形 |
 | `GET /api/admin/points` | 单词页积分栏专用 |
+| `GET /api/admin/words/{id}` | 只有 `scene-lab` 按 `?word=` 取词时用 |
 
 错误格式：`detail`（字符串或 `[{msg}]`）或 `message`，前端 `errMsg()` 读取；`req()` 用 `j.data || j` 兼容两种返回包装。**改响应字段时同步检查 `audioUrl()` / `fillMe()` / `addAI()`。**
 
@@ -101,8 +109,10 @@ sounds/success.wav, fail.wav                                         答对/答�
 - 前端没有 PIN 界面；没有鉴权 token，身份靠 username 明文。
 - 填空只做精确匹配，模糊匹配是未做的后续项。
 - 聊天页录音每次重新申请麦克风，不要顺手改成复用（只有单词页复用）。
-- 不要引入构建链/框架/第三方库。
+- 场景演练没有 2D 回退、没有录音跟读，别加回来（见「场景演练」）。
+- 形容词的 6 个模板的 `noun_contexts` 与 `context_pick` 是服务端和前端 / arena 序号对应的依据，别在前端假设它们可以改。
+- 不要引入构建链/框架/第三方库（`js/vendor/three-bundle.js` 是唯一的第三方文件，只导出约 30 个名字，要用别的类先查 bundle 导出）。
 
 ## 交付
 - 默认只改涉及的文件，正文用几句话说明改了什么、为什么、后端哪一侧要跟着改。
-- 改完告诉我怎么验证（哪个页面、哪个操作）；手机和平板的布局差异要特别说明。
+- 改完告诉我怎么验证（哪个页面、哪个操作；场景相关可用 `scene-lab.html?template=<id>&word=<id>`，加 `&debug` 有效果调试面板）；手机和平板的布局差异要特别说明。

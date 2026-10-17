@@ -16,6 +16,10 @@
         player.pause(); player.src = `/api/scene/line-audio?${q}`;
         return player.play().then(() => true).catch(() => false);
     };
+    const saySentence = (word, template, btn, variant) => {                 // 性数配对：每送对一张牌读一句（lab 里没有后端时只会 404，不影响流程）
+        player.pause(); player.src = `/api/scene/sentence-audio?word_id=${word.id}&scene_template=${encodeURIComponent(template)}&tts_provider=piper${Number.isInteger(variant) ? `&variant=${variant}` : ''}`;
+        return player.play().then(() => true).catch(() => false);
+    };
     const sayWord = (word, kind, btn, form) => {
         player.pause(); player.src = `/api/words/${word.id}/audio?kind=word&tts_provider=piper${form ? `&form=${encodeURIComponent(form)}` : ''}`;
         player.play().catch(() => {});
@@ -49,8 +53,8 @@
         current = Scene.play(word, {
             mode, pool: [], isLast: true, afterLabel: '重新预览', exitLabel: '结束预览',
             onExit: () => { current?.cancel(); current = null; host.textContent = ''; setStatus('预览已结束。'); },
-            speak: sayWord, speakLine: sayLine, cancelAudio: stopAudio,
-            evaluateChoice: async (target, choiceId) => ({ passed: Number(choiceId) === Number(target.id) }),
+            speak: sayWord, speakLine: sayLine, speakSceneSentence: saySentence, cancelAudio: stopAudio,
+            evaluateChoice: async (target, choiceId) => { (window.__evalLog = window.__evalLog || []).push(Number(choiceId)); return { passed: Number(choiceId) === Number(target.id) }; },   // __evalLog：自动化测试数判分次数
         });
         host.append(current.root);
         setStatus(`预览中：${template} / ${mode === 'assessment' ? '测验模式' : '预习模式'}。测验预览不会提交判分或积分。`);
@@ -90,4 +94,22 @@
         }
     }
     init();
+
+    /* 效果调试面板（URL 带 ?debug，场景进入走路阶段后出现）：直接点某个形容词的效果看展台上的东西怎么变；复位 = 回到原样 */
+    if (new URLSearchParams(location.search).has('debug')) {
+        const panel = document.createElement('div');
+        panel.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:99;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:10px;font:13px system-ui;box-shadow:0 4px 16px #0002;display:none;max-width:240px';
+        panel.innerHTML = '<b>效果调试</b><br><select id="lab-fx-sel" style="width:100%;margin:6px 0"></select><button id="lab-fx-play">播放（保持）</button> <button id="lab-fx-clear">复位</button><div style="color:#64748b;margin-top:4px">作用在当前展台 / 舞台上的摆件</div>';
+        document.body.append(panel);
+        const select = panel.querySelector('#lab-fx-sel'); let table = {};
+        fetch('/api/scene/templates').then(r => r.json()).then(({ templates }) => {
+            for (const t of templates.filter(x => x.effects)) for (const [key, spec] of Object.entries(t.effects)) {
+                const label = `${t.adjective_family === 'person' ? '人物' : '物体'} · ${key} (${spec.kind})`; table[label] = spec;
+                select.append(new Option(label, label));
+            }
+        }).catch(() => {});
+        panel.querySelector('#lab-fx-play').onclick = () => { if (window.__roam) window.__roam.fx.play(table[select.value], { dur: 1.2, hold: true }); };
+        panel.querySelector('#lab-fx-clear').onclick = () => { if (window.__roam) window.__roam.fx.clear(); };
+        setInterval(() => { panel.style.display = window.__roam ? 'block' : 'none'; }, 800);
+    }
 })();

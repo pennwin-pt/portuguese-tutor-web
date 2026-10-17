@@ -412,6 +412,57 @@ export const ARENAS = {
         ],
         slots: [{ id: 'nw', pos: [-8, 0, -4.6] }, { id: 'ne', pos: [8, 0, -4.6] }, { id: 'sw', pos: [-8, 0, 3.4] }, { id: 'se', pos: [8, 0, 3.4] }],
         camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
+    },
+    /* ---- 性数配对（adj_agree_object / adj_agree_person）----
+       4 个名词展台排成一排（序号 = 模板 noun_contexts：0 阳单 / 1 阴单 / 2 阳复 / 3 阴复），每个展台前一个交付环；
+       4 个词牌架在前侧，挂着同一个形容词的 4 个词形，玩家把每张牌送到性数对得上的展台。 */
+    adj_agree_hall: {
+        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 6.5], startYaw: 0,
+        ring: { pos: [0, 0, 0.5], r: 1.3 }, friend: { pos: [9.6, 0, 3.2], rotY: -2.3 },
+        tiles: [{ x: 0, z: 0, w: 26, d: 15, thick: 0.6, color: '#e7e1d6', flat: true, rp: [0, 0, 6.5] }],
+        decor: [-5.4, -1.8, 1.8, 5.4].map(x => ({ pos: [x, 0.2, -3.2], size: [1.7, 0.4, 1.7], color: '#f5efe6', solid: true })),
+        pads: [], spinners: [],
+        props: [
+            { model: 'street/tree_1', pos: [-11, 0, -6], h: 3.2, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [11, 0, -6.2], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] }
+        ],
+        stalls: [
+            { ring: [-5.4, 0, -0.9], r: 1.0, deliver: [-5.4, 1.3, -3.2], props: [{ id: 'cup', model: 'room/cup', pos: [-5.4, 0.4, -3.2], h: 0.45, fb: 'cup' }] },
+            { ring: [-1.8, 0, -0.9], r: 1.0, deliver: [-1.8, 2.0, -3.2], props: [{ id: 'house', model: 'street/building_1', pos: [-1.8, 0.4, -3.2], h: 1.0, fb: { w: 1.0, color: '#f2c7a5', house: true } }] },
+            { ring: [1.8, 0, -0.9], r: 1.0, deliver: [1.8, 1.3, -3.2], props: [{ id: 'bl', model: 'room/books', pos: [1.4, 0.4, -3.2], h: 0.4, fb: 'books' }, { id: 'br', model: 'room/books', pos: [2.2, 0.4, -3.2], h: 0.4, rotY: 0.5, fb: 'books' }] },
+            { ring: [5.4, 0, -0.9], r: 1.0, deliver: [5.4, 1.7, -3.2], props: [
+                { id: 'h1', model: 'street/building_1', pos: [4.7, 0.4, -3.1], h: 0.7, fb: { w: 0.6, color: '#f2c7a5', house: true } },
+                { id: 'h2', model: 'street/building_1', pos: [5.4, 0.4, -3.5], h: 0.7, fb: { w: 0.6, color: '#a7c7e7', house: true } },
+                { id: 'h3', model: 'street/building_1', pos: [6.1, 0.4, -3.1], h: 0.7, fb: { w: 0.6, color: '#f5d98b', house: true } }] }
+        ],
+        slots: [{ id: 'a', pos: [-9, 0, 1.8] }, { id: 'b', pos: [-3.6, 0, 4.6] }, { id: 'c', pos: [3.6, 0, 4.6] }, { id: 'd', pos: [9, 0, 1.8] }],
+        camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
+    },
+
+    adj_agree_stage: {
+        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 6.5], startYaw: 0,
+        ring: { pos: [0, 0, 0.5], r: 1.3 }, friend: { pos: [10, 0, 3.2], rotY: -2.3 },
+        tiles: [{ x: 0, z: 0, w: 28, d: 15, thick: 0.6, color: '#cfe7c4', flat: true, rp: [0, 0, 6.5] }],
+        decor: [-6, -2, 2, 6].map(x => ({ pos: [x, 0.1, -3.2], size: [3.0, 0.2, 1.9], color: '#e8c98a', solid: true })),
+        pads: [], spinners: [],
+        props: [
+            { model: 'street/tree_1', pos: [-12, 0, -6], h: 3.4, fb: { tree: true }, solid: [0.5, 3, 0.5] },
+            { model: 'street/tree_2', pos: [12, 0, -6.2], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] }
+        ],
+        stalls: [
+            { ring: [-6, 0, -0.7], r: 1.0, deliver: [-6, 2.0, -3.2], people: [{ id: 'a', model: 'people/boy_a', pos: [-6, 0.2, -3.2], h: 1.3, look: { shirt: '#3b82f6', hair: '#3b2a20' } }] },
+            { ring: [-2, 0, -0.7], r: 1.0, deliver: [-2, 1.9, -3.2], people: [{ id: 'a', model: 'people/girl_a', pos: [-2, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } }] },
+            { ring: [2, 0, -0.7], r: 1.0, deliver: [2, 2.0, -3.2], people: [
+                { id: 'a', model: 'people/boy_a', pos: [1.1, 0.2, -3.2], h: 1.3, look: { shirt: '#3b82f6', hair: '#3b2a20' } },
+                { id: 'b', model: 'people/boy_b', pos: [2, 0.2, -3.2], h: 1.3, look: { shirt: '#ef4444', hair: '#111827' } },
+                { id: 'c', model: 'people/boy_a', pos: [2.9, 0.2, -3.2], h: 1.3, look: { shirt: '#22c55e', hair: '#3b2a20' } }] },
+            { ring: [6, 0, -0.7], r: 1.0, deliver: [6, 1.9, -3.2], people: [
+                { id: 'a', model: 'people/girl_a', pos: [5.1, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
+                { id: 'b', model: 'people/girl_b', pos: [6, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } },
+                { id: 'c', model: 'people/girl_a', pos: [6.9, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#f97316', hair: '#111827' } }] }
+        ],
+        slots: [{ id: 'a', pos: [-10, 0, 1.8] }, { id: 'b', pos: [-4, 0, 4.6] }, { id: 'c', pos: [4, 0, 4.6] }, { id: 'd', pos: [10, 0, 1.8] }],
+        camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
     }
 };
 
@@ -433,7 +484,7 @@ export async function buildArena(arenaId, tpl) {
     const A = ARENAS[arenaId];
     if (!A) throw new Error(`没有名为 ${arenaId} 的场地（js/roam/arena.js 的 ARENAS）`);
     const loaded = {};
-    const variantItems = (A.variants || []).flatMap(v => [...(v.props || []), ...(v.people || [])]);
+    const variantItems = [...(A.variants || []), ...(A.stalls || [])].flatMap(v => [...(v.props || []), ...(v.people || [])]);
     const wanted = [...new Set([...BASE_MODELS, ...(A.props || []).map(p => p.model).filter(Boolean), ...(A.people || []).map(p => p.model).filter(Boolean), ...variantItems.map(p => p.model).filter(Boolean)])];
     await Promise.all(wanted.map(async p => { loaded[p] = await loadModel(p); }));
     const clone = p => T.cloneSkinned(loaded[p].scene);
@@ -530,21 +581,33 @@ export async function buildArena(arenaId, tpl) {
 
     /* ---- 变体（形容词走路版：按名词语境换摆件 / 人物，一次只显示一组）----
        摆件和人物都登记进 props（键 "变体序号:id"），交付时和普通道具一样"弹一下"；变体里的东西不参与碰撞（站在展台 / 舞台上）。 */
+    const placeItem = (group, keys, prefix, p, person) => {      // 摆一个物件 / 人物到 group 里，登记进 props（键 "前缀:id"）
+        const spec = { h: p.h, fb: typeof p.fb === 'string' ? { parts: PARTS[p.fb] } : (p.fb || {}) };
+        const obj = person
+            ? (loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackPerson(p.look || null), { h: p.h }))
+            : (p.model && loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackProp(spec), { h: p.h }));
+        obj.position.set(...p.pos); obj.rotation.y = p.rotY || 0; group.add(obj);
+        props[`${prefix}:${p.id}`] = { obj, base: obj.scale.clone(), bounce: 0 }; keys.push(`${prefix}:${p.id}`);
+    };
     const variants = (A.variants || []).map((v, i) => {
         const group = new T.Group(); group.visible = false; root.add(group);
-        const put = (p, person) => {
-            const spec = { h: p.h, fb: typeof p.fb === 'string' ? { parts: PARTS[p.fb] } : (p.fb || {}) };
-            const obj = person
-                ? (loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackPerson(p.look || null), { h: p.h }))
-                : (p.model && loaded[p.model] ? normalize(clone(p.model), { h: p.h }) : normalize(fallbackProp(spec), { h: p.h }));
-            obj.position.set(...p.pos); obj.rotation.y = p.rotY || 0; group.add(obj);
-            props[`${i}:${p.id}`] = { obj, base: obj.scale.clone(), bounce: 0 };
-        };
-        (v.props || []).forEach(p => put(p, false));
-        (v.people || []).forEach(p => put(p, true));
-        return { group, deliver: v.deliver ? new T.Vector3(...v.deliver) : null, bounce: (v.bounce || []).map(id => `${i}:${id}`) };
+        const keys = [];                                          // 这一组的摆件 / 人物在 props 里的键（效果引擎要作用在它们身上）
+        (v.props || []).forEach(p => placeItem(group, keys, i, p, false));
+        (v.people || []).forEach(p => placeItem(group, keys, i, p, true));
+        return { group, keys, deliver: v.deliver ? new T.Vector3(...v.deliver) : null, bounce: (v.bounce || []).map(id => `${i}:${id}`) };
     });
     let variant = -1;
+
+    /* ---- 展台（性数配对 adj_agree：4 个名词展台同时可见，每个展台前一个交付环；展台序号 = 模板 noun_contexts 的序号）---- */
+    const stalls = (A.stalls || []).map((s, i) => {
+        const group = new T.Group(); root.add(group);
+        const keys = [];
+        (s.props || []).forEach(p => placeItem(group, keys, `s${i}`, p, false));
+        (s.people || []).forEach(p => placeItem(group, keys, `s${i}`, p, true));
+        const ringG = makeRing(s.r, 0.08, '#94a3b8', 32); ringG.position.set(s.ring[0], 0.06, s.ring[2]); ringG.visible = false; root.add(ringG);
+        return { idx: i, pos: new T.Vector3(...s.ring), r: s.r, deliver: new T.Vector3(...s.deliver), keys, ring: ringG, done: false };
+    });
+    const stallColor = new T.Color();
 
     /* ---- 交付环 ---- */
     let ringObj;
@@ -603,6 +666,17 @@ export async function buildArena(arenaId, tpl) {
         padHit(i) { if (pads[i]) pads[i].squash = 1; },
         bounce(id) { for (const k of [].concat(id)) if (props[k]) props[k].bounce = 1; },   // 交付成功：宝箱之类的道具弹一下（id 可以是数组：复数名词的几个摆件 / 几个人一起弹）
         setVariant(i) { variant = variants[i] ? i : -1; variants.forEach((v, k) => { v.group.visible = k === variant; }); },   // 形容词走路版：只显示本词名词语境对应的那一组
+        stalls, stallCount: stalls.length,
+        /* 性数配对：携带词牌时显示所有未放好的展台环；glowIdx 给的那个环亮绿色（预习提示 / 错 2 次后的提示） */
+        setStallRings(visible, glowIdx = -1) {
+            for (const s of stalls) {
+                s.ring.visible = visible && !s.done;
+                stallColor.set(s.idx === glowIdx ? '#4ade80' : '#94a3b8');
+                s.ring.children.forEach(c => c.material.color.copy(stallColor));
+            }
+        },
+        stallTargets(i) { return stalls[i] ? stalls[i].keys.map(k => props[k]) : []; },
+        variantTargets() { const v = variants[variant]; return v ? v.keys.map(k => props[k]) : []; },     // 当前显示的那一组摆件 / 人物（效果引擎的作用对象）
         /* 交付成功时词牌飞向哪里、哪些东西弹一下：有变体用变体的；没有变体保持老行为（target=null → 飞向朋友，弹 deliverProp） */
         delivery() { const v = variants[variant]; return v ? { target: v.deliver, bounce: v.bounce } : { target: null, bounce: A.deliverProp ? [A.deliverProp] : [] }; },
         update(dt) {

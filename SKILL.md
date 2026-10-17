@@ -17,10 +17,11 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   index.html / css/index.css / css/touch-protection.css / js/index.js      聊天页
   words.html / css/words.css / js/words.js                                单词任务页(复用 index.css;聊天页 header 的 📚 进入)
   sounds/success.wav, sounds/fail.wav                                      单词页答对/答错音效(缺文件静默不播)
-  scene-lab.html / js/scene-lab.js                                          场景模板调试预览页（复用已发布模板，测验预览不提交判分）
+  scene-lab.html / js/scene-lab.js                                          场景模板调试预览页（复用已发布模板，测验预览不提交判分）；URL 带 `?debug` 会出现「效果调试面板」（直接触发某个形容词的变形效果 / 复位）
   js/scene.js / css/scene.css                                               场景演练 DOM 层（台词气泡、热点按钮、人物点击锚点、篮子、选词面板）；只支持 3D；对外 Scene.canPlay / play / emojiOf
   js/stage3d.js / js/stage3d-layouts.js / js/vendor/three-bundle.js         3D 舞台（Three.js）与每个模板的 3D 布局 LAYOUTS[模板id]；模型放 models/<路径>.glb，缺文件时用兜底几何体
-  js/roam/{index,arena,physics,input}.js / css/roam.css                    派对闯关（roam）：自由走动的 3D 场地，tpl.roam 时由 scene.js 动态加载（样式由 loadRoam 自动插入，不用改 HTML）
+  js/roam/{index,arena,physics,input,effects}.js / css/roam.css            派对闯关（roam）：自由走动的 3D 场地，tpl.roam 时由 scene.js 动态加载（样式由 loadRoam 自动插入，不用改 HTML）
+  js/roam/effects.js                                                        ★形容词变形工坊的效果引擎：`createEffects({scene,arena})` → `fx.play(spec,{dur,targets})` / 复位；8 种 kind，粒子同屏 ≤30（见「形容词走路版」）
 后端:
   main.py                  FastAPI入口,挂聊天/用户/单词/管理 API 路由 + startup 初始化各 manager(SQLite)
   run.py / start_server.bat  PyCharm调试入口 / Windows启动脚本
@@ -46,7 +47,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   memory/word_task_manager.py     每日"是否完成"记录(word_task_done)
   memory/word_error_manager.py    错词事件流(word_errors)
   memory/word_example_manager.py  ★生成例句缓存(P4):word_examples/word_example_use 两张表 + norm_sentence/pick_example 轮换
-  scenes/*.json            场景模板（16 个，启动时由注册表加载，改完要重启后端）；3D 布局不在这里，在前端 stage3d-layouts.js
+  scenes/*.json            场景模板（20 个，启动时由注册表加载，改完要重启后端；其中 6 个是形容词模板：describe_* / adj_workshop_* / adj_agree_*）；3D 布局不在这里，在前端 stage3d-layouts.js
   memory/scene_registry.py 场景模板注册表与校验（tools/validate_scenes.py 调用）
   prompts/tutor_prompt.py   教练人设(A1难度,pt-PT)+ build_system_prompt(persona, focus_words=None)
   prompts/helper_prompts.py 中文求助翻译/语法解析/单词拆解提示词
@@ -55,6 +56,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
   tools/backup_db.py        SQLite backup API 备份 sessions.db(start_server.bat 每次启动自动跑:每天一份,保留最近 14 份)
   tools/merge_wordmemorizer.py  一次性迁移(旧 WordMemorizer.db → sessions.db),已用完,可归档
   tools/validate_scenes.py  场景模板校验（零错误才算过）；tools/test_scenes.py / test_scene_api.py / test_scene_noun.py 是场景自测（需要 fastapi 环境）
+  tools/adjective_enable_report.py  ★形容词「启用清单」（只读 sessions.db）：哪些词能玩变形工坊、缺什么才能启用、四词形是否互不相同（能否玩性数配对）；`--db` / `--csv`
   tools/reset_week.py       手动兜底:重置某智能体本周词表 / 当天计划(合库后覆盖或删除周计划时服务端已自动重置)
   tools/test_*.py           各阶段自测脚本(test_wm_admin / test_wm_calendar / test_merge …)
 ```
@@ -308,7 +310,7 @@ WordMemorizer.Core/
 | `POST /api/words/scene/evaluate` | FormData: `selected_word_id,word_id,session_id,run_id` → `{word_id,passed,recognized_text,comment,earned,round_score?}`；只支持场景选项点选判分，答对时按现有规则尝试发放积分 |
 | `GET /api/scene/templates` | 返回场景注册表中 `published` 模板；响应带 `ETag`，支持 `If-None-Match` / 304 |
 | `GET /api/scene/line-audio?scene_id=&node_id=&variant=&tts_provider=&tts_voice=` | 只合成已发布模板中 `speech=auto/on_tap` 的节点台词；`describe_object` / `describe_person` 的 `variant` 是 `noun_contexts` 索引（0–3）；复用场景语音限速与缓存 |
-| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=` | 按服务端确认过的场景词和已注册模板合成跟读句；模板适用词性由注册表校验，`describe_*` 的名词性数语境来自 `scenes/describe_object.json` / `describe_person.json` |
+| `GET /api/scene/sentence-audio?word_id=&scene_template=&tts_provider=&tts_voice=&variant=` | 按服务端确认过的场景词和已注册模板合成跟读句；模板适用词性由注册表校验，形容词的名词性数语境来自该模板自己的 `noun_contexts`（6 个形容词模板的 `noun_contexts` 相同）。`variant`（可选，路由层 0–7，真正范围由模板 `noun_contexts` 数决定，越界 422）= 指定名词语境序号，性数配对每送对一张牌读一句；不传 = 本词自己的语境（旧行为）。请求的模板必须等于词里设置的 `scene_template`（词里没设则不限） |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1/2/3/4),session_id?,run_id? → `{word_id,mode,passed,recognized_text,comment}`;mode 4 另带 `corrected`;带 run_id 且通过时并入 `earned`/`round_score`;422 没听清(不算答错) |
 | `POST /api/words/complete` | **JSON** {session_id,run_id?,rounds,first_pass,attempts,outcomes:[{word_id,outcome,mode}]};结算进度 + 记完成;今天没计划 422 |
 | `POST /api/words/record_error` | **JSON** {session_id,word_id,mode,user_text?},写 `word_errors` |
@@ -333,15 +335,28 @@ WordMemorizer.Core/
 
 ### 派对闯关（`roam_party`，`tpl.roam === true`）
 - **玩法**:全屏横屏,浮动摇杆 + 跳 + 抓,小人在漂浮岛上找答案;**一次抓取 = 一次 `ctx.evaluateChoice`**(和 `word_choice` 判分一致),已答对(`pad.scored`)的物件掉下去后再抓不再请求;抓错只给气泡反馈,不用走回去。自动抓取**默认开**(速度 < 0.5 m/s、物件在面前 60° 内、站满 0.8 秒,读条可反悔;`localStorage.roam_autograb='0'` 关闭,暂停菜单里可切)。
-- **节点**:`roam_choice`(`options` 必须 correct=1/distractors=3、`grab_range` 0.8–3、`hints`、`wrong_feedback{pt,zh}`、`on_correct` 指向 `roam_deliver`)和 `roam_deliver`;模板要 `roam: true` + `arena`(= `js/roam/arena.js` 的 `ARENAS` 键);校验器 `scene_registry.py` 里 `ROAM_NODE_TYPES`,roam 模板不允许 `hotspot_choice` / `actor_tap` / `word_choice`,`applies_to.pos` 只能是 `["noun"]` 或 `["verb"]`(形容词要名词语境,暂不支持)。目前 13 个 roam 模板(16 个里只剩 `describe_object` / `describe_person`(形容词,需要名词语境)和 `verb_persuade` 还是点选):`roam_party`(名词,`manualOnly`)、`find` / `shop` / `restaurant` / `find_room` / `group_photo`(名词,`group_photo` 是 `manualOnly`)、`verb_treasure` / `verb_park` / `verb_restaurant` / `verb_magic` / `verb_home` / `verb_school` / `verb_note`(动词);除 `roam_party` 和 `group_photo` 外**保持原来的自动轮换身份**(没有 `manualOnly`;**注意:现在所有自动轮换的场景都是走路版**,只有形容词的 `describe_*` 和手动的 `verb_persuade` 还是点选)——走一圈 40–75 秒,比点选慢很多,嫌慢就在对应 json 里加 `"manualOnly": true`(代价:它们不再参与自动轮换,名词/动词的自动场景会变少)。这 12 个老场景原来的 3D 布局(`LAYOUTS.find` 等)现在没人用了,可以删。
+- **节点**:`roam_choice`(`options` 必须 correct=1/distractors=3、`grab_range` 0.8–3、`hints`、`wrong_feedback{pt,zh}`、`on_correct` 指向 `roam_deliver`)和 `roam_deliver`(性数配对模板改用一个 `roam_match` 节点,见「形容词走路版」);模板要 `roam: true` + `arena`(= `js/roam/arena.js` 的 `ARENAS` 键);校验器 `scene_registry.py` 里 `ROAM_NODE_TYPES`,roam 模板不允许 `hotspot_choice` / `actor_tap` / `word_choice`,`applies_to.pos` 只能是 `["noun"]`、`["verb"]` 或 `["adjective"]`(形容词模板必须带 4 个 `noun_contexts`,`roam_choice` 要 `variant_by:"noun_context"`,且 `adjectiveOnly:true`;非形容词出现 `variant_by` 报错,见「形容词走路版」)。目前 19 个 roam 模板(20 个里只剩手动的 `verb_persuade` 还是点选;形容词 6 个:`describe_object` / `describe_person` / `adj_workshop_object` / `adj_workshop_person` / `adj_agree_object` / `adj_agree_person`;名词动词 13 个如下):`roam_party`(名词,`manualOnly`)、`find` / `shop` / `restaurant` / `find_room` / `group_photo`(名词,`group_photo` 是 `manualOnly`)、`verb_treasure` / `verb_park` / `verb_restaurant` / `verb_magic` / `verb_home` / `verb_school` / `verb_note`(动词);除 `roam_party` 和 `group_photo` 外**保持原来的自动轮换身份**(没有 `manualOnly`;**注意:现在所有场景都是走路版**,只有手动的 `verb_persuade` 还是点选;形容词里 `adj_agree_*` 是 `manualOnly`)——走一圈 40–75 秒,比点选慢很多,嫌慢就在对应 json 里加 `"manualOnly": true`(代价:它们不再参与自动轮换,名词/动词的自动场景会变少)。这 12 个老场景原来的 3D 布局(`LAYOUTS.find` 等)现在没人用了,可以删。
 - **接口**:`roam/index.js` 的 `create()` 返回和 stage3d 兼容的对象(`follow / enter / talk / cheer / cameraTo / dispose / fail`)+ `run(opts)`(答对时 resolve)+ `deliver()`;复用 `stage3d.js` 导出的 `shared3d`(渲染器单例、`loadModel`、`normalize`、`blobShadow`…)和 `claimActive / releaseActive`(WebGL 上下文丢失时走 `fail()` → 错误卡)。
 - **文件**:`arena.js`(场地数据 `ARENAS` + 构建;缺模型用兜底几何体)、`physics.js`(固定步长 1/60;球 vs AABB、弹跳垫、旋转杆击退;**手感参数都在 `PHYS`**)、`input.js`(Pointer Events 摇杆/按钮/视角拖动 + 键盘 WASD、空格、E 调试)、`index.js`(渲染循环、角色程序动画、跟随镜头、物件与标签、HUD、抓取/搬运/交付状态机)。
-- **多个场地**:`ARENAS` 里每个键一个场地:`roam_party`(跑酷岛)、`treasure_island`、`street_find`、`shop_inside`、`restaurant_inside`(`restaurant` 和 `verb_restaurant` 共用)、`park`、`magic_room`、`home_house`、`classroom`(`verb_school` 和 `verb_note` 共用)、`study_room`、`schoolyard`(带 `people`);室内场地用 `roomShell()` 生成地板和单面墙;一个场地可以被多个模板共用,`deliverProp` 指交付成功时弹一下的道具 id。通用字段:`tiles`(地面,`flat:true` 用纯色盒子)、`decor`(地上的路/草坪;`solid:true` 才有碰撞;**墙用 `wall:true`**:单面平面,只从屋内看得见,镜头在墙外不会被挡,碰撞靠 `collide` 盒;不要用实心长方体当墙)、`props`(道具,`solid` 碰撞盒,`fb` 可写 PARTS 的键或 fallbackProp 参数)、`slots`(正好 4 个,`randomTarget:false` 表示正确答案不会被随机放到这里)、`seaY:null`(无海面)。`roam_party` 是跑酷岛;`treasure_island`(海岛寻宝)用了 `props`(棕榈树/岩石/小船/木桶/宝箱,模型 `beach/*`,缺了用 `stage3d-layouts.js` 导出的 `PARTS` 兜底;`solid` 是碰撞盒)、`slotPedestal:false`(钥匙直接挂在道具前面)、`tiles[].flat:true`(用纯色盒子,不用 platform_tile 模型)、`seaColor`。交付成功时 `arena.bounce('chest')` 让宝箱弹一下。新场地的流程:加 `ARENAS` 项 + 模板 JSON(`roam:true`、`arena`)+ 必要时补 `PARTS`。
+- **多个场地**:`ARENAS` 里每个键一个场地:`roam_party`(跑酷岛)、`treasure_island`、`street_find`、`shop_inside`、`restaurant_inside`(`restaurant` 和 `verb_restaurant` 共用)、`park`、`magic_room`、`home_house`、`classroom`(`verb_school` 和 `verb_note` 共用)、`study_room`、`schoolyard`(带 `people`)、`adj_plaza` / `adj_stage`(形容词物体系 / 人物系,`describe_*` 与 `adj_workshop_*` 共用:`variants` 4 组摆件,**只显示本词名词语境对应的那一组**,`setVariant(i)`;`adj_stage` 的摆件是人物,复数时 3 个人)、`adj_agree_hall` / `adj_agree_stage`(性数配对:`stalls` 4 个展台同时可见,每个带 `ring` 交付环,序号 = `noun_contexts` 序号);室内场地用 `roomShell()` 生成地板和单面墙;一个场地可以被多个模板共用,`deliverProp` 指交付成功时弹一下的道具 id。通用字段:`tiles`(地面,`flat:true` 用纯色盒子)、`decor`(地上的路/草坪;`solid:true` 才有碰撞;**墙用 `wall:true`**:单面平面,只从屋内看得见,镜头在墙外不会被挡,碰撞靠 `collide` 盒;不要用实心长方体当墙)、`props`(道具,`solid` 碰撞盒,`fb` 可写 PARTS 的键或 fallbackProp 参数)、`slots`(正好 4 个,`randomTarget:false` 表示正确答案不会被随机放到这里)、`seaY:null`(无海面)。`roam_party` 是跑酷岛;`treasure_island`(海岛寻宝)用了 `props`(棕榈树/岩石/小船/木桶/宝箱,模型 `beach/*`,缺了用 `stage3d-layouts.js` 导出的 `PARTS` 兜底;`solid` 是碰撞盒)、`slotPedestal:false`(钥匙直接挂在道具前面)、`tiles[].flat:true`(用纯色盒子,不用 platform_tile 模型)、`seaColor`。交付成功时 `arena.bounce('chest')` 让宝箱弹一下。新场地的流程:加 `ARENAS` 项 + 模板 JSON(`roam:true`、`arena`)+ 必要时补 `PARTS`。
 - **场地 v1(最小版)**:出生台 → 中枢(交付环 + 朋友)→ N(三个弹跳垫上 2 m 高台)、E(2.6 m 宽桥 + 旋转杆)两个障碍岛,S、A 两个平地岛;四个底座按 `word.id*1000+YYYYMMDD` 种子洗牌。传送带、移动平台、空中岛留到以后。掉下去(y<-6)黑屏 0.5 秒回最近的"重生点"(`tiles[].rp`),搬运中的物件回原底座。
 - **实测过的手感**(`/tmp` 里的无浏览器脚本):弹跳垫起跳时机窗口很宽;旋转杆原参数(6 m、1.2 rad/s)几乎过不去(约 1%),现在 3.6 m / 0.8 rad/s / 高 0.4 m,随便跑约 6 成能过。改旋转杆或桥的参数要重新验证通过率。
 - **bundle 限制**:`js/vendor/three-bundle.js` 只导出 30 个名字(Box/Capsule/Cone/Cylinder/Plane/Sphere 几何体、`Fog`、`HemisphereLight`、`LoopOnce`…),**没有** `TorusGeometry` / `CircleGeometry` / `RingGeometry` / `Vector2` / `DoubleSide`;圆环用 `arena.js` 的 `makeRing()`(一圈小长方体)。要用别的类先查 bundle 导出。
 - **资源**(缺文件静默退化):模型 `models/roam/{player,platform_tile,bounce_pad,spinner,pedestal,delivery_ring}.glb`(+ 可选 `cloud`,复用 `characters/friend`),音效 `sounds/roam/{jump,land,bounce,grab,wrong,deliver,respawn,bump}.wav`。`player.glb` 为蛋形静态网格(动画全是程序的,可选节点 `HandL`/`HandR`);`spinner.glb` 原点在立柱中心、横杆沿 x 轴。
 - **本地存储**:`roam_autograb`、`roam_dpr`(自适应画质:帧时间 > 20/28 ms 把 DPR 降到 1.5/1;**一次变慢会被记住**,可清掉)。v1 没做:镜头自动回正、首次教程、触觉开关、传送带/移动平台。
+
+### 形容词走路版（`describe_*` 贴词牌 / `adj_workshop_*` 变形工坊 / `adj_agree_*` 性数配对）
+- **6 个模板共用一套骨架**（服务端 `scene_registry.CONTEXT_SCENES`）：`roam:true`、`adjectiveOnly:true`、`applies_to.pos=["adjective"]`、各带 4 个 `noun_contexts`（顺序 阳单 / 阴单 / 阳复 / 阴复）、`context_pick:"by_word_id"`、**`adjective_family` 必填**（`object` 物体系 / `person` 人物系，前端自动选模板靠它）。词里的名词语境 = `nounCtx`（按 `word.id` 取），`roam_choice` 的 `variant_by:"noun_context"` 让 arena 只显示这一组摆件；线索卡 = 名词图标 + 名词中文 + 「找“xx”的词牌」。
+- **`adj_workshop_*`（变形工坊）**：仍是一次抓取一次 `evaluateChoice`，判分入口不变（`selected_word_id == word_id`）。抓对 → 词牌飞到展台，物体按词义变化并保持到 `thanks`；**抓错 → 词牌也自动飞到展台，按“错词”的意思变一下（约 1.6 秒）再复位，只是反馈，不影响计分和重试**；预习收尾演反义词；**测验保留中文线索**（效果只做确认，不做题干）。模板必须带 `effects`，且其 `roam_choice` 必须 `fx:true`。
+- **`effects` 效果表**（写在模板 JSON，不进数据库、不用改管理端）：键 = 形容词**词典原形**（取词的 `SceneAdjMS`，小写；前端比较时去重音，`rápido` / `rapido` 都认）。单条 `{kind, family, opposite?, conflicts?, …参数}`：`kind` ∈ `scale`(`to` 三轴 0.3–2.5) / `tint`(`color` #rrggbb、`mix` 0–1) / `aura`(`tint`、`particles` ≤4 字符、`drift` up|down) / `dirt`(`clean`) / `age`(`fresh`) / `weight`(`light`) / `emote`(`icon`、`motion` hop|droop|sway|shake、`tint`) / `speed`(`fast`)；`family` ≤16 字符；`opposite` 必须在表里且互为反义；`conflicts`（视觉上也说得通的词，如 grande/alto）必须在表里，**永远不会同时出现在同一题的选项里**。校验在 `scene_registry.validate_effects`，参数白名单是 `EFFECT_PARAMS`。
+- **新增 / 改效果 = 同步**：新词只改 json 的 `effects`（物体系 / 人物系各一张表，同一个词可两边都有）；**新增 `kind` 要三处同步**：`scene_registry.EFFECT_PARAMS`、`js/roam/effects.js` 的 `EFFECT_KINDS` 与对应 `case`、必要时 `arena.js`。现状：物体系 19 词（grande pequeno alto baixo comprido curto vermelho azul amarelo verde branco preto rosa quente frio sujo limpo novo velho）、人物系 10 词（feliz triste cansado zangado rápido lento grande pequeno alto baixo）。`weight` 已实现但**目前没有词用它**（leve / pesado 属于没做的扩展）。
+- **效果引擎要点**：变体摆件登记时**克隆材质并记录原色 / 原缩放**（GLB 共享材质，不克隆 `tint` 会串到别的摆件）；`arena.variantTargets()` 是当前显示的那组摆件，配对用 `arena.stallTargets(i)`；复位后缩放 / 颜色必须回到原样、重复触发不叠加；粒子是 emoji 精灵，同屏 ≤ `MAX_PARTICLES`(30)，效果结束必须销毁；没有 `pad.fx` 时引擎完全不运行（旧的 15 个走路模板不受影响）。人物表情是头顶气泡 emoji，不改脸（人物 GLB 没有表情骨骼）。
+- **选项构造**（`scene.js` `buildOptions` 的变形工坊分支，拿不到就逐级降级）：正确 1 + **反义词 1** + **不同 `family` 的带效果词 2**（排除 `conflicts`）→ 不够再用旧逻辑补；同形去重（`sameKey`）照旧，不变形容词不能让两个选项同形。`GENERIC_ADJ` 通用池从 14 个扩到 29 个（补进效果表里的颜色 / 冷热 / 快慢 / 情绪），**副作用：贴词牌版 `describe_*` 的干扰项也会出现这些词，且没有 `conflicts` 过滤**（grande 配 comprido 这类理论上可能出现，和原来 grande 配 alto 是同一类风险）。
+- **自动选模板**（`scene.js` `chooseAdjectiveTemplate`，词里没设 `scene_template` 时）：① 管理端 `scene_noun` 是人物名词 → 人物系，否则物体系；② 该系变形工坊的效果表里有这个词 → 变形工坊；③ 没配 `scene_noun` 且只有人物系有效果（feliz、rápido…）→ 人物系变形工坊；④ 否则该系 `describe_*`（贴词牌）。`manualOnly` 的 `adj_agree_*` 不参加。**管理端明确选了模板 = 一律照办**（想强制贴词牌版就在管理端选 `describe_*`）；手动选了变形工坊但效果表里没有这个词 → 抛错页，不静默降级。同一个词永远走同一个模板，不会今天贴词牌明天变形。`window.Scene.chooseTemplate` 只读导出给自动化测试用。
+- **`adj_agree_*`（性数配对，`manualOnly`）**：节点 `roam_match`（只允许出现在 `AGREE_SCENES`；整个模板只能有 1 个 `roam_match`，**不能再有** `roam_choice` / `roam_deliver`；`stalls` 必须是 `"noun_contexts"`，`pass_max_errors` 0–3，`grab_range` 0.8–3，必须带 `wrong_feedback{pt,zh}` 和 `on_complete`）。玩法：同一个形容词的 4 个词形牌送到 4 个名词展台，牌的词形序号 == 展台语境序号才算送对；送错弹回原架子、错误 +1；掉下场地不计错；**4 张全送对才通关**。**整局只判一次**：`errors ≤ pass_max_errors`（默认 1）→ `evaluateChoice(w, w.id)`，否则 `evaluateChoice(w, -1)`。每送对一张读整句 `sentence-audio?…&variant=i`（模板 `sentence_pt:"{art} {noun} {adj}"`，文本由服务端组装）。**四个词形必须互不相同**（阴阳同形 / 单复数同形的 grande、verde、feliz 等不行），否则选模板阶段抛错页，不降级。有 60 秒“快速通道”（传送到最近的未放词牌），沿用走路引擎的那套。
+- **管理端 / 服务端联动**：`admin_routes.py` 的 `PUT /words/{id}/scene-metadata` 现在允许**模板选“自动”时也配人物名词**（校验范围 = 所有已发布 `CONTEXT_SCENES` 模板的名词；指定了模板则只能是该模板的名词），否则自动选择规则里的人物系用不上。**C# 不用改**：模板下拉 / 形容对象下拉都读 `/admin/scenes`，新模板自动出现；`test_scene_noun.py` 的断言已放宽为“形容词场景模板（describe_* / adj_workshop_* / adj_agree_*）额外带 `noun_contexts`”。
+- **让词能玩的数据前置（不是开发工作）**：效果表里的词要先在 WordMemorizer 里启用：`ScenePos=adjective` + `scene_ok` + `scene_confirmed` + **四词形填全**；**不要给它们设 `scene_template`**（留空走自动选择）；人物类词可配 `scene_noun`（rapaz / rapariga / rapazes / raparigas）。**词库里同一个词常有多条记录（vermelho 8 条、feliz 9 条），每条要单独启用**。用 `python tools/adjective_enable_report.py [--db <库>] [--csv 启用清单.csv]` 列清单。抽象词（bom、bonito、difícil…）不适合画，继续走 `describe_*`，两类模板长期并存。
+- **部署顺序**：前端（`scene.js`、`roam/*.js`、`css/roam.css`）→ 后端校验器与接口（`scene_registry.py`、`routes.py`、`admin_routes.py`）→ 模板 JSON → 重启后端。顺序反了，旧前端会在 `roam_choice` / `roam_match` 卡住。
 
 ### 场景模板（`scenes/*.json`，注册表 `memory/scene_registry.py` 启动时加载；改完要重启后端）
 
@@ -354,8 +369,12 @@ WordMemorizer.Core/
 | `find` | 名词（`roam`） | 走路版（arena `street_find`）：街上 4 处东西散落在 垃圾桶 / 长椅 / 邮筒 / 树 旁边，抓对的带给朋友 |
 | `find_room` | 名词（`roam`） | 走路版（arena `study_room`）：桌子 / 书架 / 背包 / 床（第 4 个是新补的） |
 | `group_photo` | 名词（`roam`、`manualOnly`） | 走路版（arena `schoolyard`）：球场边 / 野餐桌 / 教学楼前 / 三脚架相机（第 4 个是新补的），场景里有三组人（没有 people/ 模型时用 look 画简易小人） |
-| `describe_object` | 形容词（`adjectiveOnly`） | 一个杯子 / 一座房子 / 几本书 / 几座房子（名词语境） |
-| `describe_person` | 形容词（`adjectiveOnly`） | 一个男孩 / 一个女孩 / 几个男孩 / 几个女孩 |
+| `describe_object` | 形容词（`adjectiveOnly`、`roam`） | 贴词牌版（arena `adj_plaza`）：展台上摆名词语境（一个杯子 / 一座房子 / 几本书 / 几座房子），抓对的词牌送到交付环，没有变形效果 |
+| `describe_person` | 形容词（`adjectiveOnly`、`roam`） | 贴词牌版（arena `adj_stage`）：舞台上 一个男孩 / 一个女孩 / 几个男孩 / 几个女孩 |
+| `adj_workshop_object` | 形容词（`roam`，效果表里有的词） | 变形工坊（arena `adj_plaza`）：抓对 / 抓错的词牌飞到展台，物体按词义变化（见「形容词走路版」） |
+| `adj_workshop_person` | 形容词（`roam`，效果表里有的词） | 变形工坊（arena `adj_stage`）：人物按词义变化（表情气泡 / 跑动 / 缩放） |
+| `adj_agree_object` | 形容词（`roam`、`manualOnly`，四词形互不相同） | 性数配对（arena `adj_agree_hall`）：4 张词形牌送到 4 个名词展台 |
+| `adj_agree_person` | 形容词（`roam`、`manualOnly`，四词形互不相同） | 性数配对（arena `adj_agree_stage`）：4 个人物舞台 |
 | `verb_home` | 动词（`roam`） | 走路版（arena `home_house`）：厨房 / 卧室 / 客厅 / 书房（第 4 个是新补的） |
 | `verb_school` | 动词（`roam`） | 走路版（arena `classroom`，和 `verb_note` 共用）：黑板 / 书架 / 书包 / 讲台（第 4 个是新补的） |
 | `verb_note` | 动词（`roam`，任意动词形式） | 走路版（arena `classroom`）：字条挂在 黑板 / 书架 / 书包 / 讲台 |
@@ -374,10 +393,11 @@ WordMemorizer.Core/
 - **`{hotspot_zh}` 占位符**：目标热点的中文名，**只允许出现在 `zh` / `hint_zh`**，不得出现在 `pt` / `prompt_zh` / `reveal_pt`；模板里没有 `hotspot_choice` 时出现会报错。葡语台词写成通用句（如 `Procura bem!`），具体位置只在中文里说，这样台词音频才能按节点缓存。
 - **`hotspot_choice.assign_target`**：`random`（默认）或 `noun_context`。`noun_context` 只允许 `describe_object` / `describe_person` 使用(另有 `word_zone`,见 `scene_registry.py`)：目标热点 = 本词名词语境（`word.id % 4`）对应的那个；要求热点数等于 `noun_contexts` 数，每个热点有 `context`（0~3，不重复），且热点 `pt` 必须等于 `noun_contexts[context].noun`。
 - **`modes`**：`["preview"]` 的节点在正式测验里跳过。目前只有 `intro` / `friend_intro` 标了仅预习；`thanks` 没有标（测验里仍会走“带回去 → 感谢”），如要精简再加。
-- **不要动 `describe_object.json` / `describe_person.json` 的 `noun_contexts` 与 `context_pick`**，否则跟读句（`/api/scene/sentence-audio`）会和场景对不上；形容词词形缺失的词不能进该场景（`canPlay`）。
+- **不要动 6 个形容词模板的 `noun_contexts` 与 `context_pick`**（物体系 3 个互相逐字相同、人物系 3 个互相逐字相同）：跟读句（`/api/scene/sentence-audio`）、前端 `nounCtx.index`、arena 的 `variants` / `stalls` 序号都按它对应，改一个会和场景对不上；`adj_agree_*` 还强制顺序 阳单 / 阴单 / 阳复 / 阴复。形容词词形缺失的词不能进该场景（`canPlay`）。
 - **热点标签是固定葡语，不得含目标词**：校验器的静态泄露扫描（需要有 WordMemorizer 数据库的环境）会检查；前端运行时还会把撞词的标签换成只留图标。
 
 **改模板的通用检查**：`python tools/validate_scenes.py` 零错误 → `python tools/test_scenes.py` 全绿 → 重启后端 → `scene-lab.html` 先走预习再走测验（可用 `?template=<id>&word=<id>`）→ 测验里点错一个地点、一个物品再点对，网络面板只能有 2 次 `/words/scene/evaluate` → 360 / 390 宽度的手机上人物和热点可点、不被气泡遮挡、无横向滚动。
+形容词模板另测：`python tools/test_scene_noun.py`（40 项全过）；`tools/test_scene_api.py` **有 3 个在改形容词功能之前就存在的失败**，别当成新回归；`scene-lab.html?debug&template=<id>&word=<id>` 用「效果调试面板」逐个触发效果、看复位后缩放 / 颜色是否回到原样。
 **部署顺序**：先部署校验器（`memory/scene_registry.py`）和前端（`js/scene.js`、`css/scene.css`、`js/stage3d.js`、`js/stage3d-layouts.js`），再部署新模板；否则前端不认 `actor_tap` / `assign_target`，场景会在该节点卡住。改模板 id 或热点 id 时，`scenes/*.json` 与 `stage3d-layouts.js` 必须同时上线。
 
 ## 安全模式(涉及文件/用户输入的新功能照此写)
@@ -428,6 +448,9 @@ WordMemorizer.Core/
 
 - `Words` 里有历史同名重复行（实测约 2000 行只有约 1200 个不同的词），`word_progress` 里也有同名词对应多个 Id 的情况；"录入这周"已改为复用同名记录，但**没有批量合并历史重复**——要做的话是写合并脚本把同名词的进度/场景并到同一个 Id，别在录入逻辑里顺手清库。
 - 场景演练需要 WebGL；浏览器不支持或加载失败时只显示错误卡 + 退出，没有降级。
+- 变形工坊没做的（别当成 bug）：`tag` 价签效果（barato / caro）；扩展的 18 个词（roxo laranja castanho cinzento dourado prateado claro escuro largo estreito pesado leve doce salgado contente agitado barato caro）不在效果表里；cheio / vazio、aberto / fechado（需要模型分层）、gordo / magro 不做；性数配对失败时**没有自动演示**（`show_demo_on_fail` 实现时去掉了，校验器仍接受这个布尔字段；4 个展台都放过牌，本来就演示过了）；性数配对不参加自动轮换，也没有“变形工坊通过的词隔天安排一次配对加练”的调度。
+- 形容词视觉效果天然多义（大房子既可能是 grande 也可能是 alto），靠 `family` + `conflicts` 缓解、不保证，所以测验保留中文线索，别改成纯看图。人物系效果只有表情气泡 / 跑动 / 缩放。
+- 变形工坊在无头浏览器 + 软件渲染下验证过，**没在真机验证**（手机帧率、触屏、真实音频合成、真实判分接口）；`adj_agree_hall` 同时显示 4 组摆件，低端机帧率要实测。
 
 ## 回复用户时的默认做法
 - 用户一般直接贴改动需求或报 bug,默认只改涉及的文件。**每个被改动的文件以完整文件形式生成(从头到尾,含未改动部分),用 create_file 写到 `/mnt/user-data/outputs/` 下对应文件名,再用 present_files 交付**,不要把整份代码贴在聊天里。没涉及的文件不要重复生成。正文只用简短文字说明改了什么、为什么、前后端哪一侧要跟着改;讲思路可以多写。
