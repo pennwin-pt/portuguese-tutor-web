@@ -5,6 +5,7 @@
 import * as T from '../vendor/three-bundle.js';
 import { shared3d } from '../stage3d.js';
 import { PARTS } from '../stage3d-layouts.js';
+import { emojiTexture } from './effects.js';
 
 const { loadModel, normalize, blobShadow, fallbackPerson, fallbackProp, mat } = shared3d;
 
@@ -615,7 +616,7 @@ export async function buildArena(arenaId, tpl) {
 
     /* ---- 变形机（M6 装饰）：只在变形工坊（模板带 effects）里出现；效果播放时亮灯、转齿轮、天线球跳动。纯程序几何体，缺模型也不影响；有碰撞盒，别穿过去 ---- */
     let machine = null;
-    if (A.machine && tpl && tpl.effects) {
+    if (A.machine && tpl && (tpl.effects || tpl.reward)) {
         const g = new T.Group(); g.position.set(A.machine.pos[0], A.machine.pos[1], A.machine.pos[2]); g.rotation.y = A.machine.rotY || 0;
         const add = (geo, color, x, y, z, basic) => { const m = new T.Mesh(geo, basic ? new T.MeshBasicMaterial({ color }) : mat(color)); m.position.set(x, y, z); g.add(m); return m; };
         add(new T.BoxGeometry(1.5, 0.5, 1.0), '#64748b', 0, 0.25, 0);                      // 底座
@@ -685,6 +686,23 @@ export async function buildArena(arenaId, tpl) {
     root.add(new T.HemisphereLight('#ffffff', '#b6d4ff', 1.5));
     const sun = new T.DirectionalLight('#ffffff', 1.6); sun.position.set(-6, 12, 8); root.add(sun);
 
+    /* ---- 奖品（名词 / 动词的奖励型场景）：交付成功后，在交付环上方摆一个十字交叉的 emoji 面片（从任何角度都看得见），奖励效果作用在它身上；形容词场地仍用 variants ---- */
+    let trophy = null;
+    const popOut = k => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+    function makeTrophy(ch) {
+        if (trophy) { root.remove(trophy.obj); trophy.obj.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); trophy = null; }
+        const g = new T.Group(), inner = new T.Group();                // g 给效果引擎（缩放 / 变色），inner 只做弹出和上下漂浮
+        g.position.set(A.ring.pos[0], (A.ring.pos[1] || 0) + 1.7, A.ring.pos[2]);
+        const tex = emojiTexture(ch);
+        for (const ry of [0, Math.PI / 2]) {
+            const m = new T.Mesh(new T.PlaneGeometry(1.5, 1.5), new T.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: T.DoubleSide }));
+            m.rotation.y = ry; m.renderOrder = 20; inner.add(m);
+        }
+        inner.scale.setScalar(0.01); g.add(inner); root.add(g);
+        trophy = { obj: g, inner, base: g.scale.clone(), bounce: 0, pop: 0 };
+        return trophy;
+    }
+
     let t = 0;
     return {
         root, boxes, spinners, slots, ring, friend, pads, spawn: A.spawn, fallY: A.fallY, sky: A.sky, camIntro: A.camIntro, ringR: A.ring.r,
@@ -704,6 +722,8 @@ export async function buildArena(arenaId, tpl) {
             }
         },
         stallTargets(i) { return stalls[i] ? stalls[i].keys.map(k => props[k]) : []; },
+        showTrophy(ch) { makeTrophy(ch); },                              // 奖励型场景（名词 / 动词）：交付成功后摆出奖品
+        rewardTargets() { const v = variants[variant]; return v ? v.keys.map(k => props[k]) : (trophy ? [trophy] : []); },   // 奖励效果的作用对象：形容词 = 当前摆件，名词 / 动词 = 奖品
         variantTargets() { const v = variants[variant]; return v ? v.keys.map(k => props[k]) : []; },     // 当前显示的那一组摆件 / 人物（效果引擎的作用对象）
         /* 交付成功时词牌飞向哪里、哪些东西弹一下：有变体用变体的；没有变体保持老行为（target=null → 飞向朋友，弹 deliverProp） */
         delivery() { const v = variants[variant]; return v ? { target: v.deliver, bounce: v.bounce } : { target: null, bounce: A.deliverProp ? [A.deliverProp] : [] }; },
@@ -721,6 +741,7 @@ export async function buildArena(arenaId, tpl) {
                 const k = on ? 1 + Math.sin(t * 16) * 0.28 : 1 + Math.sin(t * 2) * 0.06; machine.ball.scale.setScalar(k);
                 machine.group.position.y = machine.baseY + (on ? Math.abs(Math.sin(t * 38)) * 0.012 : 0);
             }
+            if (trophy) { trophy.pop = Math.min(1, trophy.pop + dt / 0.45); trophy.inner.scale.setScalar(Math.max(0.01, popOut(trophy.pop))); trophy.inner.position.y = Math.sin(t * 2.2) * 0.06; }
             if (friend.mixer) friend.mixer.update(dt);
             if (friend.hop > 0) { friend.hop = Math.max(0, friend.hop - dt * 2.2); friend.root.position.y = A.friend.pos[1] + Math.sin(friend.hop * Math.PI) * 0.35; }
         },

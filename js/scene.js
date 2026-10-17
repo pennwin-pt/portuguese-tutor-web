@@ -59,7 +59,8 @@
     const SCENE_FIELDS = ['emoji', 'pos', 'gender', 'number', 'scene_ok', 'scene_confirmed', 'scene_template', 'scene_noun', 'scene_zone',
         'adjective_m_singular', 'adjective_f_singular', 'adjective_m_plural', 'adjective_f_plural'];
     const hasSceneData = w => SCENE_FIELDS.some(k => Object.prototype.hasOwnProperty.call(w, k));
-    const ADJECTIVE_TEMPLATES = new Set(['describe_object', 'describe_person', 'adj_workshop_object', 'adj_workshop_person', 'adj_agree_object', 'adj_agree_person']);   // 形容词场景（服务端 scene_registry.CONTEXT_SCENES）
+    const ADJECTIVE_TEMPLATES = new Set(['describe_object', 'describe_person', 'adj_workshop_object', 'adj_workshop_person', 'adj_agree_object', 'adj_agree_person',
+        'adj_reward_grow_object', 'adj_reward_grow_person', 'adj_reward_boom_object', 'adj_reward_boom_person', 'adj_reward_magic_object', 'adj_reward_magic_person']);   // 形容词场景（服务端 scene_registry.CONTEXT_SCENES）
     function emojiOf(w) {
         if (!w) return '';
         if (w.scene_confirmed === true && typeof w.emoji === 'string' && w.emoji.trim()) return w.emoji.trim();
@@ -159,16 +160,21 @@
         return m;
     }
     const adjectiveLemma = w => w.adjective_m_singular || w.pt_word;
-    /* 自动选形容词模板：① 管理端 scene_noun 是人物名词 → 人物系，否则物体系；② 该系变形工坊的效果表里有这个词 → 变形工坊；
-       ③ 没配 scene_noun 且只有人物系有效果（feliz、rápido…）→ 人物系变形工坊；④ 否则该系的贴词牌版（describe_*）。manualOnly 的（性数配对）不参加。 */
+    /* 自动选形容词模板：① 管理端 scene_noun 是人物名词 → 人物系，否则物体系；② 该系变形工坊的效果表里有这个词 → 变形工坊（词义变形）；
+       ③' 效果表里没有的词 → 该系的奖励型场景（adj_reward_*，所有形容词都能用）；
+       ③ 没配 scene_noun 且只有人物系有效果（feliz、rápido…）→ 人物系变形工坊；④ 没有奖励型场景（后端还没部署）才退回该系的贴词牌版（describe_*）。manualOnly 的（性数配对）不参加。 */
     function chooseAdjectiveTemplate(w, available) {
         const key = norm(adjectiveLemma(w));
-        const workshops = available.filter(t => t.effects), plain = available.filter(t => !t.effects);
+        const workshops = available.filter(t => t.effects), rewards = available.filter(t => t.reward), plain = available.filter(t => !t.effects && !t.reward);
         const personNoun = !!w.scene_noun && available.some(t => t.adjective_family === 'person' && (t.noun_contexts || []).some(c => c.noun === w.scene_noun));
         const family = personNoun ? 'person' : 'object';
         const has = t => fxIndex(t).has(key);
         let pick = workshops.find(t => t.adjective_family === family && has(t));
         if (!pick && !w.scene_noun) pick = workshops.find(t => t.adjective_family === 'person' && has(t));
+        if (!pick) {                                                   // 没有变形效果的词：走奖励型场景（和词义无关，抓对词牌后随机一个炫酷效果）；按词 id 固定主题，同一个词永远走同一个模板
+            const pool = rewards.filter(t => t.adjective_family === family).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+            if (pool.length) pick = pool[(Math.abs(Number(w.id)) || 0) % pool.length];
+        }
         if (!pick) pick = plain.find(t => t.adjective_family === family);
         return pick || available[0];
     }
@@ -677,13 +683,16 @@
             st.lastSpeech = (n.speech || 'none') === 'auto' ? speakNode(id) : null;
             clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, 4200);
             setCtl(null); root.classList.add('rm-playing');
-            const chosenFx = st.chosen && st.chosen.fx;                            // 变形工坊：抓对的词牌带着它的效果
+            const rw = tpl.reward && Array.isArray(tpl.reward.effects) ? tpl.reward.effects : [];           // 奖励型场景：抓对后从效果池随机一个（和词义无关）
+            const rewardFx = rw.length ? rw[Math.floor(Math.random() * rw.length)] : null;
+            const chosenFx = (st.chosen && st.chosen.fx) || rewardFx;                            // 变形工坊：抓对的词牌带着它的效果
             await stage.deliver(); guard();
             root.classList.remove('rm-playing');
             dialogueBubble.className = 'sc-dialogue-bubble';
             if (formField) speakForm(null); else speakWord(null);                 // 交付成功：读一遍这个词（形容词读牌上的词形），再进入"谢谢"
             if (chosenFx && stage.playFx) {
-                await stage.playFx(chosenFx, { dur: 2.2, hold: true }); guard();   // 物体按词义变，保持到"谢谢"
+                if (rewardFx && !tpl.adjectiveOnly && stage.showReward) stage.showReward(w.pos === 'verb' ? '🏆' : (emojiOf(w) || '🎁'));      // 名词 / 动词的奖励：交付环上方摆一个奖品（名词 = 这个词自己的 emoji，动词 = 奖杯）
+                await stage.playFx(chosenFx, { dur: rewardFx ? 2.8 : 2.2, hold: true }); guard();   // 物体按词义变，保持到"谢谢"
                 const opp = mode === 'preview' ? oppositeOf() : null;
                 if (opp) {                                                         // 预习收尾：摆到反义词状态再回来，读一下反义词
                     roamNotice({ pt: opp.pt, zh: '反义词 ↔' }, 2600);

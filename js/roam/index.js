@@ -483,6 +483,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             });
         },
         playFx(spec, opts) { return fx.play(spec, opts); },          // 形容词变形工坊：scene.js 在交付后播放"正确词"的效果 / 预习收尾播放反义词
+        showReward(ch) { if (arena.showTrophy) arena.showTrophy(ch); },        // 名词 / 动词的奖励型场景：在交付环上方摆出奖品（之后 playFx 的作用对象就是它）
         clearFx() { fx.clear(); },
         run(opts) {
             return new Promise(resolve => {

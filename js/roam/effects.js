@@ -42,7 +42,7 @@ export function sfxOf(spec) {
 
 /* emoji → 贴图（缓存）；字体不支持时会画成方框，但不影响玩法 */
 const texCache = new Map();
-function emojiTexture(ch) {
+export function emojiTexture(ch) {
     let tex = texCache.get(ch);
     if (tex) return tex;
     const c = document.createElement('canvas'); c.width = c.height = 96;
@@ -250,6 +250,10 @@ export function createEffects({ scene, arena, sfx = null, sfxDelay = 0, onStart 
                     break;
                 default: break;
             }
+            if (s.burst && c.phase !== 'out') {                         // 奖励型场景：任何效果都可以再叠一层 emoji 迸发（粒子仍受 MAX_PARTICLES 限制）
+                c.bacc[i] = (c.bacc[i] || 0) + dt;
+                if (c.bacc[i] > 0.11) { c.bacc[i] = 0; emit(s.burst, f.midX + (Math.random() - 0.5) * f.w * 1.1, f.top * (0.2 + Math.random() * 0.8), f.midZ + f.d * 0.55, { vy: 0.5 + Math.random() * 0.5, vx: (Math.random() - 0.5) * 0.8, life: 1.0, size: 0.3 }); }
+            }
         });
         for (const b of bubbles) {                                  // 气泡弹出并轻轻上下浮动
             b.k = Math.min(1, b.k + dt / 0.35);
@@ -278,11 +282,11 @@ export function createEffects({ scene, arena, sfx = null, sfxDelay = 0, onStart 
         play(spec, { dur = 2.4, hold = false, targets: given } = {}) {
             if (cur) finish(cur);
             if (!spec || !EFFECT_KINDS.includes(spec.kind)) return Promise.resolve();
-            const targets = given || (arena.variantTargets ? arena.variantTargets() : []);        // given：性数配对时作用在指定展台的摆件上
+            const targets = given || (arena.rewardTargets ? arena.rewardTargets() : (arena.variantTargets ? arena.variantTargets() : []));        // given：性数配对时作用在指定展台的摆件上
             if (!targets.length) return Promise.resolve();
             targets.forEach(t => { prep(t); t.bounce = 0; });     // 交付时的"弹一下"会改缩放，先掐掉，免得和效果打架
             return new Promise(res => {
-                cur = { spec, targets, t: 0, p: 0, dur, hold, res, phase: 'in', acc: [], timer: 0 };
+                cur = { spec, targets, t: 0, p: 0, dur, hold, res, phase: 'in', acc: [], bacc: [], timer: 0 };
                 init(cur);
                 if (onStart) onStart(spec, dur);
                 const name = sfx ? sfxOf(spec) : null;
