@@ -9,6 +9,7 @@ import { PARTS } from '../stage3d-layouts.js';
 const { loadModel, normalize, blobShadow, fallbackPerson, fallbackProp, mat } = shared3d;
 
 export const PLAYER_R = 0.45;
+export const FRIEND_H = 1.0;          // 朋友的身高（米）：和玩家（模型高 0.95、碰撞球半径 0.45）差不多大；以前是 1.7，比玩家大一圈
 
 /* 圆环：bundle 里没有 TorusGeometry / RingGeometry，用一圈小长方体拼（xz 平面，中心在原点） */
 export function makeRing(r, tube, color, n = 32, opacity = 1) {
@@ -365,7 +366,7 @@ export const ARENAS = {
         props: [
             // 圆形展台（直径约 2.4 m、高 0.5 m）：有 roam/podium.glb 用模型，没有就用圆柱兜底；solid 是碰撞盒（跳得上去，但不用上去）
             { id: 'podium', model: 'roam/podium', pos: [0, 0, -2.4], h: 0.5, solid: [2.4, 0.5, 2.4],
-              fb: { parts: [{ shape: 'cyl', size: [2.7, 0.5], pos: [0, 0.25, 0], color: '#f5efe6' }, { shape: 'cyl', size: [2.3, 0.06], pos: [0, 0.53, 0], color: '#e5b86b' }] } },
+                fb: { parts: [{ shape: 'cyl', size: [2.7, 0.5], pos: [0, 0.25, 0], color: '#f5efe6' }, { shape: 'cyl', size: [2.3, 0.06], pos: [0, 0.53, 0], color: '#e5b86b' }] } },
             { model: 'street/tree_1', pos: [-10.6, 0, -5.6], h: 3.2, fb: { tree: true }, solid: [0.5, 3, 0.5] },
             { model: 'street/tree_2', pos: [10.6, 0, -5.8], h: 3.0, fb: { tree: true }, solid: [0.5, 3, 0.5] }
         ],
@@ -373,11 +374,11 @@ export const ARENAS = {
             { props: [{ id: 'cup', model: 'room/cup', pos: [0, 0.5, -2.4], h: 0.5, fb: 'cup' }], deliver: [0, 1.3, -2.4], bounce: ['cup'] },
             { props: [{ id: 'house', model: 'street/building_1', pos: [0, 0.5, -2.4], h: 1.3, fb: { w: 1.1, color: '#f2c7a5', house: true } }], deliver: [0, 2.2, -2.4], bounce: ['house'] },
             { props: [{ id: 'booksL', model: 'room/books', pos: [-0.5, 0.5, -2.4], h: 0.45, fb: 'books' }, { id: 'booksR', model: 'room/books', pos: [0.5, 0.5, -2.4], h: 0.45, rotY: 0.5, fb: 'books' }],
-              deliver: [0, 1.3, -2.4], bounce: ['booksL', 'booksR'] },
+                deliver: [0, 1.3, -2.4], bounce: ['booksL', 'booksR'] },
             { props: [{ id: 'h1', model: 'street/building_1', pos: [-0.8, 0.5, -2.3], h: 0.85, fb: { w: 0.7, color: '#f2c7a5', house: true } },
-                      { id: 'h2', model: 'street/building_1', pos: [0, 0.5, -2.7], h: 0.85, fb: { w: 0.7, color: '#a7c7e7', house: true } },
-                      { id: 'h3', model: 'street/building_1', pos: [0.8, 0.5, -2.3], h: 0.85, fb: { w: 0.7, color: '#f5d98b', house: true } }],
-              deliver: [0, 1.8, -2.5], bounce: ['h1', 'h2', 'h3'] }
+                    { id: 'h2', model: 'street/building_1', pos: [0, 0.5, -2.7], h: 0.85, fb: { w: 0.7, color: '#a7c7e7', house: true } },
+                    { id: 'h3', model: 'street/building_1', pos: [0.8, 0.5, -2.3], h: 0.85, fb: { w: 0.7, color: '#f5d98b', house: true } }],
+                deliver: [0, 1.8, -2.5], bounce: ['h1', 'h2', 'h3'] }
         ],
         slots: [{ id: 'nw', pos: [-7, 0, -3.8] }, { id: 'ne', pos: [7, 0, -3.8] }, { id: 'sw', pos: [-7, 0, 3.2] }, { id: 'se', pos: [7, 0, 3.2] }],
         camIntro: { pos: [0, 16, 12], look: [0, 0, -1] }
@@ -402,13 +403,13 @@ export const ARENAS = {
             { people: [{ id: 'a', model: 'people/boy_a', pos: [0, 0.2, -2.9], h: 1.5, look: { shirt: '#3b82f6', hair: '#3b2a20' } }], deliver: [0, 2.1, -2.9], bounce: ['a'] },
             { people: [{ id: 'a', model: 'people/girl_a', pos: [0, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } }], deliver: [0, 2.0, -2.9], bounce: ['a'] },
             { people: [{ id: 'a', model: 'people/boy_a', pos: [-1.3, 0.2, -2.9], h: 1.5, look: { shirt: '#3b82f6', hair: '#3b2a20' } },
-                       { id: 'b', model: 'people/boy_b', pos: [0, 0.2, -2.9], h: 1.5, look: { shirt: '#ef4444', hair: '#111827' } },
-                       { id: 'c', model: 'people/boy_a', pos: [1.3, 0.2, -2.9], h: 1.5, look: { shirt: '#22c55e', hair: '#3b2a20' } }],
-              deliver: [0, 2.1, -2.9], bounce: ['a', 'b', 'c'] },
+                    { id: 'b', model: 'people/boy_b', pos: [0, 0.2, -2.9], h: 1.5, look: { shirt: '#ef4444', hair: '#111827' } },
+                    { id: 'c', model: 'people/boy_a', pos: [1.3, 0.2, -2.9], h: 1.5, look: { shirt: '#22c55e', hair: '#3b2a20' } }],
+                deliver: [0, 2.1, -2.9], bounce: ['a', 'b', 'c'] },
             { people: [{ id: 'a', model: 'people/girl_a', pos: [-1.3, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
-                       { id: 'b', model: 'people/girl_b', pos: [0, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } },
-                       { id: 'c', model: 'people/girl_a', pos: [1.3, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#f97316', hair: '#111827' } }],
-              deliver: [0, 2.0, -2.9], bounce: ['a', 'b', 'c'] }
+                    { id: 'b', model: 'people/girl_b', pos: [0, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } },
+                    { id: 'c', model: 'people/girl_a', pos: [1.3, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#f97316', hair: '#111827' } }],
+                deliver: [0, 2.0, -2.9], bounce: ['a', 'b', 'c'] }
         ],
         slots: [{ id: 'nw', pos: [-8, 0, -4.6] }, { id: 'ne', pos: [8, 0, -4.6] }, { id: 'sw', pos: [-8, 0, 3.4] }, { id: 'se', pos: [8, 0, 3.4] }],
         camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
@@ -431,9 +432,9 @@ export const ARENAS = {
             { ring: [-1.8, 0, -0.9], r: 1.0, deliver: [-1.8, 2.0, -3.2], props: [{ id: 'house', model: 'street/building_1', pos: [-1.8, 0.4, -3.2], h: 1.0, fb: { w: 1.0, color: '#f2c7a5', house: true } }] },
             { ring: [1.8, 0, -0.9], r: 1.0, deliver: [1.8, 1.3, -3.2], props: [{ id: 'bl', model: 'room/books', pos: [1.4, 0.4, -3.2], h: 0.4, fb: 'books' }, { id: 'br', model: 'room/books', pos: [2.2, 0.4, -3.2], h: 0.4, rotY: 0.5, fb: 'books' }] },
             { ring: [5.4, 0, -0.9], r: 1.0, deliver: [5.4, 1.7, -3.2], props: [
-                { id: 'h1', model: 'street/building_1', pos: [4.7, 0.4, -3.1], h: 0.7, fb: { w: 0.6, color: '#f2c7a5', house: true } },
-                { id: 'h2', model: 'street/building_1', pos: [5.4, 0.4, -3.5], h: 0.7, fb: { w: 0.6, color: '#a7c7e7', house: true } },
-                { id: 'h3', model: 'street/building_1', pos: [6.1, 0.4, -3.1], h: 0.7, fb: { w: 0.6, color: '#f5d98b', house: true } }] }
+                    { id: 'h1', model: 'street/building_1', pos: [4.7, 0.4, -3.1], h: 0.7, fb: { w: 0.6, color: '#f2c7a5', house: true } },
+                    { id: 'h2', model: 'street/building_1', pos: [5.4, 0.4, -3.5], h: 0.7, fb: { w: 0.6, color: '#a7c7e7', house: true } },
+                    { id: 'h3', model: 'street/building_1', pos: [6.1, 0.4, -3.1], h: 0.7, fb: { w: 0.6, color: '#f5d98b', house: true } }] }
         ],
         slots: [{ id: 'a', pos: [-9, 0, 1.8] }, { id: 'b', pos: [-3.6, 0, 4.6] }, { id: 'c', pos: [3.6, 0, 4.6] }, { id: 'd', pos: [9, 0, 1.8] }],
         camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
@@ -453,13 +454,13 @@ export const ARENAS = {
             { ring: [-6, 0, -0.7], r: 1.0, deliver: [-6, 2.0, -3.2], people: [{ id: 'a', model: 'people/boy_a', pos: [-6, 0.2, -3.2], h: 1.3, look: { shirt: '#3b82f6', hair: '#3b2a20' } }] },
             { ring: [-2, 0, -0.7], r: 1.0, deliver: [-2, 1.9, -3.2], people: [{ id: 'a', model: 'people/girl_a', pos: [-2, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } }] },
             { ring: [2, 0, -0.7], r: 1.0, deliver: [2, 2.0, -3.2], people: [
-                { id: 'a', model: 'people/boy_a', pos: [1.1, 0.2, -3.2], h: 1.3, look: { shirt: '#3b82f6', hair: '#3b2a20' } },
-                { id: 'b', model: 'people/boy_b', pos: [2, 0.2, -3.2], h: 1.3, look: { shirt: '#ef4444', hair: '#111827' } },
-                { id: 'c', model: 'people/boy_a', pos: [2.9, 0.2, -3.2], h: 1.3, look: { shirt: '#22c55e', hair: '#3b2a20' } }] },
+                    { id: 'a', model: 'people/boy_a', pos: [1.1, 0.2, -3.2], h: 1.3, look: { shirt: '#3b82f6', hair: '#3b2a20' } },
+                    { id: 'b', model: 'people/boy_b', pos: [2, 0.2, -3.2], h: 1.3, look: { shirt: '#ef4444', hair: '#111827' } },
+                    { id: 'c', model: 'people/boy_a', pos: [2.9, 0.2, -3.2], h: 1.3, look: { shirt: '#22c55e', hair: '#3b2a20' } }] },
             { ring: [6, 0, -0.7], r: 1.0, deliver: [6, 1.9, -3.2], people: [
-                { id: 'a', model: 'people/girl_a', pos: [5.1, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
-                { id: 'b', model: 'people/girl_b', pos: [6, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } },
-                { id: 'c', model: 'people/girl_a', pos: [6.9, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#f97316', hair: '#111827' } }] }
+                    { id: 'a', model: 'people/girl_a', pos: [5.1, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#ec4899', hair: '#7c2d12' } },
+                    { id: 'b', model: 'people/girl_b', pos: [6, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#a855f7', hair: '#fbbf24' } },
+                    { id: 'c', model: 'people/girl_a', pos: [6.9, 0.2, -3.2], h: 1.2, look: { girl: true, shirt: '#f97316', hair: '#111827' } }] }
         ],
         slots: [{ id: 'a', pos: [-10, 0, 1.8] }, { id: 'b', pos: [-4, 0, 4.6] }, { id: 'c', pos: [4, 0, 4.6] }, { id: 'd', pos: [10, 0, 1.8] }],
         camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
@@ -624,7 +625,7 @@ export async function buildArena(arenaId, tpl) {
     /* ---- 朋友（站在交付环旁；talk / cheer 播动画，没有动画就原地跳一下） ---- */
     const fl = tpl.cast?.friend ? { shirt: tpl.cast.friend[0], hair: tpl.cast.friend[1] } : null;
     const fg = loaded['characters/friend'];
-    const body = fg ? normalize(clone('characters/friend'), { h: 1.7 }) : normalize(fallbackPerson(fl), { h: 1.7 });
+    const body = fg ? normalize(clone('characters/friend'), { h: FRIEND_H }) : normalize(fallbackPerson(fl), { h: FRIEND_H });
     const friendRoot = new T.Group(); friendRoot.add(body, blobShadow());
     friendRoot.position.set(...A.friend.pos); friendRoot.rotation.y = A.friend.rotY || 0;
     root.add(friendRoot);

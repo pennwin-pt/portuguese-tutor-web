@@ -5,7 +5,7 @@
    一次抓取 = 一次 onGrab；已答对（pad.scored）的物件掉下去后再抓不会再调用 onGrab。 */
 import * as T from '../vendor/three-bundle.js';
 import { shared3d, claimActive, releaseActive } from '../stage3d.js';
-import { buildArena, makeRing, PLAYER_R } from './arena.js';
+import { buildArena, makeRing, PLAYER_R, FRIEND_H } from './arena.js';
 import { createEffects } from './effects.js';
 import { createInput } from './input.js';
 import { PHYS, createPlayer, respawn, stepPlayer } from './physics.js';
@@ -67,6 +67,16 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
 
     const world = { boxes: arena.boxes, spinners: arena.spinners, fallY: arena.fallY };
     const P = createPlayer(arena.spawn);
+    /* 起跳 / 落地的小灰尘：同屏 ≤ 8 个，0.45 秒淡出；系统开了“减少动态效果”就不出现 */
+    const dust = [], dustGeo = new T.SphereGeometry(0.1, 8, 6);
+    function puff(n, spread, up) {
+        if (reduced()) return;
+        for (let k = 0; k < n && dust.length < 8; k++) {
+            const m = new T.Mesh(dustGeo, new T.MeshBasicMaterial({ color: '#f1f5f9', transparent: true, opacity: 0.7, depthWrite: false })), a = Math.random() * Math.PI * 2;
+            m.position.set(P.x + Math.cos(a) * 0.25, P.y - PLAYER_R + 0.08, P.z + Math.sin(a) * 0.25); scene.add(m);
+            dust.push({ m, vx: Math.cos(a) * spread, vz: Math.sin(a) * spread, vy: up, t: 0 });
+        }
+    }
     const fx = createEffects({ scene, arena });                    // 形容词变形工坊：摆件按词义变化（没有 pad.fx / playFx 时完全不运行）
     const flights = [];                                            // 抓错后飞向展台的词牌副本 { m, from, to, k, done }
     const startFacing = arena.startYaw != null ? arena.startYaw + Math.PI : Math.PI / 2;   // 场地写了 startYaw（形容词展台 / 舞台：朝北）就按它出生，否则朝东
@@ -126,7 +136,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         else { e.style.left = `${Math.round(x - s.w / 2)}px`; e.style.top = `${Math.round(y - s.h / 2)}px`; }
     };
     const anchorOf = (key, how) => {
-        if (key === 'friend') { const p = arena.friend.root.position; return [p.x, how === 'above' ? 2.0 : 1.0, p.z]; }
+        if (key === 'friend') { const p = arena.friend.root.position; return [p.x, how === 'above' ? FRIEND_H + 0.3 : FRIEND_H * 0.6, p.z]; }
         if (key === 'me') return [P.x, P.y - PLAYER_R + 1.15, P.z];
         return null;
     };
@@ -273,10 +283,10 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             while (acc >= PHYS.fixedDt && n++ < PHYS.maxSteps) { stepPlayer(world, P, move, yaw, PHYS.fixedDt, !!carrying, ev); acc -= PHYS.fixedDt; }
             if (acc > PHYS.fixedDt) acc = 0;
             for (const e of ev) {
-                if (e.type === 'jump') { sq = -0.35; sfx('jump'); }
-                else if (e.type === 'land') { sq = Math.min(0.5, e.speed / 18); sfx('land'); }
-                else if (e.type === 'bounce') { sq = -0.5; arena.padHit(e.pad); sfx('bounce'); }
-                else if (e.type === 'bump') { sq = 0.3; sfx('bump'); }
+                if (e.type === 'jump') { sq = -0.4; sqv = 0; sfx('jump'); puff(3, 0.6, 0.5); }
+                else if (e.type === 'land') { sq = Math.min(0.55, e.speed / 20); sqv = 0; sfx('land'); if (e.speed > 5) puff(5, 1.2, 0.3); }
+                else if (e.type === 'bounce') { sq = -0.5; sqv = 0; arena.padHit(e.pad); sfx('bounce'); }
+                else if (e.type === 'bump') { sq = 0.3; sqv = 0; sfx('bump'); }
                 else if (e.type === 'fall' && respawnT <= 0) { respawnT = 0.5; fade.classList.add('on'); }
             }
         }
@@ -339,7 +349,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             const d = Math.hypot(arena.ring.pos.x - P.x, arena.ring.pos.z - P.z);
             if (d <= arena.ringR && Math.abs(P.y - PLAYER_R - arena.ring.pos.y) < 1.2) {
                 mode = 'delivering'; sfx('deliver'); arena.ring.active = false; arrow.hidden = true;
-                const o = carrying, from = o.mesh.position.clone(), dv = arena.delivery(), fp = dv.target || arena.friend.root.position, endY = dv.target ? dv.target.y : 1.4; let k = 0;   // 有变体：飞向展台 / 舞台上的名词；否则飞向朋友（老行为）
+                const o = carrying, from = o.mesh.position.clone(), dv = arena.delivery(), fp = dv.target || arena.friend.root.position, endY = dv.target ? dv.target.y : FRIEND_H * 0.85; let k = 0;   // 有变体：飞向展台 / 舞台上的名词；否则飞向朋友（老行为）
                 const fly = () => {
                     if (!alive) return; k += 0.05; const e = ease(Math.min(1, k));
                     o.mesh.position.set(from.x + (fp.x - from.x) * e, from.y + (endY - from.y) * e + Math.sin(e * Math.PI) * 0.8, from.z + (fp.z - from.z) * e);
@@ -361,7 +371,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     });
 
     /* ---------- 视觉：角色程序动画、物件浮动、标签投影、镜头 ---------- */
-    let sq = 0;                                                    // 挤压拉伸：>0 压扁（落地 / 撞到），<0 拉长（起跳 / 弹跳）
+    let sq = 0, sqv = 0, airS = 0;                                 // 挤压拉伸（弹簧，会回弹一下）：>0 压扁（落地 / 撞到），<0 拉长（起跳 / 弹跳）；airS = 空中上升 / 下落的平滑量
     const camPos = new T.Vector3(), camLook = new T.Vector3(); let camInit = false;
     function groundUnder() {
         let gy = arena.fallY;
@@ -381,13 +391,25 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         const hs = Math.hypot(P.vx, P.vz), run01 = Math.min(1, hs / PHYS.maxSpeed);
         pv.position.set(P.x, P.y - PLAYER_R, P.z);
         pv.rotation.y += angDiff(P.facing, pv.rotation.y) * Math.min(1, dt * 12);
-        sq += (0 - sq) * Math.min(1, dt * 9);
+        const sdt = Math.min(dt, 1 / 30);                                      // 切后台回来 dt 很大时不让弹簧发散
+        sqv += (-220 * sq - 16 * sqv) * sdt; sq += sqv * sdt;                  // 弹簧：落地压扁后会轻轻弹回、再稳住
+        const airT = P.onGround ? 0 : Math.max(-0.5, Math.min(1, P.vy / 7));   // 上升拉长、下落略扁，随速度平滑变化（不再跳变）
+        airS += (airT - airS) * Math.min(1, dt * 14);
         let sy = 1 + (-sq) * 0.5, sxz = 1 + sq * 0.35;
-        if (!P.onGround) { sy *= P.vy > 1 ? 1.1 : 0.96; sxz *= P.vy > 1 ? 0.94 : 1.03; }
+        sy *= 1 + airS * 0.12; sxz *= 1 - airS * 0.07;
         sy *= 1 + Math.sin(time * 2.6) * 0.015 * (1 - run01);
         inner.scale.set(sxz, sy, sxz);
-        inner.rotation.x = P.onGround ? 0.16 * run01 : 0; inner.rotation.z = Math.sin(time * 15) * 0.09 * run01 * (P.onGround ? 1 : 0);
-        hands.forEach((h, i) => { const b = handBase[i]; const up = carrying ? 1 : 0; h.position.set(b.x * (1 - up * 0.45), b.y + up * 0.6, b.z + up * 0.1); });
+        const tiltT = P.onGround ? 0.16 * run01 : 0.1 * run01 - 0.12 * Math.max(0, airS);       // 地上前倾；起跳上升时身体略后仰
+        inner.rotation.x += (tiltT - inner.rotation.x) * Math.min(1, dt * 12);
+        inner.rotation.z = Math.sin(time * 15) * 0.09 * run01 * (P.onGround ? 1 : 0);
+        const armUp = P.onGround ? 0 : Math.max(0, Math.min(1, airS));          // 上升时双手略抬起
+        hands.forEach((h, i) => { const b = handBase[i]; const up = carrying ? 1 : 0; h.position.set(b.x * (1 - up * 0.45), b.y + up * 0.6 + armUp * 0.15, b.z + up * 0.1); });
+        for (let k = dust.length - 1; k >= 0; k--) {                           // 灰尘：向外飘、变大、淡出
+            const d = dust[k]; d.t += paused ? 0 : dt; const f = d.t / 0.45;
+            d.m.position.x += d.vx * dt; d.m.position.z += d.vz * dt; d.m.position.y += d.vy * dt; d.vy *= 0.94;
+            d.m.scale.setScalar(1 + f * 1.6); d.m.material.opacity = 0.7 * Math.max(0, 1 - f);
+            if (f >= 1) { scene.remove(d.m); d.m.material.dispose(); dust.splice(k, 1); }
+        }
         const gy = groundUnder(); shadow.position.set(P.x, gy + 0.03, P.z);
         const sh = Math.max(0.35, 1 - (P.y - PLAYER_R - gy) * 0.18); shadow.scale.set(0.95 * sh, 0.95 * sh, 1);
         /* 物件 */
@@ -482,7 +504,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             if (!alive) return; alive = false;
             cancelAnimationFrame(raf); ro.disconnect(); input.destroy();
             if (debug && window.__roam && window.__roam.P === P) window.__roam = null;                   // 调试钩子随场景释放
-            fx.dispose(); for (const f of flights) { scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); } flights.length = 0;
+            fx.dispose(); for (const d of dust) { scene.remove(d.m); d.m.material.dispose(); } dust.length = 0; dustGeo.dispose(); for (const f of flights) { scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); } flights.length = 0;
             clearOrbs(); hud.remove(); labelsLayer.remove(); rotate.remove(); if (canvas.parentNode === view) view.removeChild(canvas);
             scene.remove(pv, shadow); arena.dispose(); fade.classList.remove('on');
             releaseActive(api);

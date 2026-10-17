@@ -7,14 +7,17 @@ import { PLAYER_R as R } from './arena.js';
 export const PHYS = {
     maxSpeed: 4.8, carryMul: 0.85,
     accel: 24, friction: 18, airControl: 0.5,
-    gravity: 18, jump: 6.2, jumpCut: 0.5,
-    coyote: 0.12, jumpBuffer: 0.12,
+    gravity: 18, jump: 6.5, jumpCut: 0.5,
+    fallMul: 1.7,                       // 下落时重力放大：上升轻、下落快，跳起来更利落（不拖泥带水）
+    hang: 0.6, hangV: 1.5,              // 跳到最高点附近（|vy| < hangV）重力只剩 hang 倍：顶点稍微悬停一下，方便瞄准落点
+    maxFall: 22,                        // 下落终速
+    coyote: 0.14, jumpBuffer: 0.14,
     step: 0.25, knock: 5, fixedDt: 1 / 60, maxSteps: 4
 };
 
 export function createPlayer(spawn) {
     return { x: spawn[0], y: spawn[1] + R, z: spawn[2], vx: 0, vy: 0, vz: 0, onGround: false, coyote: 0, buffer: 0, jumping: false,
-             facing: 0, lastRp: spawn.slice(), airSpeed: 0 };
+        facing: 0, lastRp: spawn.slice(), airSpeed: 0 };
 }
 export function respawn(p, to) {
     const rp = to || p.lastRp;
@@ -88,7 +91,9 @@ export function stepPlayer(world, p, input, yaw, dt, carrying, ev) {
     p.buffer = input.jumpPressed ? PHYS.jumpBuffer : Math.max(0, p.buffer - dt);
     if (p.buffer > 0 && p.coyote > 0) { p.vy = PHYS.jump; p.jumping = true; p.buffer = 0; p.coyote = 0; p.onGround = false; ev.push({ type: 'jump' }); }
     if (!input.jumpHeld && p.jumping && p.vy > 0) { p.vy *= PHYS.jumpCut; p.jumping = false; }     // 松手提前收跳 = 可变跳高
-    p.vy -= PHYS.gravity * dt;
+    const inAir = !p.onGround && p.coyote <= 0;           // 刚走下平台的 coyote 时间内不算“起跳后的空中”，不悬停
+    const g = PHYS.gravity * (p.vy < 0 ? PHYS.fallMul : 1) * (inAir && Math.abs(p.vy) < PHYS.hangV ? PHYS.hang : 1);
+    p.vy = Math.max(-PHYS.maxFall, p.vy - g * dt);
     const vyBefore = p.vy;
 
     p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
