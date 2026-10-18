@@ -108,3 +108,23 @@
     .sc .sc-shelf:not(.proj){left:50%;right:auto;width:min(86%,560px);transform:translateX(-50%);top:26%!important}
     .sc .sc-dialogue-bubble.friend,.sc .sc-dialogue-bubble.helper{max-width:min(46%,420px)}
 }
+
+/* ---------- 单词配图：预习常驻图卡 / 测验「💡 提示」按钮（挂在 .sc-view 里，盖在 3D 画面和 HUD 之上；dock 本身不挡操作，只有图卡和按钮可点） ---------- */
+.sc-pic{position:absolute;z-index:8;left:max(12px,env(safe-area-inset-left));top:10px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;pointer-events:none}
+.sc-pic>*{pointer-events:auto}
+.sc-pic-card{position:relative;display:block;width:min(30vw,128px);aspect-ratio:1;padding:5px;border:0;border-radius:14px;background:#fff;box-shadow:0 4px 14px rgba(15,23,42,.3);cursor:zoom-in;transform:rotate(-2deg);animation:sc-pic-in .25s ease-out;touch-action:manipulation}
+.sc-pic-card img{display:block;width:100%;height:100%;border-radius:10px;object-fit:cover;pointer-events:none}
+.sc-pic-hint{min-height:44px;padding:0 16px;border:0;border-radius:22px;background:#fff;color:#b45309;font-size:15px;font-weight:700;box-shadow:0 3px 12px rgba(15,23,42,.25);touch-action:manipulation}
+.sc-pic-sum{flex:none;width:64px;height:64px;padding:0;border:0;border-radius:10px;overflow:hidden;background:#f1f3f6;cursor:zoom-in;line-height:0;touch-action:manipulation}
+.sc-pic-sum img{display:block;width:100%;height:100%;object-fit:cover}
+/* 走路版是全屏横屏：左上角是线索卡（≤ 约 100px 高），图卡放在它下面；对话阶段线索卡不显示，图卡贴顶 */
+.sc-roam .sc-pic{top:max(12px,env(safe-area-inset-top))}
+.sc-roam.rm-playing .sc-pic{top:calc(max(12px,env(safe-area-inset-top)) + 108px)}
+/* 非走路版（点选场景，画面里人物和气泡在上半部）：放左下角 */
+.sc:not(.sc-roam) .sc-pic{top:auto;bottom:10px}
+.sc:not(.sc-roam) .sc-pic-card{width:min(26vw,104px)}
+@media (max-height:420px){
+    .sc-pic-card{width:min(24vw,92px)}
+    .sc-roam.rm-playing .sc-pic{top:calc(max(12px,env(safe-area-inset-top)) + 100px)}
+}
+@keyframes sc-pic-in{from{opacity:0;transform:scale(.7) rotate(-6deg)}to{opacity:1;transform:scale(1) rotate(-2deg)}}

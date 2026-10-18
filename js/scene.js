@@ -11,6 +11,8 @@
      extra(w): Node|null   结果卡上附加的控件（words.js 传 sourceButton）
      evaluateChoice(w, selectedWordId)  仅正式测验传：提交服务器判分，返回 { passed }，抛错 = 提交失败（不计错）
      cancelAudio()         被 cancel 时停音频
+     image: { src, open(onDropped) }   这个词的配图（words.js 传；没有配图就不传）。预习：图卡常驻画面左侧；测验：「💡 提示」按钮，点了才出现图卡；
+                           点图卡 → open(onDropped) 放大（words.js 的弹窗，里面有“图不对，换一张”，被否决后调 onDropped 撤图）
    }
    Scene.play 返回 { root, done, cancel }：done 在场景走完时 resolve(true)，被 cancel 后永远不 resolve。
    需要的词字段：pt_word、cn_meaning（可选 emoji / pt_sentence / cn_sentence 及场景字段）。
@@ -268,6 +270,38 @@
         view.append(basket, dialogueBubble);
         root.append(view, ctlBox);
         let loc = tpl.roomOnly ? 'place' : 'street';
+
+        /* --- 单词配图（AI 插画）：ctx.image 没有就整段不生效 ---
+           预习：图卡一直挂在画面左侧（跑动时在线索卡下面），点一下放大；
+           测验：只有一个「💡 提示」按钮，点了才出现图卡，再点收起（提示不影响判分）；
+           答完后的结果卡里两种模式都带一张缩略图（这时答案已经公布），浮动的图卡 / 按钮收掉。 */
+        let image = ctx.image && ctx.image.src ? ctx.image : null, picDock = null;
+        function dropPicture() {                    // 图加载失败 / 在放大窗里被“图不对”否决：撤掉所有图
+            image = null;
+            if (picDock) { picDock.remove(); picDock = null; }
+            root.querySelectorAll('.sc-pic-sum').forEach(x => x.remove());
+        }
+        function pictureCard(cls) {
+            const b = el('button', cls), img = el('img');
+            b.type = 'button'; b.setAttribute('aria-label', '放大看图');
+            img.src = image.src; img.alt = ''; img.draggable = false; img.onerror = dropPicture;
+            b.append(img); b.onclick = () => { if (ctx.image && ctx.image.open) ctx.image.open(dropPicture); };
+            return b;
+        }
+        if (image) {
+            picDock = el('div', 'sc-pic');
+            if (mode === 'preview') picDock.append(pictureCard('sc-pic-card'));
+            else {
+                const hb = el('button', 'sc-pic-hint', '💡 提示'); hb.type = 'button';
+                let card = null;
+                hb.onclick = () => {
+                    if (card) { card.remove(); card = null; hb.textContent = '💡 提示'; return; }
+                    card = pictureCard('sc-pic-card'); picDock.append(card); hb.textContent = '🙈 收起图';
+                };
+                picDock.append(hb);
+            }
+            view.append(picDock);
+        }
 
         /* --- 3D 舞台：必须成功。WebGL 不可用 / 加载失败 / 模板没有布局 / 渲染上下文丢失 → 显示错误卡 + 退出按钮（没有 2D 回退） --- */
         let stage = null;
@@ -718,6 +752,7 @@
             shelf.style.pointerEvents = 'none';
             dialogueBubble.textContent = '';
             const card = el('div', 'sc-sum'), row = el('div', 'sc-line');
+            if (image) { if (picDock) picDock.style.display = 'none'; row.append(pictureCard('sc-pic-sum')); }      // 结果卡：左边一张缩略图，点开放大
             row.append(el('div', 'sc-term', String(n.reveal_pt || '{target}').replace('{target}', w.pt_word || '')));
             const sp = el('button', 'spk', '🔊'); sp.type = 'button'; sp.setAttribute('aria-label', '朗读单词'); sp.onclick = () => speakWord(sp); row.append(sp);
             const extra = ctx.extra && ctx.extra(w); if (extra) row.append(extra);

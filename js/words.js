@@ -180,13 +180,13 @@ function imageBox(w, cls, withReject) {              // cls: 'wimg'（整宽）|
     b.append(img); b.onclick = () => openImage(w, withReject);
     return b;
 }
-function openImage(w, withReject) {
+function openImage(w, withReject, onDropped) {          // onDropped：图被“图不对”否决后的回调（场景里用它撤掉浮动的图）
     const dlg = el('dialog', 'wimg-dialog'), img = el('img'), row = el('div', 'wimg-row');
     img.src = API + w.image_url; img.alt = w.pt_word;
     const cl = el('button', 'source-btn', '关闭'); cl.type = 'button'; cl.onclick = () => dlg.close();
     if (withReject) {
         const rj = el('button', 'source-btn', '🚫 图不对，换一张'); rj.type = 'button';
-        rj.onclick = () => rejectImage(w, dlg);
+        rj.onclick = () => rejectImage(w, dlg, onDropped);
         row.append(rj);
     }
     row.append(cl); dlg.append(img, row);
@@ -198,12 +198,16 @@ function dropImage(id) {                             // 本地把这个词的配
     for (const list of [today?.words, today?.preview, todoList, failedList]) for (const x of list || []) if (x.id === id) delete x.image_url;
     if (cur && cur.id === id) delete cur.image_url;
 }
-async function rejectImage(w, dlg) {                 // 图和词义对不上：服务器立刻不再显示这张，并在后台换个画面重画（图是按词共用的）
+async function rejectImage(w, dlg, onDropped) {                 // 图和词义对不上：服务器立刻不再显示这张，并在后台换个画面重画（图是按词共用的）
     if (!confirm(`这张图和「${w.pt_word}」对不上吗？\n会立刻不再显示，并在后台重新画一张，下次再遇到这个词时可能看到新图。`)) return;
     try { await post(`/api/words/${encodeURIComponent(w.id)}/image/reject`, {}); }
     catch (err) { return toast('提交失败：' + err.message); }
     dropImage(w.id); dlg.close(); toast('已反馈，稍后会重新画');
+    if (onDropped) onDropped();
     if (['result', 'reveal', 'preview'].includes(state)) render();
+}
+function sceneImage(w) {                          // 给场景（scene.js）用的配图入口：预习常驻图卡 / 测验里点“提示”才出现；没有配图返回 null
+    return w && w.image_url ? { src: API + w.image_url, open: onDropped => openImage(w, true, onDropped) } : null;
 }
 $('#source-close').onclick = () => sourceDialog.close();
 sourceDialog.addEventListener('click', e => { if (e.target === sourceDialog) sourceDialog.close(); });
@@ -402,8 +406,10 @@ function enterPreview() {
     sceneWords = window.Scene ? today.preview.filter(Scene.canPlay) : [];
     sceneIdx = -1; scenePurpose = 'preview'; state = 'preview'; render();
 }
+let previewFocusId = null;                         // 从预习场景回到列表时，滚动定位到这个词
 function startPreviewScene(w) {
     if (!window.Scene || !Scene.canPlay(w)) return;
+    previewFocusId = w.id;
     sceneCur?.cancel(); sceneCur = null;
     sceneWords = today.preview.filter(Scene.canPlay);
     sceneIdx = sceneWords.findIndex(x => x.id === w.id);
@@ -418,7 +424,7 @@ function viewScene() {
     const w = sceneWords[sceneIdx];
     if (sceneCur && sceneCur.idx === sceneIdx) return sceneCur.root;          // 重新 render 时不要把正在播的场景重开
     sceneCur?.cancel();
-    const s = Scene.play(w, { mode: 'preview', pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakLine, speakSceneSentence, extra: sourceButton,
+    const s = Scene.play(w, { mode: 'preview', pool: sceneWords.filter(x => x.id !== w.id), isLast: true, afterLabel: '📋 返回预习列表', speak, speakLine, speakSceneSentence, extra: sourceButton, image: sceneImage(w),
         exitLabel: '📋 看单词列表', onExit: () => { sceneCur?.cancel(); sceneCur = null; state = 'preview'; render(); },
         cancelAudio: stopSceneAudio });
     sceneCur = { idx: sceneIdx, get root() { return s.root; }, cancel: s.cancel };
@@ -436,7 +442,7 @@ function viewAssessmentScene() {
     const pool = (today?.words || []).filter(x => x.id !== w.id && Scene.canPlay(x));
     const s = Scene.play(w, { mode: 'assessment', pool, isLast: false, afterLabel: '进入原测试', speak, speakLine, speakSceneSentence,
         exitLabel: '跳过场景，进入测试', onExit: () => { sceneCur?.cancel(); sceneCur = null; showCurrentTest(); },
-        extra: sourceButton, cancelAudio: stopSceneAudio, evaluateChoice: evaluateSceneChoice });
+        extra: sourceButton, image: sceneImage(w), cancelAudio: stopSceneAudio, evaluateChoice: evaluateSceneChoice });
     sceneCur = { wordId: w.id, get root() { return s.root; }, cancel: s.cancel };
     s.done.then(() => {
         if (sceneCur?.root !== s.root || state !== 'scene' || scenePurpose !== 'assessment' || cur !== w) return;
@@ -472,7 +478,7 @@ function viewPreview() {                            // 预习：只看、只听�
         mb.type = 'button';
         mb.onclick = () => markPreviewMastered(w, mb);
         actions.append(mb);
-        row.append(r1, actions); list.append(row);
+        row.dataset.id = String(w.id); row.append(r1, actions); list.append(row);
     }
     c.append(list);
     return c;
@@ -556,6 +562,10 @@ function render() {
     stage.classList.toggle('top', state === 'preview' || state === 'scene' || (state === 'done' && !!summary?.sun && summary.weak.length > 0));   // 预习 / 待巩固列表可能很长，从顶部开始排，不居中
     stage.innerHTML = '';
     stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, reveal: viewReveal, result: viewResult, preview: viewPreview, scene: scenePurpose === 'assessment' ? viewAssessmentScene : viewScene, done: viewDone }[state]());
+    if (state === 'preview' && previewFocusId != null) {            // 预习场景结束 / 退出后回到列表：定位到刚才那个词（只定位一次）
+        const row = stage.querySelector(`.pitem[data-id="${previewFocusId}"]`); previewFocusId = null;
+        if (row) row.scrollIntoView({ block: 'center' });
+    }
 }
 
 /* ---------- 流程 ---------- */
