@@ -169,6 +169,42 @@ function sourceButton(w) {
     return b;
 }
 function appendSourceButton(parent, w) { const b = sourceButton(w); if (b) parent.append(b); }
+
+/* ---------- 单词配图（AI 插画）：只在公布答案之后（结果页 / 先露答案页）和预习列表里出现，考的时候绝不显示 ----------
+   后端 /today 给有图的词带 image_url（如 /api/words/12/image?v=ab12cd34）；没有这个字段 = 没图，什么都不显示。 */
+function imageBox(w, cls, withReject) {              // cls: 'wimg'（整宽）| 'wthumb'（预习列表缩略图）；点一下放大
+    if (!w || !w.image_url) return null;
+    const b = el('div', cls), img = el('img');
+    img.src = API + w.image_url; img.alt = ''; img.loading = 'lazy';
+    img.onerror = () => b.remove();                  // 图加载失败就当没有
+    b.append(img); b.onclick = () => openImage(w, withReject);
+    return b;
+}
+function openImage(w, withReject) {
+    const dlg = el('dialog', 'wimg-dialog'), img = el('img'), row = el('div', 'wimg-row');
+    img.src = API + w.image_url; img.alt = w.pt_word;
+    const cl = el('button', 'source-btn', '关闭'); cl.type = 'button'; cl.onclick = () => dlg.close();
+    if (withReject) {
+        const rj = el('button', 'source-btn', '🚫 图不对，换一张'); rj.type = 'button';
+        rj.onclick = () => rejectImage(w, dlg);
+        row.append(rj);
+    }
+    row.append(cl); dlg.append(img, row);
+    dlg.addEventListener('close', () => dlg.remove());
+    dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+    document.body.append(dlg); dlg.showModal();
+}
+function dropImage(id) {                             // 本地把这个词的配图去掉（今日任务 / 预习 / 待测队列里的拷贝都要处理）
+    for (const list of [today?.words, today?.preview, todoList, failedList]) for (const x of list || []) if (x.id === id) delete x.image_url;
+    if (cur && cur.id === id) delete cur.image_url;
+}
+async function rejectImage(w, dlg) {                 // 图和词义对不上：服务器立刻不再显示这张，并在后台换个画面重画（图是按词共用的）
+    if (!confirm(`这张图和「${w.pt_word}」对不上吗？\n会立刻不再显示，并在后台重新画一张，下次再遇到这个词时可能看到新图。`)) return;
+    try { await post(`/api/words/${encodeURIComponent(w.id)}/image/reject`, {}); }
+    catch (err) { return toast('提交失败：' + err.message); }
+    dropImage(w.id); dlg.close(); toast('已反馈，稍后会重新画');
+    if (['result', 'reveal', 'preview'].includes(state)) render();
+}
 $('#source-close').onclick = () => sourceDialog.close();
 sourceDialog.addEventListener('click', e => { if (e.target === sourceDialog) sourceDialog.close(); });
 
@@ -323,6 +359,7 @@ function viewReveal() {                              // 周日以测代看 ①�
     const row = el('div', 'termrow');
     row.append(el('div', 'term', w.pt_word), spk(w, 'word'));
     c.append(row, el('div', 'ask', w.cn_meaning));
+    const ib = imageBox(w, 'wimg', true); if (ib) c.append(ib);
     if (w.pt_sentence) {
         const ans = el('div', 'ans'), r = el('div', 'arow'), t = el('div', 'tx');
         t.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
@@ -350,7 +387,8 @@ function viewResult() {
     r1.append(t1, spk(w, 'word'));
     t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
     r3.append(t3, spk(w, 'sentence'));
-    ans.append(r1, r3); c.append(ans);
+    const ib = imageBox(w, 'wimg', true);            // 配图夹在单词和例句之间
+    ans.append(r1); if (ib) ans.append(ib); ans.append(r3); c.append(ans);
     appendSourceButton(c, w);
     if (sunMode) return c;                           // 周日以测代看不碰学习进度：不放“我已掌握”（它会改服务器进度）
     const mb = el('button', 'mbtn', '✅ 我已掌握，以后不再复习'); mb.type = 'button';
@@ -420,6 +458,7 @@ function viewPreview() {                            // 预习：只看、只听�
         const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow'), actions = el('div', 'preview-actions');
         tx.append(el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
         if (w.pt_sentence) tx.append(el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence || ''));
+        const th = imageBox(w, 'wthumb', true); if (th) r1.append(th);      // 预习：左边缩略图，点开放大
         r1.append(tx);
         const sb = sourceButton(w); if (sb) actions.append(sb);
         if (window.Scene && Scene.canPlay(w)) {

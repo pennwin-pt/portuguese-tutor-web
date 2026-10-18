@@ -83,3 +83,14 @@
 
 /* 周日以测代看：首页的“重新开始”（次要操作，蓝色描边） */
 .sbtn{display:block;width:100%;height:44px;margin-top:18px;border:1.5px solid var(--blue);border-radius:22px;background:#fff;color:var(--blue);font-size:15px;font-weight:600;touch-action:manipulation}
+
+/* 单词配图（AI 插画）：结果页 / 先露答案页整宽显示，预习列表里是缩略图，点开放大 */
+.wimg{margin:14px auto 6px;max-width:340px;border-radius:14px;overflow:hidden;background:#f1f3f6;cursor:zoom-in;line-height:0}
+.wimg img{display:block;width:100%;max-height:36vh;object-fit:contain}
+.wthumb{flex:none;width:64px;height:64px;border-radius:10px;overflow:hidden;background:#f1f3f6;cursor:zoom-in;line-height:0}
+.wthumb img{display:block;width:100%;height:100%;object-fit:cover}
+.wimg-dialog{border:0;padding:12px;border-radius:16px;width:min(92vw,520px);background:#fff;text-align:center}
+.wimg-dialog::backdrop{background:rgba(0,0,0,.55)}
+.wimg-dialog img{display:block;width:100%;max-height:68vh;object-fit:contain;border-radius:10px}
+.wimg-row{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}
+.wimg-row .source-btn{margin-top:12px}
