@@ -180,13 +180,13 @@ function imageBox(w, cls, withReject) {              // cls: 'wimg'（整宽）|
     b.append(img); b.onclick = () => openImage(w, withReject);
     return b;
 }
-function openImage(w, withReject, onDropped) {          // onDropped：图被“图不对”否决后的回调（场景里用它撤掉浮动的图）
+function openImage(w, withReject) {
     const dlg = el('dialog', 'wimg-dialog'), img = el('img'), row = el('div', 'wimg-row');
     img.src = API + w.image_url; img.alt = w.pt_word;
     const cl = el('button', 'source-btn', '关闭'); cl.type = 'button'; cl.onclick = () => dlg.close();
     if (withReject) {
         const rj = el('button', 'source-btn', '🚫 图不对，换一张'); rj.type = 'button';
-        rj.onclick = () => rejectImage(w, dlg, onDropped);
+        rj.onclick = () => rejectImage(w, dlg);
         row.append(rj);
     }
     row.append(cl); dlg.append(img, row);
@@ -194,20 +194,19 @@ function openImage(w, withReject, onDropped) {          // onDropped：图被“
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
     document.body.append(dlg); dlg.showModal();
 }
-function dropImage(id) {                             // 本地把这个词的配图去掉（今日任务 / 预习 / 待测队列里的拷贝都要处理）
-    for (const list of [today?.words, today?.preview, todoList, failedList]) for (const x of list || []) if (x.id === id) delete x.image_url;
-    if (cur && cur.id === id) delete cur.image_url;
-}
-async function rejectImage(w, dlg, onDropped) {                 // 图和词义对不上：服务器立刻不再显示这张，并在后台换个画面重画（图是按词共用的）
-    if (!confirm(`这张图和「${w.pt_word}」对不上吗？\n会立刻不再显示，并在后台重新画一张，下次再遇到这个词时可能看到新图。`)) return;
-    try { await post(`/api/words/${encodeURIComponent(w.id)}/image/reject`, {}); }
+async function rejectImage(w, dlg) {                 // 新图成功前继续使用旧图；新图成功保存后由服务端替换
+    if (!confirm(`这张图和「${w.pt_word}」对不上吗？\n系统会在后台尝试重画；成功后替换旧图，失败时继续使用旧图。`)) return;
+    let result;
+    try { result = await post(`/api/words/${encodeURIComponent(w.id)}/image/reject`, {}); }
     catch (err) { return toast('提交失败：' + err.message); }
-    dropImage(w.id); dlg.close(); toast('已反馈，稍后会重新画');
-    if (onDropped) onDropped();
-    if (['result', 'reveal', 'preview'].includes(state)) render();
+    dlg.close();
+    if (result?.regenerating) toast('已开始重画；成功后替换旧图，失败时继续使用旧图。刷新页面查看新图。');
+    else if (result?.reason === 'max_tries') toast('已达到自动重画次数上限，当前图片仍保留。');
+    else if (result?.reason === 'disabled') toast('当前暂时无法重画，图片仍保留。');
+    else toast('暂时无法重新生成，当前图片仍保留。');
 }
 function sceneImage(w) {                          // 给场景（scene.js）用的配图入口：预习常驻图卡 / 测验里点“提示”才出现；没有配图返回 null
-    return w && w.image_url ? { src: API + w.image_url, open: onDropped => openImage(w, true, onDropped) } : null;
+    return w && w.image_url ? { src: API + w.image_url, open: () => openImage(w, true) } : null;
 }
 $('#source-close').onclick = () => sourceDialog.close();
 sourceDialog.addEventListener('click', e => { if (e.target === sourceDialog) sourceDialog.close(); });
