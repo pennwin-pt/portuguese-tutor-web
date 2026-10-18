@@ -108,7 +108,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 
 ## 数据来源
 `word_source.py` 通过只读连接(`PRAGMA query_only`)从服务端数据库读取 `WeeklyPlans` → `WeeklyPlanWords` → `Words`。WordMemorizer 的六张表与陪练数据共存于 `SQLITE_PATH` 指定的 `sessions.db`；`WORD_DB_PATH` 默认自动跟随 `SQLITE_PATH`，不要再把它当作独立的客户端数据库。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。库文件不存在时返回空列表并记日志。WordMemorizer 通过服务端 `/api/admin/*` 管理接口读写这些数据。
-`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,source,remark,reference_image_number,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`,若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。来源值 1=图片关联、2=口语陪练；学习词从 NewWords 转入 Words 时要复制 Source/Remark。单词学习页“查看来源”按来源弹出图片或 Remark；图片通过 `/api/words/source-image/{image_number}` 从 WordMemorizer.Core/images/jpg 读取。
+`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,source,remark,reference_image_number,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`,若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。来源值 1=图片关联、2=口语陪练；学习词从 NewWords 转入 Words 时要复制 Source/Remark。单词学习页“查看来源”按来源弹出图片或 Remark；来源图片通过 `/api/words/source-image/{image_number}` 从 WordMemorizer.Core/images/jpg 读取。学习页展示的 AI 配图则走 `/api/words/{id}/image`，文件在 `data/word_images/YYYYMMDD/`，其中日期为图片生成当周的周日；`word_images.file` 保存相对路径，旧的根目录文件名仍兼容，手动把图片移入日期子目录也可按唯一文件名找到。
 
 ## 一周节奏(周日~周六)
 - **周日**:新一周词表已生成,除了"今天已在复习里"的词之外**全部**放进 `preview`(包括生词本"重新学习"复用的、已有进度的词)只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。(前端另有"周日以测代看"`sunMode`,见"造句与周日以测代看"一节。)
