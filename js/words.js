@@ -282,6 +282,7 @@ function viewIdle() {
     return c;
 }
 function viewLoading() { const c = el('div', 'wcard'); c.append(el('div', 'ask', '加载今日任务…')); return c; }
+const zhHint = w => (window.Scene && window.Scene.maskPtInZh) ? window.Scene.maskPtInZh(w.cn_meaning) : w.cn_meaning;   // 测验里中文释义带着这个词的其他形式（葡语单词）→ ***（scene.js 提供）
 function viewCloze(w, c) {                           // 模式 3：句子填空。全部用 el()/textContent，例句里的特殊字符不会被当成 HTML；不放喇叭、不朗读（读句子会泄露答案）
     c.append(el('div', 'tag', '🧩 填空：看句子，说出缺的词'));
     const box = el('div', 'cloze');
@@ -291,7 +292,7 @@ function viewCloze(w, c) {                           // 模式 3：句子填空�
     });
     c.append(box);
     if (w.cn_sentence) c.append(el('div', 'azh', w.cn_sentence));
-    c.append(el('div', 'hint', '提示：' + w.cn_meaning),
+    c.append(el('div', 'hint', '提示：' + zhHint(w)),
         el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : '请只说出缺的那个词'));
     return c;
 }
@@ -310,7 +311,7 @@ function viewTest() {
     if (w.mode === 4) { viewSentence(w, c); appendSourceButton(c, w); return c; }
     c.append(el('div', 'tag', w.mode === 1 ? '🇵🇹 → 🇨🇳 看葡语，说中文' : '🇨🇳 → 🇵🇹 看中文，说葡语'));
     const row = el('div', 'termrow');
-    row.append(el('div', 'term', w.mode === 1 ? w.pt_word : w.cn_meaning));
+    row.append(el('div', 'term', w.mode === 1 ? w.pt_word : zhHint(w)));
     if (w.mode === 1) row.append(spk(w, 'word'));         // 模式 1：可以随时重听单词读音
     c.append(row, el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : (w.mode === 1 ? '请用中文说出它的意思' : '请用葡语说出这个词')));
     appendSourceButton(c, w);
@@ -428,10 +429,24 @@ function viewPreview() {                            // 预习：只看、只听�
             actions.append(sceneButton);
         }
         actions.append(spk(w, 'word'));
+        const mb = el('button', 'source-btn', '✅ 我已掌握');
+        mb.type = 'button';
+        mb.onclick = () => markPreviewMastered(w, mb);
+        actions.append(mb);
         row.append(r1, actions); list.append(row);
     }
     c.append(list);
     return c;
+}
+async function markPreviewMastered(w, btn) {       // 预习列表里点“我已掌握”：服务器标记掌握，本地从列表里移除（不再复习、不再当新词）
+    if (state !== 'preview') return;
+    if (!confirm(`确定已经完全掌握「${w.pt_word}」吗？\n以后不会再安排这个词的复习。`)) return;
+    btn.disabled = true;
+    try { await post('/api/words/mark_mastered', { session_id: sid, word_id: w.id }); }
+    catch (err) { btn.disabled = false; return toast('保存失败：' + err.message); }
+    today.preview = today.preview.filter(x => x.id !== w.id);
+    toast('已标记为掌握，不再出现');
+    if (state === 'preview') render();
 }
 function fmtTime(s) {       // 服务器存的是 UTC（'YYYY-MM-DD HH:MM:SS'），转成本地 HH:MM
     const d = s ? new Date(s.replace(' ', 'T') + 'Z') : null;

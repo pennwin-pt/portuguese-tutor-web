@@ -35,6 +35,13 @@
     const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
         .replace(/^(o|a|os|as|um|uma|uns|umas)\s+/, '').replace(/[^a-z\s-]/g, '').trim();
 
+    /* 测验时，中文释义里如果带着这个词的其他形式（葡语单词，如 "casa（casas）"、"falar, falo, falamos"），会直接泄露答案 → 把里面的葡语单词换成 ***。
+       和管理端考试窗口（FormExam）的做法一致：不去猜哪些是"其他形式"（不规则变位 ser / sou / foi 猜不出来），释义里的葡语单词（≥ 2 个字母、含重音和连字符）一律藏起来；
+       n. / adj. / pl. 这类词性缩写保留，中文不动。预习和答完之后的结果卡不用藏。 */
+    const POS_ABBR = new Set(['adj', 'adv', 'pron', 'prep', 'conj', 'num', 'art', 'interj', 'loc', 'sing', 'pl', 'mf', 'tr', 'intr', 'refl', 'pop', 'fam']);
+    const maskPtInZh = text => String(text == null ? '' : text).replace(/[A-Za-zÀ-ÖØ-öø-ÿ]+(?:[-'’][A-Za-zÀ-ÖØ-öø-ÿ]+)*/g,
+        tok => tok.length < 2 || POS_ABBR.has(tok.toLowerCase()) ? tok : '***');
+
     /* ---------- 词 → emoji（没有的词会退化成“中文意思卡片”）；以后后端给词加 emoji 字段，优先用 w.emoji ---------- */
     const RAW = {
         'maçã': '🍎', 'pão': '🍞', 'leite': '🥛', 'água': '💧', 'café': '☕', 'chá': '🍵', 'queijo': '🧀', 'ovo': '🥚',
@@ -227,6 +234,7 @@
         ctx = ctx || {};
         const mode = ctx.mode === 'assessment' || ctx.mode === 'preview' ? ctx.mode : (ctx.evaluateChoice ? 'assessment' : 'preview');
         const pool = ctx.pool || [], zh = w.cn_meaning || '', em = emojiOf(w), CANCEL = {};
+        const zhClue = mode === 'assessment' ? maskPtInZh(zh) : zh;      // 测验时中文释义里的葡语单词（这个词的其他形式）→ ***；预习不用藏
         const nounCtx = tpl.adjectiveOnly ? adjectiveContext(w, tpl) : { noun: '', nounZh: '', article: '', index: 0 };
         // 形容词走路版：roam_choice 带 variant_by:"noun_context" → 场地按名词语境换摆件（序号 = nounCtx.index，和 speakNode 给 line-audio 的 variant 是同一个）
         const variantIdx = Object.values(tpl.nodes || {}).some(x => x && x.type === 'roam_choice' && x.variant_by === 'noun_context') ? nounCtx.index : undefined;
@@ -244,7 +252,7 @@
         }
         const leaks = text => { const s = ' ' + norm(text).replace(/\s+/g, ' ') + ' '; for (const f of forms) if (s.includes(' ' + f + ' ')) return true; return false; };
         const fillPt = s => String(s || '').replace(/\{(blank|art|noun)\}/g, (_, k) => k === 'blank' ? '______' : k === 'art' ? nounCtx.article : nounCtx.noun);
-        const fillZh = s => String(s || '').replace(/\{(target_zh|noun_zh|hotspot_zh)\}/g, (_, k) => k === 'target_zh' ? zh : k === 'noun_zh' ? nounCtx.nounZh : hotspotZh());
+        const fillZh = s => String(s || '').replace(/\{(target_zh|noun_zh|hotspot_zh)\}/g, (_, k) => k === 'target_zh' ? zhClue : k === 'noun_zh' ? nounCtx.nounZh : hotspotZh());
 
         /* --- 依模板搭 DOM 层：台词气泡、热点按钮、人物点击锚点、篮子；画面本身全部由 stage3d 渲染 --- */
         const root = el('div', 'sc' + (tpl.roam ? ' sc-roam' : ''));
@@ -369,7 +377,7 @@
             },
             talk(a) { stage && stage.talk(a); },
             cheer(a) { stage && stage.cheer(a); },
-            bubble_target() { if (tpl.roomOnly) return; bubble.textContent = zh; bubble.classList.add('txt', 'show'); },
+            bubble_target() { if (tpl.roomOnly) return; bubble.textContent = zhClue; bubble.classList.add('txt', 'show'); },
             bubble_happy() { if (tpl.roomOnly) return; bubble.textContent = '😀'; bubble.classList.remove('txt'); bubble.classList.add('show'); },
             shake(a) { pulse(hotBtn(resolveArg(a)), 'shake', 400); stage && stage.shake(resolveArg(a)); },
             async open(a) { const b = hotBtn(resolveArg(a)); if (b) b.classList.add('open'); stage && stage.open(resolveArg(a)); await wait(650); },
@@ -598,7 +606,7 @@
             await stage.run({
                 pads: o.list, display: disp, seed: (Number(w.id) || 1) * 1000 + today,   // 同一天同一个词，底座分配不变
                 // 形容词走路版：线索卡 = 名词图标 + 名词中文 + "找“{target_zh}”的词牌"（名词图标不泄露答案，预习 / 测验都显示）；variant = 展台 / 舞台上摆哪一组
-                clue: nounClue ? { emoji: em, zh: `找“${zh}”的词牌`, noun: nounClue } : { emoji: em, zh }, variant: variantIdx, preview: mode === 'preview', autoGrab: true,
+                clue: nounClue ? { emoji: em, zh: `找“${zhClue}”的词牌`, noun: nounClue } : { emoji: em, zh: zhClue }, variant: variantIdx, preview: mode === 'preview', autoGrab: true,
                 correctSlot: n.slot_by_zone ? (w.scene_zone || null) : null,       // shop：正确答案放在这个词所属的货架区（没配置就随机）
                 grabRange: n.grab_range || 1.4, hints: n.hints || {},
                 onApproach: pad => {                                                      // 预习：靠近物件时读它的葡语（测验不读，会泄露答案）
@@ -780,5 +788,5 @@
         if (w.pos === 'adjective') return '形容词的场景模板，或四种词形不完整';
         return '缺少 emoji 或中文释义';
     };
-    window.Scene = { canPlay, play, emojiOf, whyNot, chooseTemplate };      // chooseTemplate 只读，给自动化测试用
+    window.Scene = { canPlay, play, emojiOf, whyNot, chooseTemplate, maskPtInZh };      // chooseTemplate 只读，给自动化测试用
 })();
