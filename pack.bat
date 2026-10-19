@@ -8,7 +8,7 @@ set "SRC=%~dp0"
 if "%SRC:~-1%"=="\" set "SRC=%SRC:~0,-1%"
 
 set "OUT=%TEMP%\%NAME%"
-for %%I in ("%~dp0..\%NAME%") do set "DEST=%%~fI"
+for %%I in ("%~dp0..\..\..\%NAME%") do set "DEST=%%~fI"
 
 if exist "%OUT%" del /f /q "%OUT%"
 
@@ -47,7 +47,7 @@ if errorlevel 1 (
 move /y "%OUT%" "%DEST%" >nul
 if errorlevel 1 (
     echo.
-    echo [ERROR] Could not move the zip to the parent folder.
+    echo [ERROR] Could not move the zip to the output folder.
     echo The file is still at:
     echo   %OUT%
     pause
