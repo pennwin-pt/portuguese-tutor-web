@@ -394,7 +394,7 @@ function viewResult() {
     ans.append(r1); if (ib) ans.append(ib); ans.append(r3); c.append(ans);
     appendSourceButton(c, w);
     if (sunMode) return c;                           // 周日以测代看不碰学习进度：不放“我已掌握”（它会改服务器进度）
-    const mb = el('button', 'mbtn', '✅ 我已掌握，以后不再复习'); mb.type = 'button';
+    const mb = el('button', 'mbtn', '✅ 我已掌握（约一个月后再抽查）'); mb.type = 'button';
     mb.onclick = () => markMastered(mb);
     c.append(mb);
     return c;
@@ -484,12 +484,12 @@ function viewPreview() {                            // 预习：只看、只听�
 }
 async function markPreviewMastered(w, btn) {       // 预习列表里点“我已掌握”：服务器标记掌握，本地从列表里移除（不再复习、不再当新词）
     if (state !== 'preview') return;
-    if (!confirm(`确定已经完全掌握「${w.pt_word}」吗？\n以后不会再安排这个词的复习。`)) return;
+    if (!confirm(`确定已经完全掌握「${w.pt_word}」吗？\n平时不再安排这个词的复习，大约一个月后会再抽查一次。`)) return;
     btn.disabled = true;
     try { await post('/api/words/mark_mastered', { session_id: sid, word_id: w.id }); }
     catch (err) { btn.disabled = false; return toast('保存失败：' + err.message); }
     today.preview = today.preview.filter(x => x.id !== w.id);
-    toast('已标记为掌握，不再出现');
+    toast('已标记为掌握，大约一个月后再抽查一次');
     if (state === 'preview') render();
 }
 function fmtTime(s) {       // 服务器存的是 UTC（'YYYY-MM-DD HH:MM:SS'），转成本地 HH:MM
@@ -682,7 +682,7 @@ function skip() {                                   // 跳过：视为已通过�
 async function markMastered(btn) {               // 用户确认自己已经掌握：服务器把这个词标成掌握（退出复习），本地当作已过关，不再重测
     if (state !== 'result' || !cur) return;
     const w = cur;
-    if (!confirm(`确定已经完全掌握「${w.pt_word}」吗？\n以后不会再安排这个词的复习。`)) return;
+    if (!confirm(`确定已经完全掌握「${w.pt_word}」吗？\n平时不再安排这个词的复习，大约一个月后会再抽查一次。`)) return;
     btn.disabled = true;
     try { await post('/api/words/mark_mastered', { session_id: sid, word_id: w.id }); }
     catch (err) { btn.disabled = false; return toast('保存失败：' + err.message); }
@@ -690,7 +690,7 @@ async function markMastered(btn) {               // 用户确认自己已经掌�
     delete outcomes[w.id];                           // 不再提交这个词当天的结果，后端也会跳过已掌握的词
     failedList = failedList.filter(x => x.id !== w.id);
     passed.add(w.id);                                // 进度条按已过关数计算；不计入 firstPass
-    toast('已标记为掌握，以后不再复习');
+    toast('已标记为掌握，大约一个月后再抽查一次');
     next();
 }
 function noteOutcome(w, force) {                   // 只记每个词第一轮的结果；后面轮次（翻转方向重测）不再改

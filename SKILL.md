@@ -147,7 +147,8 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - good 衰减:`streak % LAPSE_DECAY_STREAK == 0 and lapses > 0` 时 lapses −1(streak 本身不清零,所以是每 2 次一减)。
 - mode=2(说葡语)good ⇒ `mode2_ok=1`;mode=2 的 again ⇒ `mode2_ok=0`(之前"会说"的证明作废)。mode=3(填空)答对也会置 `mode2_ok=1`;mode=3 答错**不会**清 `mode2_ok`。
 - `mastered = box ≥ MASTER_BOX 且 mode2_ok`。**已掌握的词后端 `settle` 直接跳过,不会被自动改回未掌握**(也没有定期抽查机制,是已知简化)。
-- 用户在结果页点"✅ 我已掌握"(`POST /words/mark_mastered`):`master_row` 直接 box=5、`mode2_ok=1`、`mastered=1`、`hard_streak=0`,以后不再复习,也不会再当新词;前端同时从本轮 `outcomes`/`failedList` 里移除该词。
+- 用户在结果页点"✅ 我已掌握"(`POST /words/mark_mastered`):`master_row` 直接 box=5、`mode2_ok=1`、`mastered=1`、`hard_streak=0`,也不会再当新词;前端同时从本轮 `outcomes`/`failedList` 里移除该词。
+    - **约一个月后回顾**:`master_row` 同时写 `mastery_review_on`(`word_planner.review_date(today, MASTER_REVIEW_DAYS=30)`,自然日,落周末顺延到工作日;`due_date` 同步)。`build_today_plan` 的到期复习里,`mastered` 的词只要 `mastery_review_on <= today` 也进 `kind=review`(不出造句,因为造句候选排除 mastered);`settle` 对这类词放行(其余 mastered 词仍跳过)。回顾结算在 `apply_outcome` 末尾:仍掌握(good / skipped)→ 再隔 30 天回顾,hard → 15 天,again 掉出掌握 → 清空 `mastery_review_on`、回到普通复习(次日)。**只有手动点"我已掌握"的词会回顾**,自然毕业的词(box≥4)`mastery_review_on` 永远是空串,仍不回顾;改功能前就已手动掌握的旧词没有回顾日,不会补排。`MASTER_REVIEW_DAYS = 0` 回退到旧行为(不回顾)。聊天联动 / 预习 / 周五回顾 / 周六加练仍排除 mastered 词。
 - 没听清/ASR 空结果(422)、公布答案都**不算 AI 判错**,不计入 `aiWrong`。
 
 ## 周六加练的选词规则(`build_today_plan`,`today.weekday()==5`)
@@ -424,7 +425,7 @@ WordMemorizer.Core/
 - `tts_engine.py`:`clean_text_for_tts()` 清 Markdown 符号和换行,**改系统提示词/新增回复内容时让 LLM 别输出 Markdown**。四个音源:`piper`(本地子进程,每次带 uuid 临时文件)、`google`(翻译接口,`GOOGLE_TTS_MAX_CHARS` 限长)、`edge`、`streamelements`;后三者带按文本(+音色)哈希的缓存目录,`CACHED_PROVIDERS` 里的文件只能 copy 不能 move。`synthesize_any(..., force=True)` 跳过缓存读取。
 
 ## 存储(SQLite)
-- `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak`/`used_count`/`last_used_on`、`word_task_done.round_score` 同理。这些都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
+- `messages`:`msg_uid`/`orig`/`audio_file`/`translation`/`explanation`/`breakdown` 是后加的列;`users`:`pin_hash`/`background_file`/`theme`/`tts`/`persona` 是后加的列;`word_progress.hard_streak`/`used_count`/`last_used_on`/`mastery_review_on`、`word_task_done.round_score` 同理。这些都用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`,**旧库不需要删库,新增列照这个模式加**。
 - `Words` 新增 `Scene*` 系列列（`SceneEmoji` / `ScenePos` / `SceneGender` / `SceneNumber` / `SceneOk` / `SceneConfirmed` / `SceneTemplate` / `SceneNoun` / `SceneZone` / `SceneAdjMS` / `SceneAdjFS` / `SceneAdjMP` / `SceneAdjFP`），**挂在 `Words` 的某一行（Id）上**，同名词的另一行不会共享；旧记录列保持 NULL，所以 `/today` 不返回场景字段、前端维持旧行为。AI 生成只写候选并保持未确认，只有管理端 PUT 明确确认后前端才使用。
 - `users.theme`/`users.tts` 存 JSON 字符串,读出来 `json.loads`(损坏的 JSON 会被忽略并记日志)。
 - `vocab`:`session_id`/`language`/`word`/`example_sentence`/`chinese_meaning`/`example_chinese`(新表,没用自动迁移,加列可照上面模式补)。
@@ -437,7 +438,7 @@ WordMemorizer.Core/
 - 教练的语法纠错格式依赖 Prompt("Correção: "前缀),不是结构化输出,拆词要专门处理。
 - `data/tmp_audio/` 正常会自动清理,异常退出可能残留,没有定时清理。
 - 单词库没有浏览/删除界面,也没有去重。
-- 已掌握的词不会自动退回复习,没有定期抽查(如要做,需要新 kind + `settle` 放行 mastered 词 + 前端 `KIND_LABEL`,三处一起改)。
+- 自然毕业(box≥4)的词不会自动退回复习,没有定期抽查;只有手动点"我已掌握"的词会在约一个月后回顾(见上),回顾沿用 `kind=review`,没有单独的 `KIND_LABEL`,结果页上看不出是"月度回顾"。
 - `word_errors` 目前只记录,不参与调度(`hard_streak`/`lapses` 才是调度依据)。
 - 单词任务进度(`todoList`/`failedList`/`outcomes`)只在前端内存,刷新或中途退出会丢,该天计划不变、可重新领取。
 - 填空只做精确匹配,模糊匹配(共享前缀 + 相似度)是未做的后续项。
