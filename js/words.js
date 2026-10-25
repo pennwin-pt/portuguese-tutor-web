@@ -650,7 +650,7 @@ function next() {                                   // 取下一个待测词；�
     } else if (!todoList.length) {
         if (!failedList.length) { finish(); return; }
         // 下一轮只测本轮出过错的词，并把方向翻转（上轮说中文 → 这轮说葡语，反之亦然）；用拷贝，不改 today.words 里的原始 mode
-        todoList = failedList.map(w => ({ ...w, mode: w.mode === 3 ? 1 : (w.mode === 4 ? 2 : (w.mode === 1 ? 2 : 1)) })); failedList = []; round++; roundTotal = todoList.length;
+        todoList = failedList.map(w => ({ ...w, requeue: false, mode: w.mode === 3 ? 1 : (w.mode === 4 ? 2 : (w.mode === 1 ? 2 : 1)) })); failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
     if (sunMode) sunSave(false);                     // 断点：每个词开始前存一次（此刻 cur 还没取出，待测队列里含即将出的这个词）
@@ -698,7 +698,14 @@ function noteOutcome(w, force) {                   // 只记每个词第一轮�
     const oc = force || (curRevealed || aiWrong >= SKIP_AFTER ? 'again' : curMissed ? 'hard' : 'good');
     outcomes[w.id] = { word_id: w.id, outcome: oc, mode: w.mode };
 }
-function markMissed(w) { if (!curMissed) { curMissed = true; failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
+function retestMode(w) {                            // 补测换题型：优先填空（需要服务端给的 cloze），没有就换方向；不用造句（mode 4 是给熟词的，刚看过答案的词太难）
+    const hasCloze = typeof w.cloze === 'string' && w.cloze.includes('____');
+    if (w.mode === 1) return hasCloze ? 3 : 2;
+    if (w.mode === 2) return hasCloze ? 3 : 1;
+    if (w.mode === 3) return 2;                      // 刚做过填空 → 看中文说葡语
+    return hasCloze ? 3 : 1;                         // 造句 → 填空，没有填空就看葡语说中文
+}
+function markMissed(w) { if (!curMissed) { curMissed = true; if (!failedList.some(x => x.id === w.id)) failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
 
 const stopSceneAudio = () => player.pause();       // 退出/切换场景时停掉还在播的台词或单词音频
 async function evaluateSceneChoice(w, selectedWordId) {       // 场景里 word_choice 的提交：抛错 = 提交失败（场景不计错，可重试）
@@ -728,7 +735,10 @@ async function evaluate(blob, ext) {
         attempts++; lastRes = d;
         if (d.passed) {
             noteOutcome(w);
-            if (!curMissed) {                       // 这一轮里一次就答对：过关，后面的轮次不再出现
+            if (curRevealed && !w.requeue && todoList.length && !(sunMode && round === 1)) {   // 公布答案后重答对：隔一个词就在本轮再测一次（同方向；只补测一次）；它仍留在错词列表里，下一轮照样重测
+                todoList.splice(Math.min(1, todoList.length), 0, { ...w, mode: retestMode(w), requeue: true }); roundTotal++;
+            }
+            if (!curMissed && !w.requeue) {         // 这一轮里一次就答对（补测不算）：过关，后面的轮次不再出现
                 passed.add(w.id);
                 if (round === 1) firstPass++;
                 else if (sunMode && round === 2) pass2++;
