@@ -108,7 +108,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 
 ## 数据来源
 `word_source.py` 通过只读连接(`PRAGMA query_only`)从服务端数据库读取 `WeeklyPlans` → `WeeklyPlanWords` → `Words`。WordMemorizer 的六张表与陪练数据共存于 `SQLITE_PATH` 指定的 `sessions.db`；`WORD_DB_PATH` 默认自动跟随 `SQLITE_PATH`，不要再把它当作独立的客户端数据库。对外三个函数:`list_word_ids(on)`、`current_plan_week_start(on)`、`get_word(id)`。库文件不存在时返回空列表并记日志。WordMemorizer 通过服务端 `/api/admin/*` 管理接口读写这些数据。
-`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,source,remark,reference_image_number,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`,若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。来源值 1=图片关联、2=口语陪练；学习词从 NewWords 转入 Words 时要复制 Source/Remark。单词学习页“查看来源”按来源弹出图片或 Remark；图片通过 `/api/words/source-image/{image_number}` 从 WordMemorizer.Core/images/jpg 读取。
+`WordItem={id,pt_word,cn_meaning,pt_sentence,cn_sentence,source,remark,reference_image_number,mode(1/2)}`(词源默认值永远是 1,`word_source.py` 里的 `Literal[1, 2]` 有意不改),**前后端字段必须一致**;今日接口会额外带 `kind`,mode 3 的词还带 `cloze`(其他题型的词只要原例句能挖空也带,仅供前端补测用),若挖空用的是生成例句还带 `ex`(见「多例句轮换」)。来源值 1=图片关联、2=口语陪练；学习词从 NewWords 转入 Words 时要复制 Source/Remark。单词学习页“查看来源”按来源弹出图片或 Remark；图片通过 `/api/words/source-image/{image_number}` 从 WordMemorizer.Core/images/jpg 读取。
 
 ## 一周节奏(周日~周六)
 - **周日**:新一周词表已生成,除了"今天已在复习里"的词之外**全部**放进 `preview`(包括生词本"重新学习"复用的、已有进度的词)只看不测不记进度,没有测试任务(前端 `previewOnly()`),周一才开始记。(前端另有"周日以测代看"`sunMode`,见"造句与周日以测代看"一节。)
@@ -168,7 +168,7 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - 挖空:`word_planner.make_cloze(sentence, pt_word)`,只做整词精确匹配、忽略大小写、去掉 `pt_word` 里的括号备注,只换第一处;`word_routes._load_words` 里对 mode 3 构造 `cloze`,**找不到就把该词 mode 降为 2 且不带 `cloze`**(不回写计划表)。P4 之后挖空的例句来源不止原例句,见下一节「多例句轮换」。
 - 评判:`_judge_pt_cloze` = 规则 → 逐词规则 → `_judge_pt_llm`;ASR 与 mode 2 一样用葡语。
 - 前端:`fetchToday` 的 mode 白名单为 `[1,2,3]`;`viewCloze` 渲染;下一轮翻转 `3→1, 1→2, 2→1`。
-- 接口:`/words/today` 的 `words[].mode` 可为 3 并带 `cloze`;`/words/evaluate`、`/words/complete`、`/words/record_error` 的 `mode` 取值 `1|2|3|4`(4=造句)。
+- 接口:`/words/today` 的 `words[].mode` 可为 3 并带 `cloze`(mode≠3 的词原例句能挖空时也带,见「公布答案后的隔一词补测」);`/words/evaluate`、`/words/complete`、`/words/record_error` 的 `mode` 取值 `1|2|3|4`(4=造句)。
 - 回退:`CLOZE_ENABLED=False` 重启即可,不用动其他代码。
 - 已知取舍:"掌握前必过填空"是概率保证(box 3 且 last 非 good 时走 mode 1 可绕过);动词变位/复数的词会降级回 mode 2(词库实测约 78% 的词能挖空);跑过 `gen_examples.py` 的词可被救回(见下一节)。
 
@@ -197,7 +197,9 @@ UI 文案里"用户名"已经改叫**智能体**(绑定智能体 = 绑定用户�
 - state:`loading → idle → test ⇄ judging → result → …`,另有 `preview`(只看不评分)、`done`(今日已完成,可"重新学习")。
 - **逐词练**:答错/公布答案后停在同一个词同一个方向,按钮变"🔁 再试一次"(`retry()`),答对才"下一个"。`curMissed` 标记当前词本轮是否出过错;**只有一次就答对的词才进 `passed`**,出过错的词进 `failedList`(每词每轮只进一次)。本轮测完后 `failedList` 拷贝并**翻转 mode(1↔2;3→1)**成为下一轮 `todoList`(用 `{...w, mode}` 拷贝,不改 `today.words`,所以"重新学习"仍是服务器原始方向);`failedList` 为空才 `finish()`。`firstPass` 只统计第 1 轮一次通过的词。
 - **公布答案**(`#reveal`,仅测试中):纯前端,不调 evaluate;按"答错"处理(`markMissed`,进 `failedList`),并调 `record_error`(`user_text` 传空串);不计入 `attempts`、不播失败音效;自动朗读单词;结果记 `again`。
-- **公布答案后的隔一词补测**(`evaluate()` 答对分支):公布过答案(`curRevealed`)的词重答对后,若本轮 `todoList` 还有词,就把 `{...w, requeue:true}` 插到 `todoList` 第 2 位(隔一个词再测,同方向)并 `roundTotal++`;队列已空(它是本轮最后一个)则不插,沿用下一轮重测。**补测只一次**(`w.requeue` 为真不再补)。补测**不影响**其余机制:词仍留在 `failedList`,下一轮照样翻转方向重测;补测答对不进 `passed`、不计 `firstPass`(`!curMissed && !w.requeue`);`outcomes` 仍是第一次的 `again`;补测答错 `markMissed` 不会让词在 `failedList` 里重复(已加 `some` 去重);进下一轮时 `todoList` 拷贝带 `requeue:false` 复位。周日以测代看第 1 轮(先看后考)不补测,第 2 轮起适用。
+- **公布答案后的隔一词补测**(`evaluate()` 答对分支):公布过答案(`curRevealed`)的词重答对后,若本轮 `todoList` 还有词,就把 `{...w, mode: retestMode(w), requeue:true}` 插到 `todoList` 第 2 位(隔一个词再测,**换题型**)并 `roundTotal++`;队列已空(它是本轮最后一个)则不插,沿用下一轮重测。**补测只一次**(`w.requeue` 为真不再补)。补测**不影响**其余机制:词仍留在 `failedList`,下一轮照样翻转方向重测;补测答对不进 `passed`、不计 `firstPass`(`!curMissed && !w.requeue`);`outcomes` 仍是第一次的 `again`;补测答错 `markMissed` 不会让词在 `failedList` 里重复(已加 `some` 去重);进下一轮时 `todoList` 拷贝带 `requeue:false` 复位。周日以测代看第 1 轮(先看后考)不补测,第 2 轮起适用。
+    - **补测换题型 `retestMode(w)`**:1→有 `cloze` 则 3、否则 2;2→有 `cloze` 则 3、否则 1;3→2;4→有 `cloze` 则 3、否则 1。**不选造句(mode 4)**:造句只给 box≥3 的熟词,刚看过答案的词太难。补测题型只影响补测这一次;`failedList` 里仍存第一次的原 mode,下一轮翻转规则不变。
+    - **后端配合**:`_load_words` 对 **mode≠3 的词也带 `cloze`**(用词条原例句 `make_cloze`,找不到就不带),只给前端补测用;mode 1/2/4 的界面不渲染它,所以普通题显示不变。没有 `cloze` 时前端退化成只换方向,不会报错。补测填空用的是原例句(公布答案页刚展示过的那句),不走多例句轮换,也不写 `word_example_use`。
 - **跳过**(`#skip`):同一个词本轮被 AI 判错 ≥ `SKIP_AFTER=2` 次才在结果页出现(ASR 对葡语不准);跳过 = 记 `skipped` + 从 `failedList` 移除 + 算过关,不计入 `firstPass`。
 - `outcomes` 只记第 1 轮(`round===1`)的结果,后续翻转重测不改;`finish()` 时 `POST /words/complete`(JSON: session_id,rounds,first_pass,attempts,outcomes),**服务器 `total` 取计划里的词数,不信前端**;重新学习后再完成:成绩覆盖、`times+1`,但进度不会重复结算。
 - `KIND_LABEL`:🆕新词 / 🔁复习 / 📅本周回顾 / 💪周六加练。进度只在内存,中途退出会弹确认且**不保留**。
@@ -282,7 +284,7 @@ WordMemorizer.Core/
 
 ## 造句与周日以测代看(代码里已有的速记)
 - **mode 4 造句**:看目标词说一整句话。`_judge_sentence`:少于 2 个词直接判错(不调 LLM)→ 规则(整词匹配目标词)→ LLM(词义 / 用法 / 改正),返回 `corrected`(**只有 mode 4 的 evaluate 响应带**);`WORD_PT_USE_LLM=0` 或 LLM 调用出错退回规则,LLM 返回解析失败 502。
-- **出题**(`word_planner`,`build_today_plan` 后处理改写):`SENTENCE_ENABLED`(默认 True)、`SENTENCE_MAX=3`、`SENTENCE_BOX_MIN=3`、`SENTENCE_LOW_RATE=0.5`;只给 box ≥ 3 且未掌握的复习词和周六加练词;box 3 的词在填空 / 造句之间按比例稳定分流;无 cloze、无 `ex`。前端重测方向翻转:`3→1, 4→2, 1→2, 2→1`。
+- **出题**(`word_planner`,`build_today_plan` 后处理改写):`SENTENCE_ENABLED`(默认 True)、`SENTENCE_MAX=3`、`SENTENCE_BOX_MIN=3`、`SENTENCE_LOW_RATE=0.5`;只给 box ≥ 3 且未掌握的复习词和周六加练词;box 3 的词在填空 / 造句之间按比例稳定分流;无 `ex`(原例句能挖空时可带 `cloze`,仅供补测)。前端重测方向翻转:`3→1, 4→2, 1→2, 2→1`。
 - **周日以测代看**(前端 `sunMode`):不碰学习进度,不放"我已掌握",不带 `run_id`;细节见 `words.js` 里 `sunMode` 的注释。
 
 # API 契约(新增功能优先复用,不要重新设计)
