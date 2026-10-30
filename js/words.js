@@ -285,6 +285,7 @@ function sunPct() {                                  // 顶部进度条：第 1 
 const isLast = () => !todoList.length && !failedList.length && !(sunMode && round === 1);   // 周日第 1 轮测完一定还有第 2 轮（全部词直接考）
 const canSkip = () => state === 'result' && !!lastRes && !lastRes.passed && aiWrong >= SKIP_AFTER && !(sunMode && round === 1);   // 周日第 1 轮连错会自动公布答案往下走，不需要跳过   // 只在“AI 已连续判错两次”的结果页开放，不能一上来就跳
 
+const isFriday = () => !!today?.date && new Date(today.date + 'T00:00:00').getDay() === 5;   // 周五：预习的是周六要练的词
 const isSunday = () => !!today?.date && new Date(today.date + 'T00:00:00').getDay() === 0;   // 周日：只浏览本周全部单词，周一才开始记
 const previewOnly = () => !!today && !today.words.length && !!today.preview?.length;           // 没有测试任务、只有可浏览的词（周日常见）
 
@@ -457,7 +458,7 @@ function viewPreview() {                            // 预习：只看、只听�
     const c = el('div', 'wcard');
     const wk = isSunday();
     c.append(el('div', 'term', wk ? `👀 本周单词（共 ${today.preview.length} 个）` : '👀 预习明天的词'),
-        el('p', 'intro', wk ? '周一开始记。先混个脸熟：点喇叭听读音，看看例句。这里不测试。' : '先混个脸熟：点喇叭听读音，看看例句。这里不测试。'));
+        el('p', 'intro', wk ? '周一开始记。先混个脸熟：点喇叭听读音，看看例句。这里不测试。' : (isFriday() ? '明天（周六）练的是：到期要复习的词，加上这周还没掌握牢固的词。先看看、听听读音，这里不测试。' : '先混个脸熟：点喇叭听读音，看看例句。这里不测试。')));
     const list = el('div', 'plist');
     for (const w of today.preview) {
         const row = el('div', 'pitem'), tx = el('div', 'tx'), r1 = el('div', 'arow'), actions = el('div', 'preview-actions');
@@ -631,15 +632,24 @@ function finish() {                                 // 所有单词都通过：�
         showDone(summary, true); return;
     }
     cur = null; summary = { rounds: round, total, first_pass: firstPass, attempts, round_score: roundScore, fresh: true };
-    if (today?.preview?.length && !today.completed) enterPreview();    // 重新学习时不再预习
+    const first = !today?.completed;                 // 重新学习（今天已完成过）时不再预习
+    const waitPreview = first && !today?.preview?.length;   // 今天没有预习：周五的预习 = 周六要练的词，要等今天的结果结算完（/complete 返回）才定得下来
+    if (first && today?.preview?.length) enterPreview();
+    else if (waitPreview) { state = 'loading'; render(); }
     else showDone(summary, true);
     post('/api/words/complete', { session_id: sid, run_id: runId, rounds: round, first_pass: firstPass, attempts, outcomes: Object.values(outcomes) })
-        .then(d => {
-            if (!d.completed) return;
-            if (today) today.completed = d.completed;
-            if (summary?.fresh) { summary = { ...d.completed, round_score: roundScore, fresh: true }; if (state === 'done') render(); }   // 换成服务器的记录（含完成时间、次数）
+        .then(async d => {
+            if (d.completed) {
+                if (today) today.completed = d.completed;
+                if (summary?.fresh) { summary = { ...d.completed, round_score: roundScore, fresh: true }; if (state === 'done') render(); }   // 换成服务器的记录（含完成时间、次数）
+            }
+            if (!waitPreview) return;
+            try { const d2 = await get(`/api/words/today?session_id=${enc(sid)}`); const p = (d2.preview || []).filter(w => w && w.id != null && w.pt_word); if (p.length && today) today.preview = p; }
+            catch { /* 取不到就当没有预习 */ }
+            if (state !== 'loading') return;
+            if (today?.preview?.length) enterPreview(); else showDone(summary, true);
         })
-        .catch(err => toast('完成记录保存失败：' + err.message));
+        .catch(err => { toast('完成记录保存失败：' + err.message); if (state === 'loading') showDone(summary, true); });
 }
 
 function next() {                                   // 取下一个待测词；本轮测完则用 failedList 开下一轮；都通过了就结束
