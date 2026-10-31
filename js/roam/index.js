@@ -8,6 +8,7 @@ import { shared3d, claimActive, releaseActive } from '../stage3d.js';
 import { buildArena, makeRing, PLAYER_R, FRIEND_H } from './arena.js';
 import { createEffects } from './effects.js';
 import { createInput } from './input.js';
+import { buildLobby, buildDeco, pickCategories } from './doors.js';
 import { PHYS, createPlayer, respawn, stepPlayer } from './physics.js';
 
 const { getRenderer, loadModel, normalize, blobShadow, mat, ease, reduced } = shared3d;
@@ -20,6 +21,7 @@ const lsGet = k => { try { return localStorage.getItem(k); } catch { return null
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* 无痕模式等 */ } };
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const lerpN = (a, b, k) => a + (b - a) * k;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 
 function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -93,6 +95,8 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     hud.innerHTML = `
         <div class="rm-clue"><span class="rm-clue-emoji"></span><span class="rm-clue-zh"></span></div>
         <button class="rm-pause" type="button" aria-label="暂停">⏸</button>
+        <div class="rm-phase" hidden></div>
+        <button class="rm-back" type="button" hidden>🚪 换一扇门</button>
         <div class="rm-zone rm-zone-l"></div><div class="rm-zone rm-zone-r"></div>
         <div class="rm-joy"><div class="rm-joy-base"><div class="rm-joy-knob"></div></div></div>
         <button class="rm-btn rm-grab" type="button" aria-label="抓">🤲</button>
@@ -107,7 +111,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     view.append(labelsLayer, hud, rotate);
     const $ = s => hud.querySelector(s);
     const clueEmoji = $('.rm-clue-emoji'), clueZh = $('.rm-clue-zh'), arrow = $('.rm-arrow'), fastBtn = $('.rm-fast'), fade = $('.rm-fade'),
-        confirmBox = $('.rm-confirm'), grabBtn = $('.rm-grab'), autoBtn = $('.rm-c-auto');
+        confirmBox = $('.rm-confirm'), grabBtn = $('.rm-grab'), autoBtn = $('.rm-c-auto'), phaseEl = $('.rm-phase'), backBtn = $('.rm-back');
     const input = createInput(hud);
     input.setEnabled(false);
 
@@ -177,13 +181,13 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         const rest = shuffle(all.filter(i => i !== okSlot)); let k = 0;
         return pads.map((_, i) => i === okI ? okSlot : rest[k++ % rest.length]);
     }
-    function makeOrbs(pads, display, seed, correctSlot, fitLong) {
+    function makeOrbs(pads, display, seed, correctSlot, fitLong, accent) {
         const slotIdx = assignSlots(pads, seed, correctSlot);
         pads.forEach((pad, i) => {
             const slot = arena.slots[slotIdx[i]];
             const color = ORB_COLORS[slotIdx[i] % ORB_COLORS.length];
             const mesh = new T.Mesh(new T.SphereGeometry(0.32, 20, 16), new T.MeshLambertMaterial({ color, emissive: color, emissiveIntensity: 0.35 }));
-            const halo = makeRing(0.5, 0.03, '#ffffff', 20, 0.7); mesh.add(halo);
+            const halo = makeRing(0.5, 0.03, accent || '#ffffff', 20, 0.7); mesh.add(halo);
             mesh.position.set(slot.pos.x, slot.pos.y + 1.5, slot.pos.z); scene.add(mesh);
             const label = el('div', 'rm-label');
             if (display !== 'pt' && pad.emoji) label.append(el('span', 'rm-l-emoji', pad.emoji));
@@ -194,6 +198,92 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
         });
     }
     const clearOrbs = () => { for (const o of orbs) { scene.remove(o.mesh); o.mesh.geometry.dispose(); o.mesh.material.dispose(); o.label.remove(); } orbs.length = 0; };
+
+    /* ---------- 两次选择：门厅（选大类）→ 房间（选词） ----------
+       门厅是 doors.js 里的一块独立小场地，和 ARENAS 无关；开门后传送到场地出生点，那里摆着这一间的 4 个答案牌（scene.js 为每扇门各备一份）。 */
+    let lobby = null, deco = null;
+    const setSky = c => { scene.background.set(c); scene.fog.color.set(c); };
+    function setBanner(text, color) { phaseEl.hidden = !text; phaseEl.textContent = text || ''; phaseEl.style.setProperty('--c', color || '#94a3b8'); }
+    function makeDoorOrbs() {
+        clearOrbs();
+        lobby.doors.forEach((d, i) => {
+            const mesh = new T.Mesh(new T.SphereGeometry(0.1, 6, 4), new T.MeshBasicMaterial({ visible: false }));      // 看不见的锚点：标签投影在它上面（门框上方）
+            mesh.position.set(d.x, 3.5, d.front.z - 1.2); scene.add(mesh);
+            const label = el('div', 'rm-label rm-door'); label.style.setProperty('--c', d.cat.color);
+            label.append(el('span', 'rm-l-emoji', d.cat.icon), el('span', 'rm-l-text', d.cat.zh), el('i', 'rm-l-prog'));
+            labelsLayer.append(label);
+            orbs.push({ pad: { door: true, idx: i, text: d.cat.zh }, slot: { pos: d.front }, mesh, halo: null, label, home: mesh.position.clone(), phase: i * 1.7, scale: 1, heard: false, prog: 0, carried: false, range: 1.8 });
+        });
+    }
+    function dropDeco() { if (deco) { scene.remove(deco.group); deco.dispose(); deco = null; } }
+    function showLobby() {
+        dropDeco(); clearOrbs();
+        arena.root.visible = false; lobby.group.visible = true;
+        world.boxes = lobby.boxes; world.spinners = []; world.fallY = lobby.fallY;
+        setSky(lobby.sky);
+        P.lastRp = lobby.spawn.slice(); respawn(P, lobby.spawn);
+        yaw = 0; P.facing = Math.PI; pv.rotation.y = P.facing; camInit = false;       // 门厅朝北：镜头在南侧看着一排门
+        carrying = null; lobby.closeAll(); makeDoorOrbs();
+        run.phase = 'lobby'; run.doorIdx = -1; setBanner('🚪 选一扇门');
+    }
+    async function beginLobby(opts) {
+        mode = 'locked'; input.reset();
+        try {
+            const cats = pickCategories(opts.doors.rooms.length, opts.seed || 1);
+            if (!lobby) lobby = await buildLobby(cats);
+            if (!alive) return;
+            scene.add(lobby.group);
+            run.doors = { cats, rooms: opts.doors.rooms };
+            fade.classList.add('on'); await sleep(reduced() ? 120 : 380); if (!alive) return;
+            showLobby(); if (opts.onLobby) opts.onLobby();
+            fade.classList.remove('on'); mode = 'free';
+        } catch (e) {                                                                // 门厅出了问题：退回单次选择（直接进第一间），不让玩法卡死
+            console.warn('roam: 门厅不可用，直接进场地', e);
+            if (!alive) return;
+            run.doors = { cats: pickCategories(opts.doors.rooms.length, opts.seed || 1), rooms: opts.doors.rooms };
+            await enterRoom(0); if (alive) fade.classList.remove('on');
+        }
+    }
+    async function enterDoor(o) {
+        mode = 'locked'; input.reset(); sfx('door'); if (navigator.vibrate) navigator.vibrate(15);
+        lobby.open(o.pad.idx);
+        await sleep(reduced() ? 150 : 700); if (!alive) return;
+        fade.classList.add('on'); await sleep(reduced() ? 120 : 380); if (!alive) return;
+        await enterRoom(o.pad.idx);
+        if (alive) fade.classList.remove('on');
+    }
+    async function enterRoom(idx) {
+        const cat = run.doors.cats[idx], o = run.opts;
+        clearOrbs(); dropDeco();
+        if (lobby) lobby.group.visible = false;
+        arena.root.visible = true;
+        world.boxes = arena.boxes; world.spinners = arena.spinners; world.fallY = arena.fallY;
+        setSky(arena.sky);
+        P.lastRp = arena.spawn.slice(); respawn(P, arena.spawn);
+        P.facing = startFacing; pv.rotation.y = P.facing;
+        yaw = arena.startYaw != null ? arena.startYaw : -Math.PI / 2; camInit = false;
+        carrying = null; arena.ring.active = false; arena.ring.obj.visible = false;
+        makeOrbs(run.doors.rooms[idx], o.display, (o.seed || 1) + idx * 7919, o.correctSlot, o.variant != null, cat.color);
+        try {
+            const d = await buildDeco(cat, arena.slots);
+            if (!alive) { d.dispose(); return; }
+            deco = d; scene.add(d.group);
+        } catch (e) { console.warn('roam: 房间摆设加载失败（不影响玩法）', e); }
+        if (!alive) return;
+        run.phase = 'room'; run.doorIdx = idx; run.t = 0; run.since = 0; run.cool = 0.4;
+        setBanner(`${cat.icon} ${cat.zh}区`, cat.color);
+        if (o.onRoom) o.onRoom(idx, cat);
+        if (!reduced()) introT = run_introDur;
+        mode = 'free';
+    }
+    async function goLobby() {
+        if (!run || run.phase !== 'room' || !run.doors || mode !== 'free' || !run.opts.preview) return;
+        mode = 'locked'; input.reset();
+        fade.classList.add('on'); await sleep(reduced() ? 120 : 380); if (!alive) return;
+        showLobby(); if (run.opts.onLobby) run.opts.onLobby();
+        fade.classList.remove('on'); mode = 'free';
+    }
+    backBtn.addEventListener('click', () => { goLobby(); });
 
     /* ---------- 抓取 / 搬运 / 交付 ---------- */
     let carrying = null, deliverResolve = null;
@@ -235,6 +325,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     }
     async function grab(o) {
         if (mode !== 'free' || !run) return;
+        if (o.pad.door) { enterDoor(o); return; }                  // 门厅里抓的是门：开门进房间，不判分
         if (run.match) { pickUp(o); return; }                    // 性数配对：抓起来就走，送到展台才算对错
         if (o.pad.scored) { pickUp(o); return; }                  // 已答对的物件重抓：不再判分
         mode = 'locked'; input.reset(); sfx('grab'); if (navigator.vibrate) navigator.vibrate(15);
@@ -257,7 +348,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     const inRange = o => {
         if (o.pad.dead || o.pad.out || o.carried) return false;
         const dx = o.slot.pos.x - P.x, dz = o.slot.pos.z - P.z, dy = o.slot.pos.y - (P.y - PLAYER_R);
-        return Math.hypot(dx, dz) <= run.range && dy > -0.6 && dy < 2.2;
+        return Math.hypot(dx, dz) <= (o.range || run.range) && dy > -0.6 && dy < 2.2;
     };
 
     /* ---------- 每帧更新 ---------- */
@@ -299,6 +390,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     }
 
     function runLogic(dt, inp) {
+        backBtn.hidden = !(run.phase === 'room' && run.doors && run.opts.preview && mode === 'free');     // 预习才能回门厅换一扇门（测验里各间的干扰项不同，来回看会泄露答案）
         if (respawnT > 0 || introT > 0) return;
         run.t += dt; if (run.cool > 0) run.cool -= dt;
         /* 范围内最近的物件 */
@@ -311,7 +403,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             o.label.classList.toggle('near', isNear);
             o.label.classList.toggle('dead', !!(o.pad.dead || o.pad.out));
             o.label.classList.toggle('glow', !!(o.pad.ok && !o.pad.dead && (o.pad.hint || (run.opts.preview && run.since > (run.opts.hints.preview_glow_s || 25)))));
-            if (isNear && run.opts.preview && !o.heard) { o.heard = true; run.opts.onApproach && run.opts.onApproach(o.pad); }
+            if (isNear && run.opts.preview && !o.heard && !o.pad.door) { o.heard = true; run.opts.onApproach && run.opts.onApproach(o.pad); }
             if (!isNear) o.prog = 0;
         }
         /* 抓取：按钮立即抓；站定 0.8 秒自动抓（速度低、物件在面前 60° 内） */
@@ -340,7 +432,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             const vx = tp.x - P.x, vz = tp.z - P.z, fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
             arrow.style.transform = `translate(-50%,-50%) rotate(${Math.atan2(vx * rx + vz * rz, vx * fx + vz * fz)}rad)`;
         }
-        fastBtn.hidden = !(mode === 'free' && run.t > (run.opts.hints.fast_track_s || 60));
+        fastBtn.hidden = !(mode === 'free' && run.phase !== 'lobby' && run.t > (run.opts.hints.fast_track_s || 60));
         /* 性数配对：进了某个展台环 = 把手里的词牌送给这个展台 */
         if (run.match && mode === 'carrying' && carrying) {
             for (const s of arena.stalls) {
@@ -384,6 +476,8 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
     }
     function visuals(dt, paused) {
         arena.update(paused ? 0 : dt);
+        if (lobby && lobby.group.visible) lobby.update(paused ? 0 : dt);
+        if (deco) deco.update(time, camera);
         fx.tick(paused ? 0 : dt, camera);
         if (arena.faceTrophy) arena.faceTrophy(camera);
         for (let i = flights.length - 1; i >= 0; i--) {                        // 抓错的词牌副本：弧线飞向展台，到了就触发效果
@@ -491,14 +585,16 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
                 clearOrbs();
                 opts.hints = opts.hints || {};
                 if (arena.variantCount && Number.isInteger(opts.variant)) arena.setVariant(opts.variant);
-                makeOrbs(opts.pads, opts.display, opts.seed || 1, opts.correctSlot, opts.variant != null);
+                const doorMode = !!(opts.doors && opts.doors.rooms && opts.doors.rooms.length >= 2);     // 两次选择：先选门（大类），再进房间选词
+                if (!doorMode) makeOrbs(opts.pads, opts.display, opts.seed || 1, opts.correctSlot, opts.variant != null);
                 /* 线索卡：形容词走路版带 clue.noun（名词图标 + 名词中文），图标不受 display 控制（名词图标不泄露答案）；其余场景保持原样 */
                 const noun = opts.clue && opts.clue.noun;
                 clueEmoji.textContent = noun && noun.icon ? noun.icon : (opts.clue && opts.clue.emoji && opts.display !== 'pt' ? opts.clue.emoji : '');
                 clueEmoji.classList.toggle('multi', [...clueEmoji.textContent].length > 2);
                 clueZh.textContent = noun && noun.zh ? `${noun.zh}\n${(opts.clue && opts.clue.zh) || ''}` : ((opts.clue && opts.clue.zh) || '');
-                run = { opts, resolve, t: 0, since: 0, wrong: 0, cool: 0, near: null, range: opts.grabRange || 1.4 };
+                run = { opts, resolve, t: 0, since: 0, wrong: 0, cool: 0, near: null, range: opts.grabRange || 1.4, phase: 'room', doors: null, doorIdx: -1 };
                 mode = 'free'; setHud(true);
+                if (doorMode) { beginLobby(opts); return; }
                 if (!reduced()) introT = run_introDur;
             });
         },
@@ -511,6 +607,7 @@ export async function create({ view, tpl, debug, onLost, ctx, variant }) {
             cancelAnimationFrame(raf); ro.disconnect(); input.destroy();
             if (debug && window.__roam && window.__roam.P === P) window.__roam = null;                   // 调试钩子随场景释放
             fx.dispose(); for (const d of dust) { scene.remove(d.m); d.m.material.dispose(); } dust.length = 0; dustGeo.dispose(); for (const f of flights) { scene.remove(f.m); f.m.geometry.dispose(); f.m.material.dispose(); } flights.length = 0;
+            dropDeco(); if (lobby) { scene.remove(lobby.group); lobby.dispose(); lobby = null; }
             clearOrbs(); hud.remove(); labelsLayer.remove(); rotate.remove(); if (canvas.parentNode === view) view.removeChild(canvas);
             scene.remove(pv, shadow); arena.dispose(); fade.classList.remove('on');
             releaseActive(api);

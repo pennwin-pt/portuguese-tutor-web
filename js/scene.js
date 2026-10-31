@@ -627,12 +627,30 @@
             if (st.note) { addZhLine(st.note); st.note = ''; }
             roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, ms || 2600);
         }
+        /* 两次选择：先选门（大类）再选词。默认所有 roam_choice 都带门，除了下面这些：
+           · 场地在 DOOR_SKIP_ARENAS 里（roam_party 跑酷岛暂时保持原样）
+           · 节点写了 "doors": false（单个模板想关掉）；写 "doors": {"count": 2~4} 可以改门的数量（默认 3）
+           · 网址带 ?nodoors（调试：scene-lab.html?template=shop&word=1&nodoors）
+           大类是预设的（roam/doors.js），和词义无关：每扇门后面的房间都有正确答案，只是干扰项不同、房间里摆的小东西不同。 */
+        const DOOR_SKIP_ARENAS = new Set(['roam_party']);
+        function roamDoorCount(n) {
+            if (n.doors === false || DOOR_SKIP_ARENAS.has(tpl.arena)) return 0;
+            if (new URLSearchParams(location.search).has('nodoors')) return 0;
+            const c = n.doors && n.doors.count;
+            return Number.isInteger(c) && c >= 2 && c <= 4 ? c : 3;
+        }
+        const hideBubbleLater = ms => { clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, ms || 4200); };
         async function doRoamChoice(id, n) {
             if (!stage || !stage.run) throw new Error('派对闯关需要 3D 场地（舞台没有就绪）。');
+            const doorN = roamDoorCount(n);
             let o = st.opts[id];
-            if (!o) o = st.opts[id] = { list: buildOptions(n).map(x => ({ ...x, text: x.pt })), wrong: 0 };
-            showPrompt(n.prompt_zh);
-            clearTimeout(roamTimer); roamTimer = setTimeout(() => { if (alive) dialogueBubble.className = 'sc-dialogue-bubble'; }, 4200);
+            if (!o) {
+                o = st.opts[id] = { list: null, rooms: null, wrong: 0 };
+                if (doorN) { o.rooms = Array.from({ length: doorN }, () => buildOptions(n).map(x => ({ ...x, text: x.pt }))); o.list = o.rooms[0]; }   // 每扇门一间房：正确答案都在，干扰项各不相同
+                else o.list = buildOptions(n).map(x => ({ ...x, text: x.pt }));
+            }
+            showPrompt(doorN ? '先选一扇门：走到门前站一下，门就会打开，进去找朋友要的东西。' : n.prompt_zh);
+            hideBubbleLater(4200);
             setCtl(null); root.classList.add('rm-playing');
             const disp = (o.list[0] && o.list[0].disp) || 'pt';
             const today = Number(new Date().toISOString().slice(0, 10).replace(/-/g, ''));
@@ -643,6 +661,17 @@
                 clue: nounClue ? { emoji: em, zh: `找“${zhClue}”的词牌`, noun: nounClue } : { emoji: em, zh: zhClue }, variant: variantIdx, preview: mode === 'preview', autoGrab: true,
                 correctSlot: n.slot_by_zone ? (w.scene_zone || null) : null,       // shop：正确答案放在这个词所属的货架区（没配置就随机）
                 grabRange: n.grab_range || 1.4, hints: n.hints || {},
+                doors: doorN ? { rooms: o.rooms } : null,
+                onRoom: idx => {                                                           // 进了第 idx 间：之后的判分 / 排除 / 提示都针对这一间；已经答错的次数在各间之间共享
+                    o.list = o.rooms[idx];
+                    if (o.wrong >= RULEOUT_AT && !o.list.some(y => y.out)) {
+                        const left = o.list.filter(y => !y.ok && !y.picked && !y.out);
+                        if (left.length) left[Math.floor(Math.random() * left.length)].out = true;
+                    }
+                    if (o.wrong >= REVEAL_AT && mode === 'preview') { const t = o.list.find(y => y.ok); if (t) t.hint = true; }
+                    showPrompt(n.prompt_zh); hideBubbleLater(4200);
+                },
+                onLobby: () => { showPrompt('换一扇门试试：每扇门后面的东西不一样。'); hideBubbleLater(3600); },
                 onApproach: pad => {                                                      // 预习：靠近物件时读它的葡语（测验不读，会泄露答案）
                     const rec = pad.ok ? w : (ctx.pool || []).find(p => p.id === pad.id);
                     if (rec && ctx.speak) ctx.speak(rec, 'word', null, formField);       // 形容词：读牌上显示的词形；通用池的牌（id=-1）没有词记录，不读
