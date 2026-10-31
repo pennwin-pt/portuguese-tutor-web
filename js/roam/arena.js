@@ -91,73 +91,99 @@ export const ARENAS = {
        通用约定：每个场地正好 4 个 slots（钥匙/物品挂的位置，站在 slot 1.4 米内能抓）；slot 放在道具"前面"（z 更大，靠镜头一侧）；
        decor = 地面上的路 / 草坪 / 墙（solid:true 才有碰撞）；seaY:null = 没有海面；掉出地面（y < fallY）回 tiles[].rp。 */
 
-    /* find：街上帮朋友找东西。四个位置：垃圾桶 / 长椅 / 邮筒 / 树。 */
+    /* find（街区闯关）：帮朋友在街上找东西。四个位置，各有各的玩法：
+       垃圾桶 = 西边斑马线（左右各一道 1.5 米的缝，要跳过去）/ 长椅 = 北边街心高台（踩三个弹跳垫弹上去，和跑酷岛的 N 高台同尺寸）/
+       邮筒 = 东边的桥（旋转路障，和跑酷岛的 E 桥同尺寸）/ 树 = 南边踏脚石（两道缝）。下面是马路（seaY），掉下去回最近的重生点，抱着的东西回原位。
+       出生岛 -> 中枢（交付环 + 朋友）。没新模型：bench/mailbox/bin/tree 沿用原来的，高台、桥、石头都是纯色方块。 */
     street_find: {
-        sky: '#cfe9ff', seaY: null, fallY: -3,
-        spawn: [-11, 0, 3],
-        ring: { pos: [0, 0, 2.8], r: 1.3 },
-        friend: { pos: [2.4, 0, 3.4], rotY: -2.2 },
-        tiles: [{ x: 0, z: 0, w: 28, d: 16, thick: 0.6, color: '#cfe7c4', flat: true, rp: [-10, 0, 3] }],
+        sky: '#cfe9ff', seaY: -1.4, seaColor: '#94a3b8', fallY: -3,
+        spawn: [-11.5, 0, 0],
+        ring: { pos: [0, 0, 1.0], r: 1.3 },
+        friend: { pos: [2.2, 0, 1.8], rotY: -2.2 },
+        tiles: [
+            { x: -11.5, z: 0, w: 4, d: 4, color: '#e5e7eb', flat: true, rp: [-11.5, 0, 0] },                       // 出生人行道
+            { x: -6.2, z: 0, w: 3.4, d: 2.4, color: '#6b7280', flat: true, rp: [-6.2, 0, 0] },                      // 西：斑马线小岛（垃圾桶）
+            { x: 0, z: 0, w: 6, d: 6, color: '#e5e7eb', flat: true, rp: [-1.8, 0, 0] },                              // 中枢
+            { x: 0, z: -4.5, w: 4, d: 3, color: '#d1d5db', flat: true, rp: [0, 0, -4.2] },                          // 北：高台前的平地
+            { x: 0, z: -8, w: 4, d: 4, top: 2, thick: 2.6, color: '#86efac', flat: true, rp: [0, 2, -8] },          // 北：街心高台（长椅）
+            { x: 5.5, z: 0, w: 5, d: 2.6, thick: 0.3, color: '#cbd5e1', flat: true },                                // 东：桥
+            { x: 10, z: 0, w: 4, d: 4, color: '#cfe7c4', flat: true, rp: [10, 0, 0] },                              // 东：绿地岛（邮筒）
+            { x: 0, z: 5, w: 2, d: 1.6, color: '#e5e7eb', flat: true, rp: [0, 0, 5] },                              // 南：踏脚石
+            { x: 0, z: 9.4, w: 4, d: 4, color: '#cfe7c4', flat: true, rp: [0, 0, 9.4] }                            // 南：草坪岛（树）
+        ],
         decor: [
-            { pos: [0, 0.02, 2.2], size: [28, 0.04, 2.4], color: '#e5e7eb' },          // 人行道
-            { pos: [0, 0.02, 5.4], size: [28, 0.04, 4.0], color: '#9aa4b2' }           // 马路
+            { pos: [-7.1, 0.02, 0], size: [0.45, 0.04, 2.2], color: '#ffffff' },                                     // 斑马线的白条
+            { pos: [-6.2, 0.02, 0], size: [0.45, 0.04, 2.2], color: '#ffffff' },
+            { pos: [-5.3, 0.02, 0], size: [0.45, 0.04, 2.2], color: '#ffffff' },
+            { pos: [0, -0.3, -16], size: [36, 0.6, 8], color: '#cfe7c4' }                                           // 远处的街区地面（够不到，只是背景）
         ],
-        pads: [], spinners: [], slotPedestal: false,
+        pads: [[-1.3, -4.7], [0, -4.7], [1.3, -4.7]], padSize: 1.2, padHeight: 0.3, padBounce: 11,
+        spinners: [{ x: 5.5, z: -1.3, y0: 0.15, y1: 0.55, half: 1.8, hw: 0.2, omega: 0.8 }],                          // 同跑酷岛 E 桥：3.6 米 / 0.8 rad/s
+        slotPedestal: false,
         props: [
-            { model: 'street/building_1', pos: [-8.5, 0, -6.2], h: 4.6, fb: { w: 3.2, color: '#f2c7a5' }, solid: [3.2, 4, 2.4] },
-            { model: 'street/building_2', pos: [-2.8, 0, -6.4], h: 5.2, fb: { w: 3.4, color: '#a7c7e7' }, solid: [3.4, 4, 2.4] },
-            { model: 'street/building_1', pos: [3.0, 0, -6.2], h: 4.6, fb: { w: 3.2, color: '#f6e0a4' }, solid: [3.2, 4, 2.4] },
-            { model: 'street/building_2', pos: [9.0, 0, -6.4], h: 5.2, fb: { w: 3.4, color: '#a7c7e7' }, solid: [3.4, 4, 2.4] },
-            { model: 'street/tree_1', pos: [-12.2, 0, -2], h: 2.8, fb: { tree: true }, solid: [0.5, 3, 0.5] },
-            { model: 'street/tree_2', pos: [12.4, 0, -1], h: 2.4, fb: { tree: true }, solid: [0.5, 3, 0.5] },
-            { id: 'bin', model: 'street/bin', pos: [-7, 0, 0.2], h: 0.95, fb: 'bin', solid: [0.6, 0.9, 0.6] },
-            { id: 'bench', model: 'park/bench', pos: [-2, 0, -1.5], h: 0.95, fb: 'bench', solid: [1.6, 0.5, 0.6] },
-            { id: 'mailbox', model: 'street/mailbox', pos: [3.5, 0, 0.2], h: 1.5, fb: 'mailbox', solid: [0.6, 1.4, 0.6] },
-            { id: 'tree', model: 'street/tree_1', pos: [9, 0, -1.6], h: 2.8, fb: { tree: true }, solid: [0.5, 3, 0.5] }
+            { model: 'street/building_1', pos: [-10, 0, -15.5], h: 4.6, fb: { w: 3.2, color: '#f2c7a5' } },
+            { model: 'street/building_2', pos: [-3.5, 0, -15.8], h: 5.2, fb: { w: 3.4, color: '#a7c7e7' } },
+            { model: 'street/building_1', pos: [3.5, 0, -15.5], h: 4.6, fb: { w: 3.2, color: '#f6e0a4' } },
+            { model: 'street/building_2', pos: [10, 0, -15.8], h: 5.2, fb: { w: 3.4, color: '#a7c7e7' } },
+            { id: 'bin', model: 'street/bin', pos: [-6.2, 0, -0.7], h: 0.95, fb: 'bin', solid: [0.6, 0.9, 0.6] },
+            { id: 'bench', model: 'park/bench', pos: [0, 2, -9.1], h: 0.95, fb: 'bench' },                              // 摆在高台上，没有碰撞
+            { id: 'mailbox', model: 'street/mailbox', pos: [10.9, 0, -1.2], h: 1.5, fb: 'mailbox', solid: [0.6, 1.4, 0.6] },
+            { id: 'tree', model: 'street/tree_1', pos: [0, 0, 10.7], h: 2.8, fb: { tree: true }, solid: [0.5, 3, 0.5] }
         ],
-        slots: [{ id: 'bin', pos: [-7, 0, 1.3] }, { id: 'bench', pos: [-2, 0, -0.4] }, { id: 'mailbox', pos: [3.5, 0, 1.3] }, { id: 'tree', pos: [9, 0, -0.5] }],
-        camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
+        slots: [{ id: 'bin', pos: [-6.2, 0, 0.45] }, { id: 'bench', pos: [0, 2, -8] }, { id: 'mailbox', pos: [10, 0, 0.2] }, { id: 'tree', pos: [0, 0, 9.0] }],
+        camIntro: { pos: [0, 22, 20], look: [0, 0, -1] }
     },
 
-    /* shop：商店。四个货架区 fruit / bakery / drinks / digital；slot id 就是词的 scene_zone，所以"水果"会出现在水果区
-       （roam_choice.slot_by_zone = true）；digital 不参与随机分配（和原来 random_target:false 一致）。 */
+    /* shop（超市闯关）：四个货架区 fruit / bakery / drinks / digital；slot id 就是词的 scene_zone，所以"水果"会出现在水果区
+       （roam_choice.slot_by_zone = true）；digital 不参与随机分配（和原来 random_target:false 一致）。
+       水果区 = 要跳上 0.6 米的水果展台 / 面包区 = 前面一根旋转清扫杆，要绕或跳 / 饮料区 = 平地（留一个最容易的）/
+       数码区 = 二楼，踩三个弹跳垫弹上去（和跑酷岛 N 高台同尺寸）。地板是整块的，不会掉下去。 */
     shop_inside: {
         sky: '#cfe9ff', seaY: null, fallY: -3,
         spawn: [-9.5, 0, 3],
         ring: { pos: [0, 0, 1.8], r: 1.3 },
         friend: { pos: [2.6, 0, 2.6], rotY: -2.2 },
-        tiles: [{ x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#e8d5b5', flat: true, rp: [-9, 0, 3] }],
+        tiles: [
+            { x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#e8d5b5', flat: true, rp: [-9, 0, 3] },
+            { x: -7.5, z: -4.3, w: 3, d: 2.4, top: 0.6, thick: 0.6, color: '#fca5a5', flat: true, rp: [-7.5, 0.6, -4.3] },       // 水果展台
+            { x: 7.5, z: -5, w: 4, d: 4, top: 2, thick: 2.6, color: '#64748b', flat: true, rp: [7.5, 2, -5] }                    // 数码二楼
+        ],
         decor: [
             { wall: true, pos: [0, 2.2, -7.0], size: [22, 4.4], rotY: 0, color: '#f5deb3', collide: [22, 4.4, 0.4] },                 // 后墙（面朝 +z）
             { wall: true, pos: [-11.0, 2.2, -0.5], size: [13, 4.4], rotY: Math.PI / 2, color: '#f5deb3', collide: [0.4, 4.4, 13] },   // 左墙（面朝 +x）
             { wall: true, pos: [11.0, 2.2, -0.5], size: [13, 4.4], rotY: -Math.PI / 2, color: '#f5deb3', collide: [0.4, 4.4, 13] },  // 右墙（面朝 -x）
             { pos: [0, 0.03, 0.8], size: [9, 0.04, 5], color: '#fecaca' }                            // 地毯
         ],
-        pads: [], spinners: [], slotPedestal: false,
+        pads: [[6.2, -1.7], [7.5, -1.7], [8.8, -1.7]], padSize: 1.2, padHeight: 0.3, padBounce: 11,
+        spinners: [{ x: -3.4, z: -0.9, y0: 0.15, y1: 0.55, half: 1.8, hw: 0.2, omega: 0.8 }],                          // 面包区前的旋转清扫杆
+        slotPedestal: false,
         props: [
             { model: 'shop/shelf', pos: [-7.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
             { model: 'shop/shelf', pos: [-2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
             { model: 'shop/shelf', pos: [2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
-            { model: 'shop/shelf', pos: [7.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#64748b', shelf: true }, solid: [1.9, 2.2, 0.6] },
-            { model: 'shop/crate', pos: [-7.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#d9a066' }, solid: [0.8, 0.55, 0.8] },
             { model: 'shop/crate', pos: [-2.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#e8c58a' }, solid: [0.8, 0.55, 0.8] },
             { model: 'shop/crate', pos: [2.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#9ec5e8' }, solid: [0.8, 0.55, 0.8] },
-            { model: 'shop/crate', pos: [7.5, 0, -4.9], h: 0.55, fb: { w: 0.8, color: '#94a3b8' }, solid: [0.8, 0.55, 0.8] },
-            { pos: [7.5, 0.55, -4.9], h: 0.5, fb: 'laptop' },                                          // 数码区箱子上的笔记本电脑
+            { pos: [7.5, 2, -5.8], h: 0.5, fb: 'laptop' },                                          // 二楼上的笔记本电脑（没有碰撞）
             { model: 'shop/counter', pos: [0, 0, 4.4], h: 1.05, fb: { w: 2.4, color: '#b9824a' }, solid: [2.4, 1.05, 0.7] },
             { model: 'shop/plant', pos: [-10, 0, -5.8], h: 1.2, fb: { tree: true, small: true }, solid: [0.5, 1.2, 0.5] }
         ],
-        slots: [{ id: 'fruit', pos: [-7.5, 0, -3.5] }, { id: 'bakery', pos: [-2.5, 0, -3.5] }, { id: 'drinks', pos: [2.5, 0, -3.5] }, { id: 'digital', pos: [7.5, 0, -3.5], randomTarget: false }],
+        slots: [{ id: 'fruit', pos: [-7.5, 0.6, -4.3] }, { id: 'bakery', pos: [-2.5, 0, -3.5] }, { id: 'drinks', pos: [2.5, 0, -3.5] }, { id: 'digital', pos: [7.5, 2, -5], randomTarget: false }],
         camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
     },
 
-    /* restaurant：餐厅。四个位置：菜单板 / 厨房出餐口 / 柜台 / 餐桌。 */
+    /* restaurant（餐厅闯关）：四个位置：菜单板 / 厨房出餐口 / 柜台 / 餐桌。
+       菜单 = 跳上 0.6 米的小舞台 / 厨房 = 前面一根旋转的出餐托盘杆 / 柜台 = 平地（最容易）/ 餐桌 = 二楼雅座，踩弹跳垫上去。
+       verb_restaurant 共用这个场地。地板是整块的，不会掉下去。 */
     restaurant_inside: {
         sky: '#cfe9ff', seaY: null, fallY: -3,
         spawn: [-9.5, 0, 3],
         ring: { pos: [0, 0, 2.2], r: 1.3 },
         friend: { pos: [2.7, 0, 2.8], rotY: -2.2 },
-        tiles: [{ x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#e8d5b5', flat: true, rp: [-9, 0, 3] }],
+        tiles: [
+            { x: 0, z: -0.5, w: 22, d: 13, thick: 0.6, color: '#e8d5b5', flat: true, rp: [-9, 0, 3] },
+            { x: -7.5, z: -4.2, w: 3, d: 2.4, top: 0.6, thick: 0.6, color: '#fde68a', flat: true, rp: [-7.5, 0.6, -4.2] },       // 菜单小舞台
+            { x: 8.2, z: -5, w: 4, d: 4, top: 2, thick: 2.6, color: '#d6a066', flat: true, rp: [8.2, 2, -5] }                    // 二楼雅座
+        ],
         decor: [
             { wall: true, pos: [0, 2.2, -7.0], size: [22, 4.4], rotY: 0, color: '#fff3e0', collide: [22, 4.4, 0.4] },
             { wall: true, pos: [-11.0, 2.2, -0.5], size: [13, 4.4], rotY: Math.PI / 2, color: '#fff3e0', collide: [0.4, 4.4, 13] },
@@ -167,19 +193,21 @@ export const ARENAS = {
             { pos: [-2.5, 1.2, -6.7], size: [2.5, 0.08, 0.55], color: '#b9824a' },
             { pos: [0, 0.03, 0.8], size: [8, 0.04, 4.6], color: '#fecaca' }
         ],
-        pads: [], spinners: [], slotPedestal: false,
+        pads: [[6.9, -1.7], [8.2, -1.7], [9.5, -1.7]], padSize: 1.2, padHeight: 0.3, padBounce: 11,
+        spinners: [{ x: -2.5, z: -1.9, y0: 0.15, y1: 0.55, half: 1.8, hw: 0.2, omega: 0.8 }],                          // 厨房前的旋转托盘杆
+        slotPedestal: false,
         props: [
             { id: 'menu', pos: [-7.5, 1.4, -6.85], h: 1.5, fb: { parts: PARTS.board('#1f3b2d', 3) } },                  // 菜单板（挂在墙上，不用下载）
             { id: 'kitchen', model: 'room/stove', pos: [-2.5, 0, -6.3], h: 1.0, fb: 'stove', solid: [0.9, 0.9, 0.7] },
             { id: 'counter', model: 'shop/counter', pos: [3, 0, -3.8], h: 1.05, fb: { w: 2.4, color: '#b9824a' }, solid: [2.4, 1.05, 0.7] },
-            { id: 'table', model: 'room/table', pos: [8, 0, -2.5], h: 0.75, fb: 'table', solid: [1.1, 0.75, 1.1] },
-            { model: 'room/chair', pos: [6.9, 0, -2.5], h: 0.95, rotY: Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] },
-            { model: 'room/chair', pos: [9.1, 0, -2.5], h: 0.95, rotY: -Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] },
+            { id: 'table', model: 'room/table', pos: [8.2, 2, -5.9], h: 0.75, fb: 'table' },                           // 雅座上的桌椅（没有碰撞）
+            { model: 'room/chair', pos: [7.1, 2, -5.9], h: 0.95, rotY: Math.PI / 2, fb: 'chair' },
+            { model: 'room/chair', pos: [9.3, 2, -5.9], h: 0.95, rotY: -Math.PI / 2, fb: 'chair' },
             { model: 'room/table', pos: [-8.5, 0, 4.8], h: 0.75, fb: 'table', solid: [1.1, 0.75, 1.1] },
             { model: 'room/chair', pos: [-9.6, 0, 4.8], h: 0.95, rotY: Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] },
             { model: 'room/chair', pos: [-7.4, 0, 4.8], h: 0.95, rotY: -Math.PI / 2, fb: 'chair', solid: [0.5, 0.9, 0.5] }
         ],
-        slots: [{ id: 'menu', pos: [-7.5, 0, -5.0] }, { id: 'kitchen', pos: [-2.5, 0, -4.9] }, { id: 'counter', pos: [3, 0, -2.2] }, { id: 'table', pos: [8, 0, -0.9] }],
+        slots: [{ id: 'menu', pos: [-7.5, 0.6, -4.2] }, { id: 'kitchen', pos: [-2.5, 0, -4.9] }, { id: 'counter', pos: [3, 0, -2.2] }, { id: 'table', pos: [8.2, 2, -5] }],
         camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
     },
 
@@ -296,22 +324,29 @@ export const ARENAS = {
         camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
     },
 
-    /* find_room：房间里找东西。四个位置：桌子 / 书架 / 背包 / 床（第 4 个，新补的）。 */
+    /* find_room（房间闯关）：帮朋友在房间里找东西。四个位置：书桌 / 书架 / 书包 / 床。
+       书桌 = 平地（最容易）/ 书架 = 前面一根旋转的吊扇杆 / 书包 = 跳上 0.6 米的椅子堆 / 床 = 阁楼上铺，踩弹跳垫上去。地板是整块的，不会掉下去。 */
     study_room: {
         sky: '#f4ead8', seaY: null, fallY: -3, spawn: [-9.5, 0, 3],
         ring: { pos: [0, 0, 2.0], r: 1.3 }, friend: { pos: [2.8, 0, 2.8], rotY: -2.3 },
-        tiles: [STUDY.tile],
+        tiles: [
+            STUDY.tile,
+            { x: 2.5, z: -4.2, w: 2.4, d: 2.0, top: 0.6, thick: 0.6, color: '#fda4af', flat: true, rp: [2.5, 0.6, -4.2] },       // 椅子堆（书包）
+            { x: 7.5, z: -5, w: 4, d: 4, top: 2, thick: 2.6, color: '#c7d2fe', flat: true, rp: [7.5, 2, -5] }                    // 阁楼上铺（床）
+        ],
         decor: [...STUDY.walls, { pos: [0, 0.03, 0.4], size: [7, 0.04, 3.6], color: '#fde68a' },
             { pos: [5.0, 2.8, -6.96], size: [1.7, 1.5, 0.05], color: '#ffffff' }, { pos: [5.0, 2.8, -6.92], size: [1.5, 1.3, 0.05], color: '#bfe3ff' }],
-        pads: [], spinners: [], slotPedestal: false,
+        pads: [[6.2, -1.7], [7.5, -1.7], [8.8, -1.7]], padSize: 1.2, padHeight: 0.3, padBounce: 11,
+        spinners: [{ x: -2.5, z: -1.9, y0: 0.15, y1: 0.55, half: 1.8, hw: 0.2, omega: 0.8 }],                          // 书架前的旋转吊扇杆
+        slotPedestal: false,
         props: [
             { model: 'room/desk', pos: [-7.5, 0, -5.6], h: 0.8, fb: 'desk', solid: [1.3, 0.8, 0.7] },
             { model: 'room/chair', pos: [-7.5, 0, -4.4], h: 0.95, rotY: Math.PI, fb: 'chair', solid: [0.5, 0.9, 0.5] },
             { model: 'shop/shelf', pos: [-2.5, 0, -6.2], h: 2.2, fb: { w: 1.9, color: '#c58b4e', shelf: true }, solid: [1.9, 2.2, 0.6] },
-            { model: 'room/bag', pos: [2.5, 0, -5.0], h: 0.5, rotY: -0.4, fb: 'bag', solid: [0.5, 0.5, 0.4] },
-            { model: 'room/bed', pos: [7.5, 0, -5.6], h: 0.9, fb: 'bed', solid: [1.7, 0.6, 2.0] }
+            { model: 'room/bag', pos: [2.5, 0.6, -4.9], h: 0.5, rotY: -0.4, fb: 'bag' },                               // 椅子堆上的书包（没有碰撞）
+            { model: 'room/bed', pos: [7.9, 2, -5.6], h: 0.9, fb: 'bed' }                                              // 上铺的床（没有碰撞）
         ],
-        slots: [{ id: 'desk', pos: [-7.5, 0, -2.9] }, { id: 'shelf', pos: [-2.5, 0, -4.6] }, { id: 'bag', pos: [2.5, 0, -3.3] }, { id: 'bed', pos: [7.5, 0, -3.5] }],
+        slots: [{ id: 'desk', pos: [-7.5, 0, -2.9] }, { id: 'shelf', pos: [-2.5, 0, -4.6] }, { id: 'bag', pos: [2.5, 0.6, -4.2] }, { id: 'bed', pos: [7.5, 2, -4.0] }],
         camIntro: { pos: [0, 16, 14], look: [0, 0, -1] }
     },
 
