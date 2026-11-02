@@ -72,7 +72,18 @@ export const ARENAS = {
         spawn: [-9.5, 0, 2],
         ring: { pos: [0, 0, 2.0], r: 1.3 }, deliverProp: 'chest',
         friend: { pos: [2.8, 0, 2.0], rotY: -2.0 },
-        tiles: [{ x: 0, z: 0, w: 22, d: 14, thick: 1.2, color: '#f1dfaa', flat: true, rp: [-8, 0, 2] }],
+        /* 一串沙洲：出生沙洲 -> 桥 -> 中央沙洲（宝箱 + 朋友）；西北 = 棕榈岛（1.3 米的缝）/ 北 = 岩石岛（一座桥）/ 东北 = 小船岛（1 米的缝）/ 东南 = 木桶岛（桥）。 */
+        tiles: [
+            { x: -9.5, z: 2.2, w: 5, d: 4.6, thick: 1.2, color: '#f1dfaa', flat: true, rp: [-9.5, 0, 2] },
+            { x: -5.5, z: 2.2, w: 3, d: 1.8, thick: 0.3, color: '#d6b97a', flat: true },
+            { x: 0, z: 2.25, w: 8, d: 5.5, thick: 1.2, color: '#f6e7b4', flat: true, rp: [-3, 0, 2] },
+            { x: -7, z: -4.4, w: 7, d: 5.2, thick: 1.2, color: '#f1dfaa', flat: true, rp: [-6, 0, -2.6] },
+            { x: 0, z: -4.75, w: 5, d: 4.5, thick: 1.2, color: '#e7d29a', flat: true, rp: [0, 0, -3.4] },
+            { x: 0, z: -1.5, w: 1.8, d: 2.4, thick: 0.3, color: '#d6b97a', flat: true },
+            { x: 8.25, z: -4.2, w: 6.5, d: 5.2, thick: 1.2, color: '#f1dfaa', flat: true, rp: [7, 0, -2.6] },
+            { x: 8.5, z: 3.5, w: 5, d: 5, thick: 1.2, color: '#f6e7b4', flat: true, rp: [8, 0, 3.5] },
+            { x: 5, z: 3.2, w: 2.2, d: 1.8, thick: 0.3, color: '#d6b97a', flat: true }
+        ],
         pads: [], spinners: [], slotPedestal: false,
         props: [
             { id: 'palm', model: 'beach/palm', pos: [-6, 0, -3.5], h: 3.1, fb: 'palm', solid: [0.5, 3, 0.5] },
@@ -213,16 +224,27 @@ export const ARENAS = {
 
     /* verb_park：公园。四个位置：草坪（球和花）/ 湖边（鸭子）/ 长椅 / 冰淇淋车。选项是动词。 */
     park: {
-        sky: '#cfe9ff', seaY: null, fallY: -3,
+        sky: '#cfe9ff', seaY: -1.4, seaColor: '#5aaee8', fallY: -3,
         spawn: [-11, 0, 4],
         ring: { pos: [-1, 0, 3.2], r: 1.3 },
         friend: { pos: [1.7, 0, 3.6], rotY: -2.2 },
-        tiles: [{ x: 0, z: 0, w: 28, d: 18, thick: 0.6, color: '#86d36b', flat: true, rp: [-10, 0, 4] }],
+        /* 地面改成悬空小岛（和 roam_party 一样）：出生岛 -> 窄桥 -> 中枢（交付环 + 朋友）；
+           西 = 草坪岛（出生岛旁一座短桥）/ 北 = 长椅岛（1.3 米的缝，要跳过去）/ 东 = 湖 + 冰淇淋车岛（一座桥）。掉下去回最近的重生点。 */
+        tiles: [
+            { x: -11, z: 4, w: 5, d: 5, color: '#bef264', flat: true, rp: [-11, 0, 4] },                           // 出生岛
+            { x: -6, z: 4, w: 5, d: 1.8, thick: 0.3, color: '#e5e7eb', flat: true },                               // 桥
+            { x: 0, z: 3.5, w: 7, d: 9, color: '#86d36b', flat: true, rp: [-2.6, 0, 3.2] },                        // 中枢
+            { x: -9.5, z: -3.95, w: 8, d: 7.1, color: '#9be37f', flat: true, rp: [-8.5, 0, -1.9] },               // 西：草坪岛
+            { x: -9.5, z: 0.55, w: 1.8, d: 2.3, thick: 0.3, color: '#e5e7eb', flat: true },                         // 出生岛 -> 草坪岛的短桥
+            { x: -1, z: -5.3, w: 6, d: 6, color: '#a7f3d0', flat: true, rp: [-1, 0, -3.5] },                       // 北：长椅岛（和中枢隔 1.3 米）
+            { x: 5.5, z: 3.5, w: 4, d: 1.8, thick: 0.3, color: '#e5e7eb', flat: true },                            // 东桥
+            { x: 9.5, z: -2.25, w: 8, d: 10.5, color: '#bbf7d0', flat: true, rp: [8, 0, 1.5] }                    // 东：湖 + 冰淇淋车岛
+        ],
         decor: [
-            { pos: [0, 0.02, 6.4], size: [28, 0.04, 2.0], color: '#e6d3a3' },                        // 小路
+            { pos: [0, 0.02, 6.4], size: [7, 0.04, 2.0], color: '#e6d3a3' },                         // 小路
             { pos: [-8.5, 0.02, -3.5], size: [6, 0.04, 4.5], color: '#9be37f' },                     // 草坪
-            { pos: [5, 0.15, -3.5], size: [7, 0.3, 5], color: '#cbd5e1', solid: true },              // 湖边石岸（有碰撞，进不去）
-            { pos: [5, 0.32, -3.5], size: [6.4, 0.04, 4.4], color: '#5aaee8' }                       // 湖水
+            { pos: [7.7, 0.15, -3.5], size: [4.4, 0.3, 5], color: '#cbd5e1', solid: true },          // 湖边石岸（有碰撞，进不去）
+            { pos: [7.7, 0.32, -3.5], size: [3.8, 0.04, 4.4], color: '#5aaee8' }                     // 湖水
         ],
         pads: [], spinners: [], slotPedestal: false,
         props: [
@@ -234,11 +256,11 @@ export const ARENAS = {
             { pos: [-7.4, 0.05, -4.5], h: 0.4, fb: { parts: PARTS.flower('#fbbf24') } },
             { pos: [-7.1, 0.05, -2.9], h: 0.4, fb: { parts: PARTS.flower('#a78bfa') } },
             { id: 'bench', model: 'park/bench', pos: [-1.5, 0, -6.0], h: 0.95, fb: 'bench', solid: [1.6, 0.5, 0.6] },
-            { model: 'park/duck', pos: [4.2, 0.34, -3.2], h: 0.4, fb: 'duck' },
-            { model: 'park/duck', pos: [6.0, 0.34, -4.2], h: 0.4, fb: 'duck' },
+            { model: 'park/duck', pos: [6.9, 0.34, -3.2], h: 0.4, fb: 'duck' },
+            { model: 'park/duck', pos: [8.5, 0.34, -4.2], h: 0.4, fb: 'duck' },
             { id: 'cart', model: 'shop/icecream', pos: [11, 0, -2.0], h: 1.3, fb: 'icecream', solid: [1.0, 1.3, 0.8] }
         ],
-        slots: [{ id: 'lawn', pos: [-8.5, 0, -1.9] }, { id: 'lake', pos: [5, 0, -0.6] }, { id: 'bench', pos: [-1.5, 0, -4.7] }, { id: 'cart', pos: [11, 0, -0.8] }],
+        slots: [{ id: 'lawn', pos: [-8.5, 0, -1.9] }, { id: 'lake', pos: [7.7, 0, -0.6] }, { id: 'bench', pos: [-1.5, 0, -4.7] }, { id: 'cart', pos: [11, 0, -0.8] }],
         camIntro: { pos: [0, 18, 16], look: [0, 0, 0] }
     },
 
@@ -352,16 +374,26 @@ export const ARENAS = {
 
     /* group_photo：学校操场拍集体照。四个位置：球场边的孩子 / 野餐桌一家人 / 教学楼前的同学 / 三脚架相机（第 4 个，新补的）。 */
     schoolyard: {
-        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [-11, 0, 4],
+        sky: '#cfe9ff', seaY: -1.4, seaColor: '#5aaee8', fallY: -3, spawn: [-11, 0, 4],
         ring: { pos: [-1, 0, 3.2], r: 1.3 }, friend: { pos: [1.8, 0, 3.6], rotY: -2.3 },
-        tiles: [{ x: 0, z: 0, w: 28, d: 18, thick: 0.6, color: '#cfe7c4', flat: true, rp: [-10, 0, 4] }],
+        /* 悬空小岛：出生岛 -> 桥 -> 中枢；西 = 小球场岛（短桥）/ 北 = 野餐岛（1.5 米的缝）/ 东 = 教学楼 + 相机岛（桥上有一根旋转杆）。 */
+        tiles: [
+            { x: -11, z: 4, w: 5, d: 5, color: '#e5e7eb', flat: true, rp: [-11, 0, 4] },
+            { x: -6, z: 4, w: 5, d: 1.8, thick: 0.3, color: '#cbd5e1', flat: true },
+            { x: 0, z: 4.5, w: 7, d: 7, color: '#cfe7c4', flat: true, rp: [-2.6, 0, 3.2] },
+            { x: -9.25, z: -4.2, w: 8.5, d: 7.6, color: '#bef264', flat: true, rp: [-8, 0, -2.2] },                // 西：小球场岛
+            { x: -9.5, z: 0.55, w: 1.8, d: 2.3, thick: 0.3, color: '#cbd5e1', flat: true },
+            { x: 0.7, z: -4.85, w: 9, d: 8.7, color: '#fde68a', flat: true, rp: [0, 0, -2.2] },                    // 北：野餐岛
+            { x: 5.75, z: 3, w: 4.5, d: 2.6, thick: 0.3, color: '#cbd5e1', flat: true },                           // 东桥
+            { x: 10.15, z: -2.7, w: 7.3, d: 12.6, color: '#cfe7c4', flat: true, rp: [8.2, 0, -1.2] }              // 东：教学楼 + 相机岛
+        ],
         decor: [
-            { pos: [0, 0.02, -2.6], size: [7, 0.04, 4.6], color: '#e6d3a3' },                        // 野餐的空地
+            { pos: [0, 0.02, -2.9], size: [7, 0.04, 4.2], color: '#e6d3a3' },                        // 野餐的空地
             { pos: [-8, 0.03, -4.2], size: [6, 0.04, 4.4], color: '#7ec96b' },                       // 小球场
             { pos: [-8, 0.05, -4.2], size: [5.8, 0.01, 0.08], color: '#ffffff' },
             { pos: [-8, 0.05, -4.2], size: [0.08, 0.01, 4.2], color: '#ffffff' }
         ],
-        pads: [], spinners: [], slotPedestal: false,
+        pads: [], spinners: [{ x: 5.2, z: 3, y0: 0.15, y1: 0.55, half: 1.8, hw: 0.2, omega: 0.8 }], slotPedestal: false,
         props: [
             { model: 'street/building_2', pos: [8.5, 0, -7.6], h: 5.2, fb: { w: 3.8, color: '#a7c7e7' }, solid: [3.8, 4, 2.4] },
             { model: 'street/building_1', pos: [3.5, 0, -8.0], h: 4.6, fb: { w: 3.2, color: '#f2c7a5' }, solid: [3.2, 4, 2.4] },
@@ -395,9 +427,19 @@ export const ARENAS = {
        machine（M6，可选）：{ pos, rotY } 变形机装饰（纯程序几何体，不用模型）；只在模板带 effects 时才建；效果播放时灯闪、齿轮转（arena.machineRun）。 */
     /* describe_object：展台广场。variants 0 杯子 / 1 房子 / 2 书（两摞）/ 3 几座房子（三座）。 */
     adj_plaza: {
-        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
+        sky: '#cfe9ff', seaY: -1.4, seaColor: '#5aaee8', fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
         ring: { pos: [0, 0, 1.2], r: 1.3 }, friend: { pos: [3.4, 0, 1.6], rotY: -2.3 },
-        tiles: [{ x: 0, z: 0, w: 24, d: 14, thick: 0.6, color: '#e7e1d6', flat: true, rp: [0, 0, 5.5] }],
+        /* 悬空小岛：中间一座大岛（展台 / 交付环 / 朋友 / 变形机），四个角各一座小岛放答案牌：
+           北边两座要跳过 1.5 米的缝，南边两座有短桥。 */
+        tiles: [
+            { x: 0, z: 1.25, w: 11, d: 12.5, color: '#e7e1d6', flat: true, rp: [0, 0, 5.5] },
+            { x: -9.5, z: -4.5, w: 5, d: 5.6, color: '#fde68a', flat: true, rp: [-9, 0, -3.8] },
+            { x: 9.5, z: -4.5, w: 5, d: 5.6, color: '#a7f3d0', flat: true, rp: [9, 0, -3.8] },
+            { x: -9.5, z: 3.4, w: 5, d: 4.6, color: '#bae6fd', flat: true, rp: [-9, 0, 3.2] },
+            { x: 9.5, z: 3.4, w: 5, d: 4.6, color: '#fbcfe8', flat: true, rp: [9, 0, 3.2] },
+            { x: -6.25, z: 3.4, w: 1.7, d: 1.8, thick: 0.3, color: '#e5e7eb', flat: true },
+            { x: 6.25, z: 3.4, w: 1.7, d: 1.8, thick: 0.3, color: '#e5e7eb', flat: true }
+        ],
         decor: [{ pos: [0, 0.02, -2.4], size: [5.6, 0.04, 5.0], color: '#d4ccbc' }],
         pads: [], spinners: [],
         props: [
@@ -417,7 +459,7 @@ export const ARENAS = {
                     { id: 'h3', model: 'street/building_1', pos: [0.8, 0.5, -2.3], h: 0.85, fb: { w: 0.7, color: '#f5d98b', house: true } }],
                 deliver: [0, 1.8, -2.5], bounce: ['h1', 'h2', 'h3'] }
         ],
-        slots: [{ id: 'nw', pos: [-7, 0, -3.8] }, { id: 'ne', pos: [7, 0, -3.8] }, { id: 'sw', pos: [-7, 0, 3.2] }, { id: 'se', pos: [7, 0, 3.2] }],
+        slots: [{ id: 'nw', pos: [-9, 0, -3.8] }, { id: 'ne', pos: [9, 0, -3.8] }, { id: 'sw', pos: [-9, 0, 3.2] }, { id: 'se', pos: [9, 0, 3.2] }],
         machine: { pos: [-4.6, 0, -3.6], rotY: 0.5 },          // M6 变形机装饰：只在带 effects 的模板（变形工坊）里出现；贴词牌版 describe_object 共用本场地但看不到它
         camIntro: { pos: [0, 16, 12], look: [0, 0, -1] }
     },
@@ -425,9 +467,18 @@ export const ARENAS = {
     /* describe_person：舞台操场。variants 0 一个男孩 / 1 一个女孩 / 2 三个男孩 / 3 三个女孩。
        舞台高 0.2 m（≤ PHYS.step 0.25，走过去自动上台阶，不用跳）；人站在舞台上（y = 0.2）。 */
     adj_stage: {
-        sky: '#cfe9ff', seaY: null, fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
+        sky: '#cfe9ff', seaY: -1.4, seaColor: '#5aaee8', fallY: -3, spawn: [0, 0, 5.5], startYaw: 0,
         ring: { pos: [0, 0, 1.6], r: 1.3 }, friend: { pos: [3.8, 0, 2.0], rotY: -2.3 },
-        tiles: [{ x: 0, z: 0, w: 26, d: 15, thick: 0.6, color: '#cfe7c4', flat: true, rp: [0, 0, 5.5] }],
+        /* 悬空小岛：中间一座大岛（矮舞台 / 交付环 / 朋友 / 变形机），四个角各一座小岛放答案牌：北边两座要跳过 1.5 米的缝，南边两座有短桥。 */
+        tiles: [
+            { x: 0, z: 1.25, w: 13, d: 12.5, color: '#cfe7c4', flat: true, rp: [0, 0, 5.5] },
+            { x: -10.5, z: -4.8, w: 5, d: 5.6, color: '#fde68a', flat: true, rp: [-10, 0, -4.6] },
+            { x: 10.5, z: -4.8, w: 5, d: 5.6, color: '#a7f3d0', flat: true, rp: [10, 0, -4.6] },
+            { x: -10.5, z: 3.6, w: 5, d: 4.6, color: '#bae6fd', flat: true, rp: [-10, 0, 3.4] },
+            { x: 10.5, z: 3.6, w: 5, d: 4.6, color: '#fbcfe8', flat: true, rp: [10, 0, 3.4] },
+            { x: -7.25, z: 3.6, w: 1.7, d: 1.8, thick: 0.3, color: '#e5e7eb', flat: true },
+            { x: 7.25, z: 3.6, w: 1.7, d: 1.8, thick: 0.3, color: '#e5e7eb', flat: true }
+        ],
         decor: [
             { pos: [0, 0.1, -2.9], size: [6.4, 0.2, 3.2], color: '#e8c98a', solid: true },        // 矮舞台
             { pos: [0, 0.205, -2.9], size: [6.0, 0.01, 2.8], color: '#f3dfb0' }                    // 台面（浅色一圈，看得出是舞台）
@@ -449,7 +500,7 @@ export const ARENAS = {
                     { id: 'c', model: 'people/girl_a', pos: [1.3, 0.2, -2.9], h: 1.4, look: { girl: true, shirt: '#f97316', hair: '#111827' } }],
                 deliver: [0, 2.0, -2.9], bounce: ['a', 'b', 'c'] }
         ],
-        slots: [{ id: 'nw', pos: [-8, 0, -4.6] }, { id: 'ne', pos: [8, 0, -4.6] }, { id: 'sw', pos: [-8, 0, 3.4] }, { id: 'se', pos: [8, 0, 3.4] }],
+        slots: [{ id: 'nw', pos: [-10.5, 0, -4.6] }, { id: 'ne', pos: [10.5, 0, -4.6] }, { id: 'sw', pos: [-10.5, 0, 3.4] }, { id: 'se', pos: [10.5, 0, 3.4] }],
         machine: { pos: [-5.8, 0, -3.0], rotY: 0.4 },
         camIntro: { pos: [0, 17, 13], look: [0, 0, -1] }
     },

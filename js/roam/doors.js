@@ -30,35 +30,37 @@ export function pickCategories(count, seed) {
     return Array.from({ length: Math.max(1, Math.min(count, n)) }, (_, i) => DOOR_CATEGORIES[(start + i) % n]);
 }
 
-const LOBBY = { sky: '#fdf0dc', W: 22, zBack: -3.2, zFront: 6, wallH: 4.6, spawn: [0, 0, 3.4], spacing: 4.6, doorFront: 1.3 };
+const LOBBY = { sky: '#bfe3ff', zBack: -3.7, spawn: [0, 0, 3.6], spacing: 5.4, doorFront: 1.3 };
 export const LOBBY_SKY = LOBBY.sky;
 
 /* ---------- 门厅 ---------- */
 export async function buildLobby(cats) {
     const doorGltf = await loadModel('roam/door');
-    const { W, zBack, zFront, wallH } = LOBBY, midZ = (zBack + zFront) / 2, depth = zFront - zBack;
+    const { zBack } = LOBBY;
     const group = new T.Group(); group.visible = false;
     const boxes = [];
 
-    // 地板 + 地毯
-    const floor = new T.Mesh(new T.BoxGeometry(W, 0.6, depth), mat('#ead9b8')); floor.position.set(0, -0.3, midZ); group.add(floor);
-    boxes.push({ min: [-W / 2, -0.6, zBack], max: [W / 2, 0, zFront], rp: LOBBY.spawn.slice() });
-    const rug = new T.Mesh(new T.BoxGeometry(W * 0.7, 0.03, 3.2), mat('#fcd9b6')); rug.position.set(0, 0.02, 1.4); group.add(rug);
-
-    // 墙：单面平面（只从屋内看得见，镜头跑到墙外不会被挡），碰撞靠 boxes；南面（镜头一侧）不画墙，只放一道看不见的挡板防止掉下去
-    const wallColor = '#f7e8d3';
-    const back = new T.Mesh(new T.PlaneGeometry(W, wallH), mat(wallColor)); back.position.set(0, wallH / 2, zBack); group.add(back);
-    const left = new T.Mesh(new T.PlaneGeometry(depth, wallH), mat(wallColor)); left.position.set(-W / 2, wallH / 2, midZ); left.rotation.y = Math.PI / 2; group.add(left);
-    const right = new T.Mesh(new T.PlaneGeometry(depth, wallH), mat(wallColor)); right.position.set(W / 2, wallH / 2, midZ); right.rotation.y = -Math.PI / 2; group.add(right);
-    boxes.push({ min: [-W / 2 - 0.4, 0, zBack - 0.4], max: [W / 2 + 0.4, wallH, zBack] });
-    boxes.push({ min: [-W / 2 - 0.4, 0, zBack - 0.4], max: [-W / 2, wallH, zFront + 0.4] });
-    boxes.push({ min: [W / 2, 0, zBack - 0.4], max: [W / 2 + 0.4, wallH, zFront + 0.4] });
-    boxes.push({ min: [-W / 2 - 0.4, 0, zFront], max: [W / 2 + 0.4, wallH, zFront + 0.4] });
+    // 地面和 roam_party 一样：一块块悬空的小岛 + 窄桥，四周是海，掉下去回最近的重生点。
+    // 出生岛在南边，每扇门各站在自己北边的一座小岛上，用窄桥和出生岛相连。
+    const tile = (x, z, w, d, top, thick, color, rp) => {
+        const m = new T.Mesh(new T.BoxGeometry(w, thick, d), mat(color)); m.position.set(x, top - thick / 2, z); group.add(m);
+        boxes.push({ min: [x - w / 2, top - thick, z - d / 2], max: [x + w / 2, top, z + d / 2], rp: rp || null });
+    };
+    const n = cats.length, spacing = LOBBY.spacing, ISLAND = ['#fde68a', '#a7f3d0', '#bae6fd', '#fbcfe8'];
+    tile(0, 3.6, 7 + Math.max(0, n - 3) * 2, 5, 0, 0.6, '#fbcfe8', LOBBY.spawn.slice());          // 出生岛（z 1.1 ~ 6.1）
+    for (let i = 0; i < n; i++) {
+        const x = (i - (n - 1) / 2) * spacing;
+        tile(x, 0, 1.6, 2.4, 0, 0.3, '#e5e7eb', null);                                              // 桥（z -1.2 ~ 1.2，和两头的岛各重叠一点）
+        tile(x, -2.8, 3.8, 3.6, 0, 0.6, ISLAND[i % ISLAND.length], [x, 0, -2.4]);                  // 门前的小岛（z -4.6 ~ -1.0）
+        boxes.push({ min: [x - 1.2, 0, zBack - 0.5], max: [x + 1.2, 3.2, zBack - 0.05] });          // 门后的墙垛（挡住不让走进门里）
+        const slab = new T.Mesh(new T.BoxGeometry(2.4, 3.2, 0.45), mat('#f3dccb')); slab.position.set(x, 1.6, zBack - 0.3); group.add(slab);
+    }
+    const sea = new T.Mesh(new T.PlaneGeometry(240, 240), new T.MeshBasicMaterial({ color: '#7dd3fc', transparent: true, opacity: 0.9 }));
+    sea.rotation.x = -Math.PI / 2; sea.position.y = -2.5; group.add(sea);
 
     // 门：门框 + 能转开的门板 + 门后的发光色块（开门时亮起）+ 门上方的类别图标 + 门前地上的色环
-    const n = cats.length;
     const doors = cats.map((cat, i) => {
-        const x = (i - (n - 1) / 2) * LOBBY.spacing;
+        const x = (i - (n - 1) / 2) * spacing;
         const g = new T.Group(); g.position.set(x, 0, zBack); group.add(g);
         const hole = new T.Mesh(new T.PlaneGeometry(1.5, 2.3), new T.MeshBasicMaterial({ color: '#111827' })); hole.position.set(0, 1.15, 0.02); g.add(hole);
         const glowMat = new T.MeshBasicMaterial({ color: cat.color, transparent: true, opacity: 0, depthWrite: false });
@@ -89,7 +91,7 @@ export async function buildLobby(cats) {
     const sun = new T.DirectionalLight('#ffffff', 1.4); sun.position.set(-4, 10, 8); group.add(sun);
 
     return {
-        group, boxes, doors, spawn: LOBBY.spawn.slice(), fallY: -3, sky: LOBBY.sky,
+        group, boxes, doors, spawn: LOBBY.spawn.slice(), fallY: -4, sky: LOBBY.sky,
         open(i) { if (doors[i]) doors[i].dir = 1; },
         closeAll() { for (const d of doors) d.dir = -1; },
         update(dt) {
