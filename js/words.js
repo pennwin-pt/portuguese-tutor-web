@@ -48,14 +48,21 @@ async function openRun(restart = false) {
 /* ---------- 网络（同 index.js 的 req） ---------- */
 const errMsg = j => typeof j.detail === 'string' ? j.detail
     : Array.isArray(j.detail) ? j.detail.map(x => x.msg).join('；') : j.message;
-async function req(path, body, method = 'POST') {
+async function req(path, body, method = 'POST', ms = 0) {
     const opt = { method };
+    let tm = null;
+    if (ms) { const ac = new AbortController(); opt.signal = ac.signal; tm = setTimeout(() => ac.abort(), ms); }
     if (body instanceof FormData) opt.body = body;
     else if (body) { opt.headers = { 'Content-Type': 'application/json' }; opt.body = JSON.stringify(body); }
-    const r = await fetch(API + path, opt);
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(errMsg(j) || ('请求失败 ' + r.status));
-    return j.data || j;
+    try {
+        const r = await fetch(API + path, opt);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(errMsg(j) || ('请求失败 ' + r.status));
+        return j.data || j;
+    } catch (err) {
+        if (err.name === 'AbortError') throw new Error('评判超时，请再说一次');   // 网络挂起时别让页面一直停在“评判中…”
+        throw err;
+    } finally { clearTimeout(tm); }
 }
 const post = (path, body) => req(path, body);
 const get = path => req(path, null, 'GET');
@@ -738,7 +745,7 @@ async function evaluate(blob, ext) {
     fd.append('audio', blob, 'rec.' + ext); fd.append('word_id', w.id); fd.append('mode', w.mode);
     if (!sunMode && runId) { fd.append('session_id', sid); fd.append('run_id', runId); }
     try {
-        const d = await post('/api/words/evaluate', fd);
+        const d = await req('/api/words/evaluate', fd, 'POST', EVAL_TIMEOUT_MS);
         if (d.earned) roundScore = d.round_score || (roundScore + 1);
         else if (d.round_score != null) roundScore = d.round_score;
         if (d.earned) await refreshPoints(); else renderPoints();
@@ -819,8 +826,10 @@ const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform
 const MIME_LIST = IS_IOS ? ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm'] : ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'];
 const MIME = window.MediaRecorder && MIME_LIST.find(t => MediaRecorder.isTypeSupported(t));
 const MIN_MS = 500, MIN_BYTES = 1200;      // 太短 / 太小的录音直接丢弃，不发给服务器
+const EVAL_TIMEOUT_MS = 45000;      // 评判请求最长等多久（nginx 默认 60s 会先断）
+const PREP_STUCK_MS = 6000;         // “准备中”超过这么久还没出声 = 卡死，下次按下时自动复位
 const TAIL_MS = 250, MIC_WAIT_MS = 1500;   // 松手后多录一小会儿防止句尾被切；等麦克风真正出声的最长时间
-let mr, chunks, t0, startY, cancel, stream, stopTimer, preparing = false, holding = false;
+let mr, chunks, t0, startY, cancel, stream, stopTimer, preparing = false, holding = false, prepAt = 0;
 // iOS 的麦克风轨道刚拿到、或音频会话被打断（通知音 / 切耳机 / 其它音频抢占）时是 muted（没有数据）。
 // 返回 true = 轨道已出声；false = 等到超时仍是 muted，调用方不能再对着它录音（录出来只有文件头）。
 const waitMicLive = s => new Promise(res => {
@@ -839,15 +848,17 @@ const waitMicLive = s => new Promise(res => {
 // 测试结束 / 页面切到后台时都会释放，不让系统一直亮着麦克风图标。
 const KEEP_MIC = !IS_IOS;
 // 注意：readyState 仍是 live 的流可能已被系统静音（muted），是否还能用由按下时的 waitMicLive 判断，不在这里判断。
-let micStream = null, micPromise = null;
+let micStream = null, micPromise = null, micAt = 0;
 async function getMic() {
     if (!KEEP_MIC) releaseMic();                      // iOS：不复用，每次都是新申请的流
     if (micStream && micStream.getAudioTracks().some(t => t.readyState === 'live')) return micStream;
-    if (micPromise) return micPromise;                // 预热和第一次按住同时到：共用同一次申请，不开出两条流
-    micPromise = navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+    if (micPromise && Date.now() - micAt < PREP_STUCK_MS) return micPromise;   // 预热和第一次按住同时到：共用同一次申请，不开出两条流
+    micAt = Date.now();                               // 上一次申请挂起超过 PREP_STUCK_MS（WebView 里偶发）：不再等它，重新申请
+    const mine = micPromise = navigator.mediaDevices.getUserMedia({ audio: true }).then(s => {
+        if (micPromise !== mine) { s.getTracks().forEach(t => t.stop()); throw new Error('stale'); }   // 迟到的旧申请：关掉，别让麦克风一直亮着
         s.getAudioTracks().forEach(t => { t.onended = () => { if (micStream === s) micStream = null; }; });   // 被系统 / 其他 App 抢走后，下次按下会重新申请
         return micStream = s;
-    }).finally(() => { micPromise = null; });
+    }).finally(() => { if (micPromise === mine) micPromise = null; });
     return micPromise;
 }
 function warmMic() {                                // 提前触发麦克风权限询问（在“领取 / 开始”那一下点击里）
@@ -865,13 +876,19 @@ const holdIdle = () => { holdBtn.className = ''; holdBtn.textContent = '按住 �
 holdBtn.addEventListener('pointerdown', async e => {
     if (state !== 'test') return;
     Object.values(sfx).forEach(a => a.pause());   // 答对/答错音效还在响时先停掉，免得和录音抢音频通道
+    if (preparing && Date.now() - prepAt > PREP_STUCK_MS) {            // 自愈：上一次“准备中”卡死（没走到 onstart / onstop / micFail），不复位按钮会一直按不动
+        console.warn('录音准备超时，已复位'); preparing = false; holding = false; releaseMic();
+    }
+    if (mr && mr.state === 'recording' && !holding && Date.now() - (t0 || 0) > 3000) {   // 自愈：松手事件丢了，录音器还开着
+        console.warn('录音器残留，已复位'); cancel = true; try { mr.stop(); } catch { } preparing = false;
+    }
     if (preparing || (mr && mr.state === 'recording')) return;          // 上一次还在准备 / 收尾
     // 录音手势里不 unlock()：往 #player 塞静音 wav 并 play() 会和 getUserMedia / rec.start() 同时切换 iOS 音频会话，
     // 容易让麦克风轨道被静音、录出空文件。页面早已解锁（领取 / 下一个 / 再试一次都 unlock 过），这里只停掉正在播的朗读。
     e.preventDefault(); holding = true; startY = e.clientY; cancel = false; player.pause();
     holdBtn.setPointerCapture(e.pointerId);
     if (!MIME) { toast('浏览器不支持录音（需 HTTPS）'); holding = false; return; }
-    preparing = true; holdBtn.textContent = '准备中…';                      // 麦克风真正就绪前不显示“录音中”，避免一开口就丢字
+    preparing = true; prepAt = Date.now(); holdBtn.textContent = '准备中…';                      // 麦克风真正就绪前不显示“录音中”，避免一开口就丢字
     let s, live;
     const micFail = () => { holding = false; preparing = false; holdIdle(); };
     try { s = await getMic(); live = await waitMicLive(s); }
@@ -910,7 +927,8 @@ holdBtn.addEventListener('pointerdown', async e => {
         }
         evaluate(blob, MIME.includes('mp4') ? 'm4a' : 'webm');
     };
-    rec.start();
+    try { rec.start(); }
+    catch (err) { console.warn('rec.start 失败', err); releaseMic(); toast('录音启动失败，请再按一次'); micFail(); }   // 不兜底的话 preparing 永远是 true，按钮就彻底按不动
 });
 holdBtn.addEventListener('pointermove', e => {
     if (!holding || preparing) return;
