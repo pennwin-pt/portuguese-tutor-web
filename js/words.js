@@ -221,7 +221,8 @@ sourceDialog.addEventListener('click', e => { if (e.target === sourceDialog) sou
 /* ---------- 任务状态 ----------
    Word Item（与后端 memory/word_source.py 的 WordItem 一致）：
    { id, pt_word, cn_meaning, pt_sentence, cn_sentence, source, remark, reference_image_number, mode }   mode: 1=看葡语说中文, 2=看中文说葡语, 3=句子填空（多一个 cloze 字段，含 ____ 占位；可能带 ex＝生成例句编号），
-   4=造句（说一句用到目标词的话，评判返回 corrected；无 cloze、无 ex）
+   4=造句（说一句用到目标词的话，评判返回 corrected；无 cloze、无 ex），
+   5=跟读（听整句再复述；带 pt_sentence / cn_sentence / ex，无 cloze；页面上不渲染 pt_sentence / pt_word，答案允许显示时才露出）
    state: loading 加载今日任务 | idle 未领取 | test 测试中 | judging 评判中 | result 结果展示 | preview 预习明天的词（不评分）
           | done 今日已完成（刚通关，或打开页面时服务器记录显示今天早已完成；都可以“重新学习”） */
 let state = 'loading';
@@ -238,6 +239,7 @@ const SKIP_AFTER = 2;
 let curRevealed = false;    // 当前这个词是否点过“公布答案”（用来判定当天结果 again）
 const outcomes = {};        // 每个词当天第一轮的结果 {word_id,outcome,mode}：good 一次答对 | hard 答错后才对 | again 公布答案/判错≥2次 | skipped 跳过；完成时提交给服务器调度复习间隔
 const KIND_LABEL = { new: '🆕 新词', review: '🔁 复习', weekly: '📅 本周回顾', extra: '💪 周六加练', preview: '👀 先看后测' };
+let shadowText = '', shadowZh = false, shadowBusy = '';   // 跟读（mode 5）：文本框内容（render 每次重建 DOM，值必须存在这里）/ 是否展开中文 / 忙碌类型：'transcribe' 识别中 | 'submit' 提交评判中
 let curMissed = false;      // 当前这个词在本轮里是否已经答错 / 公布过答案（= 不是“一次通过”，本轮结束后要重测）
 let round = 1, roundTotal = 0, total = 0, attempts = 0, firstPass = 0, pass2 = 0;   // pass2：周日以测代看第 2 轮（直接考）里一次就答对的词数
 const passed = new Set();   // 已“过关”的单词 id：某一轮里一次就答对的词（答错后重试才对的不算，还要进下一轮）
@@ -391,11 +393,38 @@ function viewSentence(w, c) {                        // 模式 4：造句。全�
         el('div', 'ask', state === 'judging' ? '⏳ AI 评判中…' : '请用这个词，说一句完整的葡语'));
     return c;
 }
+function viewShadow(w, c) {                          // 模式 5：跟读。听整句 → 复述（录音只转文字 / 直接打字）→ 提交。页面上不渲染 pt_sentence / pt_word / cloze（会让用户照抄）
+    c.append(el('div', 'tag', '🎧 跟读：听一遍，把句子复述出来'));
+    const play = el('button', 'sh-play', '🔊'); play.type = 'button'; play.setAttribute('aria-label', '播放句子');
+    play.onclick = () => speak(w, 'sentence', play);
+    const top = el('div', 'sh-top'); top.append(play); c.append(top);
+    if (w.cn_sentence) {                              // 中文意思默认折叠，点一下直接改 DOM（不 render，免得把文本框重建）
+        const zh = el('div', 'azh sh-zh', w.cn_sentence); zh.hidden = !shadowZh;
+        const zb = el('button', 'sh-zhbtn', shadowZh ? '隐藏中文意思' : '显示中文意思'); zb.type = 'button';
+        zb.onclick = () => { shadowZh = !shadowZh; zh.hidden = !shadowZh; zb.textContent = shadowZh ? '隐藏中文意思' : '显示中文意思'; };
+        c.append(zb, zh);
+    }
+    const box = el('div', 'sh-ans'), ta = el('textarea');
+    ta.lang = 'pt'; ta.rows = 3; ta.maxLength = 300; ta.enterKeyHint = 'done';
+    ta.setAttribute('autocapitalize', 'off'); ta.setAttribute('autocorrect', 'off'); ta.setAttribute('autocomplete', 'off'); ta.spellcheck = false;
+    ta.placeholder = '在这里写下你听到的句子';
+    ta.value = shadowText; ta.disabled = state === 'judging';
+    ta.addEventListener('input', () => {              // 只更新变量和提交按钮，不能 render()（会重建文本框、丢光标和键盘）
+        shadowText = ta.value;
+        const a = $('#act'); if (a && state === 'test') a.disabled = !shadowText.trim();
+    });
+    ta.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); ta.blur(); } });   // 回车 = 收起键盘（不提交，免得误触）
+    ta.addEventListener('focus', () => setTimeout(() => ta.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300));   // 软键盘弹出后把文本框滚到可见处
+    box.append(ta); c.append(box);
+    c.append(el('div', 'ask', state === 'judging' ? (shadowBusy === 'transcribe' ? '⏳ 识别中…' : '⏳ AI 评判中…') : '按住说话复述，或直接输入；可以修改后再提交'));
+    return c;
+}
 function viewTest() {
     const w = cur, c = el('div', 'wcard');
     if (KIND_LABEL[w.kind]) c.append(el('div', 'kind', KIND_LABEL[w.kind]));
     if (w.mode === 3 && w.cloze) { viewCloze(w, c); appendSourceButton(c, w); return c; } // cloze 缺失时（理论上不会）自然落到下面按 mode 2 渲染
     if (w.mode === 4) { viewSentence(w, c); appendSourceButton(c, w); return c; }
+    if (w.mode === 5) { viewShadow(w, c); appendSourceButton(c, w); return c; }
     c.append(el('div', 'tag', w.mode === 1 ? '🇵🇹 → 🇨🇳 看葡语，说中文' : '🇨🇳 → 🇵🇹 看中文，说葡语'));
     const row = el('div', 'termrow');
     row.append(el('div', 'term', w.mode === 1 ? w.pt_word : zhHint(w)));
@@ -420,27 +449,38 @@ function viewReveal() {                              // 周日以测代看 ①�
     appendSourceButton(c, w);
     return c;
 }
+const SHADOW_TOK = new Set(['ok', 'wrong', 'extra', 'missing', 'accent']);
 function viewResult() {
     const w = cur, r = lastRes, c = el('div', 'wcard');
+    const shadow = w.mode === 5;
+    const showAns = !shadow || !!(r.passed || r.revealed || aiWrong >= SKIP_AFTER);   // 跟读失败时不显示答案：只有通过 / 公布答案 / 连错 SKIP_AFTER 次才露出原句
     if (r.revealed) {                                   // 主动公布答案：不是答错，也不播失败音效，但本轮结束后会重测
         c.append(el('div', 'verdict rev', '💡 答案已公布'), el('div', 'cmt', '先记为没掌握，点“再试一次”跟着说一遍；下一轮会换个方向再测'));
     } else {
-        c.append(el('div', 'verdict ' + (r.passed ? 'ok' : 'bad'), r.passed ? '✅ 回答正确' : '❌ 回答错误'),
-            el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
+        c.append(el('div', 'verdict ' + (r.passed ? 'ok' : 'bad'), r.passed ? '✅ 回答正确' : '❌ 回答错误'));
+        if (shadow) {                                   // 跟读：用词块标出你写的每个词（绿对 / 红错 / 红删除线多写 / 灰缺词 / 黄只差重音）；missing 只有占位符，不透露缺的词
+            const hd = el('div', 'heard', '你写的：');
+            if (Array.isArray(r.tokens) && r.tokens.length)
+                r.tokens.forEach(t => hd.append(el('span', 'tok ' + (SHADOW_TOK.has(t.s) ? t.s : 'ok'), String(t.w ?? '')), ' '));
+            else hd.append(document.createTextNode(r.recognized_text || '（空）'));
+            c.append(hd);
+        } else c.append(el('div', 'heard', '你说的：' + (r.recognized_text || '（未识别）')));
         if (r.comment) c.append(el('div', 'cmt', '💬 ' + r.comment));
         if (w.mode === 4 && lastRes?.corrected) c.append(el('div', 'cmt', '参考说法：' + lastRes.corrected));
     }
     if (sunGaveUp()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次，答案在下面。先记为“待巩固”，往下走，稍后会换个方向再测。`));
     if (canSkip()) c.append(el('div', 'cmt', `已连续答错 ${aiWrong} 次。如果觉得是识别不准，可以跳过（跳过后这个词算已通过，不再重测）`));
-    const ans = el('div', 'ans');
-    const r1 = el('div', 'arow'), t1 = el('div', 'tx'), r3 = el('div', 'arow'), t3 = el('div', 'tx');
-    t1.append(el('span', 'alab', '葡语单词'), el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
-    r1.append(t1, spk(w, 'word'));
-    t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
-    r3.append(t3, spk(w, 'sentence'));
-    const ib = imageBox(w, 'wimg', true);            // 配图夹在单词和例句之间
-    ans.append(r1); if (ib) ans.append(ib); ans.append(r3); c.append(ans);
-    appendSourceButton(c, w);
+    if (showAns) {                                   // 跟读失败且还没到公布条件：整块（含葡语单词、配图、例句）都不渲染
+        const ans = el('div', 'ans');
+        const r1 = el('div', 'arow'), t1 = el('div', 'tx'), r3 = el('div', 'arow'), t3 = el('div', 'tx');
+        t1.append(el('span', 'alab', '葡语单词'), el('div', 'apt', w.pt_word), el('div', 'azh', w.cn_meaning));
+        r1.append(t1, spk(w, 'word'));
+        t3.append(el('span', 'alab', '例句'), el('div', 'asen', w.pt_sentence), el('div', 'azh', w.cn_sentence));
+        const sb = spk(w, 'sentence'); sb.classList.add('s-spk'); r3.append(t3, sb);
+        const ib = imageBox(w, 'wimg', true);            // 配图夹在单词和例句之间
+        ans.append(r1); if (ib) ans.append(ib); ans.append(r3); c.append(ans);
+        appendSourceButton(c, w);
+    }
     if (sunMode) return c;                           // 周日以测代看不碰学习进度：不放“我已掌握”（它会改服务器进度）
     const mb = el('button', 'mbtn', '✅ 我已掌握（约一个月后再抽查）'); mb.type = 'button';
     mb.onclick = () => markMastered(mb);
@@ -498,6 +538,7 @@ function viewAssessmentScene() {
     return s.root;
 }
 function canUseAssessmentScene(w) {
+    if (w && w.mode === 5) return false;             // 跟读题不做场景
     return !!(w && w.scene_confirmed === true && ['noun', 'adjective', 'verb'].includes(w.pos) &&
         w.scene_ok === true && Scene?.canPlay(w));
 }
@@ -594,7 +635,9 @@ function viewDone() {
 function render() {
     const hold = $('#hold'), act = $('#act'), stage = $('#stage');
     const testing = state === 'test' || state === 'judging';
+    const shadowing = testing && cur?.mode === 5;              // 跟读题：测试中也要显示“提交”按钮（其他题型测试中只有“按住说话”）
     $('footer').hidden = state === 'scene';
+    $('footer').classList.toggle('sh', shadowing);             // 三个按钮挤一行时微调排版（见 words.css）
     hold.hidden = !testing;
     hold.disabled = state === 'judging';
     $('#reveal').hidden = !testing;                              // 测试中随时可以“公布答案”
@@ -602,7 +645,8 @@ function render() {
     $('#reveal').disabled = state === 'judging';
     $('#skip').hidden = !canSkip();
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
-    act.hidden = testing || state === 'loading' || state === 'scene';
+    act.hidden = (testing && !shadowing) || state === 'loading' || state === 'scene';
+    if (shadowing) act.disabled = state === 'judging' || !shadowText.trim();      // 文本框为空 / 识别或评判中：提交置灰（输入事件里直接切换，不 render）
     const sunIdle = state === 'idle' && previewOnly();
     $('#act2').hidden = !(state === 'done' || sunIdle);                              // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
     $('#act2').textContent = sunIdle ? '👀 只看列表' : '返回聊天';
@@ -610,13 +654,13 @@ function render() {
     const resultLabel = !lastRes ? '' : (!lastRes.passed && !sunGaveUp()) ? '🔁 再试一次'            // 没答对：停在这个词
         : isLast() ? '完成' : todoList.length ? '下一个' : '进入下一轮';              // 答对：本轮还有词 / 本轮最后一个但有错词要重测
     const idleLabel = !previewOnly() ? (state === 'idle' && dqSaved() ? '▶ 继续上次测试' : '领取今日任务') : !ss ? '🧪 开始以测代看' : ss.done ? '🔄 再测一遍' : '▶ 继续测试';
-    act.textContent = { idle: idleLabel, result: resultLabel, reveal: '🎤 开始说',
+    act.textContent = { idle: idleLabel, test: '✅ 提交', judging: '✅ 提交', result: resultLabel, reveal: '🎤 开始说',
         preview: summary ? '预习完成' : '看完了', done: sunMode ? '🔄 再测一遍' : '🔄 重新学习' }[state] || '';
     const idx = cur ? roundTotal - todoList.length : 0;            // 本轮第几个（cur 已从 todoList 取出）
     $('#prog').textContent = state === 'scene' ? (scenePurpose === 'assessment' ? `第 ${round} 轮 · ${idx}/${roundTotal} · 场景` : `预习 ${sceneIdx + 1}/${sceneWords.length}`) : testing || state === 'result' || state === 'reveal' ? `第 ${round} 轮 · ${idx}/${roundTotal}` : '';
     $('#bar i').style.width = state === 'scene' && scenePurpose === 'preview' ? (sceneIdx / sceneWords.length * 100) + '%' : sunMode ? (sunPct() * 100) + '%' : total ? (passed.size / total * 100) + '%' : '0';
     $('#app').classList.toggle('in-scene', state === 'scene');
-    stage.classList.toggle('top', state === 'preview' || state === 'scene' || (state === 'done' && !!summary?.sun && summary.weak.length > 0));   // 预习 / 待巩固列表可能很长，从顶部开始排，不居中
+    stage.classList.toggle('top', shadowing || state === 'preview' || state === 'scene' || (state === 'done' && !!summary?.sun && summary.weak.length > 0));   // 预习 / 待巩固列表可能很长，从顶部开始排，不居中
     stage.innerHTML = '';
     stage.append({ loading: viewLoading, idle: viewIdle, test: viewTest, judging: viewTest, reveal: viewReveal, result: viewResult, preview: viewPreview, scene: scenePurpose === 'assessment' ? viewAssessmentScene : viewScene, done: viewDone }[state]());
     if (state === 'preview' && previewFocusId != null) {            // 预习场景结束 / 退出后回到列表：定位到刚才那个词（只定位一次）
@@ -628,7 +672,7 @@ function render() {
 /* ---------- 流程 ---------- */
 async function fetchToday() {
     const d = await get(`/api/words/today?session_id=${enc(sid)}`);
-    d.words = (d.words || []).filter(w => w && w.id != null && w.pt_word && [1, 2, 3, 4].includes(w.mode));
+    d.words = (d.words || []).filter(w => w && w.id != null && w.pt_word && [1, 2, 3, 4, 5].includes(w.mode));
     d.preview = (d.preview || []).filter(w => w && w.id != null && w.pt_word);
     today = d;
 }
@@ -665,7 +709,7 @@ function resumeDay(s) {                            // 从日常测试断点继�
     sceneCur?.cancel(); sceneCur = null; scenePurpose = 'preview';
     warmMic();
     const byId = new Map(today.words.map(w => [w.id, w]));
-    const mk = ([id, mode, rq]) => byId.has(id) && [1, 2, 3, 4].includes(mode) ? { ...byId.get(id), mode, requeue: !!rq } : null;
+    const mk = ([id, mode, rq]) => byId.has(id) && [1, 2, 3, 4, 5].includes(mode) ? { ...byId.get(id), mode, requeue: !!rq } : null;
     todoList = s.todo.map(mk).filter(Boolean); failedList = s.failed.map(mk).filter(Boolean);
     passed.clear(); s.passed.forEach(id => passed.add(id));
     sceneSeen.clear(); s.seen.forEach(id => sceneSeen.add(id));
@@ -743,7 +787,7 @@ function next() {                                   // 取下一个待测词；�
     } else if (!todoList.length) {
         if (!failedList.length) { finish(); return; }
         // 下一轮只测本轮出过错的词，并把方向翻转（上轮说中文 → 这轮说葡语，反之亦然）；用拷贝，不改 today.words 里的原始 mode
-        todoList = failedList.map(w => ({ ...w, requeue: false, mode: w.mode === 3 ? 1 : (w.mode === 4 ? 2 : (w.mode === 1 ? 2 : 1)) })); failedList = []; round++; roundTotal = todoList.length;
+        todoList = failedList.map(w => ({ ...w, requeue: false, mode: w.mode === 5 ? 1 : (w.mode === 3 ? 1 : (w.mode === 4 ? 2 : (w.mode === 1 ? 2 : 1))) })); failedList = []; round++; roundTotal = todoList.length;
         toast(`第 ${round} 轮：重测 ${roundTotal} 个错词，换一种方向`);
     }
     if (sunMode) sunSave(false);                     // 断点：每个词开始前存一次（此刻 cur 还没取出，待测队列里含即将出的这个词）
@@ -757,13 +801,16 @@ function next() {                                   // 取下一个待测词；�
 }
 function showCurrentTest() {
     sceneCur?.cancel(); sceneCur = null; scenePurpose = 'preview';
+    shadowText = ''; shadowZh = false; shadowBusy = '';          // 换到新题：清空跟读文本框（retry 不走这里，保留）
     state = 'test'; render();
     if (cur?.mode === 1) speak(cur, 'word', $('#stage .spk'));
+    else if (cur?.mode === 5) speak(cur, 'sentence', $('#stage .sh-play'));   // 跟读：进题自动播放整句
 }
 function retry() {                                  // 没答对：停在同一个词、同一个方向，直到答对
     unlock();
-    lastRes = null; state = 'test'; render();
+    lastRes = null; state = 'test'; render();                    // 跟读的 shadowText 保留（用户在原文基础上改）
     if (cur.mode === 1) speak(cur, 'word', $('#stage .spk'));
+    else if (cur.mode === 5) speak(cur, 'sentence', $('#stage .sh-play'));
 }
 function skip() {                                   // 跳过：视为已通过——从本轮错词列表里移除并记为过关，后面的轮次不再重测
     if (!canSkip()) return;
@@ -797,6 +844,7 @@ function retestMode(w) {                            // 补测换题型：优先�
     if (w.mode === 1) return hasCloze ? 3 : 2;
     if (w.mode === 2) return hasCloze ? 3 : 1;
     if (w.mode === 3) return 2;                      // 刚做过填空 → 看中文说葡语
+    if (w.mode === 5) return hasCloze ? 3 : 2;       // 跟读 → 有填空就填空，否则看中文说葡语（后端不给 mode 5 带 cloze，实际总是 2）
     return hasCloze ? 3 : 1;                         // 造句 → 填空，没有填空就看葡语说中文
 }
 function markMissed(w) { if (!curMissed) { curMissed = true; if (!failedList.some(x => x.id === w.id)) failedList.push(w); } }   // 同一个词本轮只进一次错词列表，反复答错不重复加
@@ -816,6 +864,65 @@ async function evaluateSceneChoice(w, selectedWordId) {       // 场景里 word_
     return d;
 }
 
+async function applyJudged(w, d) {                  // 拿到评判结果之后的共用处理（语音评判 evaluate 与跟读提交 submitShadow 都走这里）
+    if (d.earned) roundScore = d.round_score || (roundScore + 1);
+    else if (d.round_score != null) roundScore = d.round_score;
+    if (d.earned) await refreshPoints(); else renderPoints();
+    attempts++; lastRes = d;
+    if (d.passed) {
+        noteOutcome(w);
+        if (curRevealed && !w.requeue && todoList.length && !(sunMode && round === 1)) {   // 公布答案后重答对：隔一个词就在本轮再测一次（同方向；只补测一次）；它仍留在错词列表里，下一轮照样重测
+            todoList.splice(Math.min(1, todoList.length), 0, { ...w, mode: retestMode(w), requeue: true }); roundTotal++;
+        }
+        if (!curMissed && !w.requeue) {         // 这一轮里一次就答对（补测不算）：过关，后面的轮次不再出现
+            passed.add(w.id);
+            if (round === 1) firstPass++;
+            else if (sunMode && round === 2) pass2++;
+        }
+    } else {
+        aiWrong++;                              // AI 判错一次；同一个词累计到 SKIP_AFTER 次就可以跳过
+        markMissed(w);                          // 进入本轮的错词列表；当前词不前进，等用户“再试一次”
+        if (sunMode && aiWrong >= SKIP_AFTER) weak.add(w.id);    // 周日：同一个词在某一轮连错两次 → 待巩固
+        const ut = w.mode === 5 ? shadowText.slice(0, 200) : (d.recognized_text || '');   // 跟读：记用户写的文本
+        if (!sunMode) post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: ut })
+            .catch(err => toast('错题记录失败：' + err.message));
+    }
+    dqSave(!!d.passed);                         // 答对 = 这个词已处理完，恢复时直接进下一个；答错 = 恢复后停在这个词重说
+    state = 'result'; render();
+    playSfx(d.passed);
+    if (!d.passed && w.mode !== 5) speakAfterSfx(w);   // 答错：失败音效播完后直接朗读这个词的葡语（跟读题不读：失败时不能泄露答案）
+}
+async function transcribeShadow(blob, ext) {         // 跟读：录音只转文字，结果覆盖文本框，不自动提交、不判分
+    const w = cur;
+    shadowBusy = 'transcribe'; state = 'judging'; render();
+    const fd = new FormData();
+    fd.append('audio', blob, 'rec.' + ext); fd.append('word_id', w.id);
+    try {
+        const d = await req('/api/words/shadow/transcribe', fd, 'POST', EVAL_TIMEOUT_MS);
+        if (cur !== w || state !== 'judging') return;      // 期间已切走（比如退出页面）
+        shadowText = String(d.text || '').slice(0, 300);
+    } catch (err) {
+        if (cur !== w || state !== 'judging') return;
+        toast(err.message);                                 // 没听清 / 识别故障：文本框内容保持不变
+    }
+    shadowBusy = ''; state = 'test'; render();
+}
+async function submitShadow() {                      // 跟读：提交文本框内容，服务端用自己取的原句比对
+    const w = cur;
+    if (state !== 'test' || !w) return;
+    if (!shadowText.trim()) return toast('请先输入或录入句子');
+    shadowBusy = 'submit'; state = 'judging'; render();
+    const fd = new FormData();
+    fd.append('word_id', w.id); fd.append('ex', w.ex || 0); fd.append('text', shadowText);
+    if (!sunMode && runId) { fd.append('session_id', sid); fd.append('run_id', runId); }
+    try {
+        const d = await req('/api/words/shadow/evaluate', fd, 'POST', EVAL_TIMEOUT_MS);
+        shadowBusy = '';
+        await applyJudged(w, d);
+    } catch (err) {                                  // 网络 / 服务故障：不算答错，留在当前题，文本框内容保留
+        shadowBusy = ''; toast(err.message); state = 'test'; render();
+    }
+}
 async function evaluate(blob, ext) {
     const w = cur;
     state = 'judging'; render();
@@ -824,31 +931,7 @@ async function evaluate(blob, ext) {
     if (!sunMode && runId) { fd.append('session_id', sid); fd.append('run_id', runId); }
     try {
         const d = await req('/api/words/evaluate', fd, 'POST', EVAL_TIMEOUT_MS);
-        if (d.earned) roundScore = d.round_score || (roundScore + 1);
-        else if (d.round_score != null) roundScore = d.round_score;
-        if (d.earned) await refreshPoints(); else renderPoints();
-        attempts++; lastRes = d;
-        if (d.passed) {
-            noteOutcome(w);
-            if (curRevealed && !w.requeue && todoList.length && !(sunMode && round === 1)) {   // 公布答案后重答对：隔一个词就在本轮再测一次（同方向；只补测一次）；它仍留在错词列表里，下一轮照样重测
-                todoList.splice(Math.min(1, todoList.length), 0, { ...w, mode: retestMode(w), requeue: true }); roundTotal++;
-            }
-            if (!curMissed && !w.requeue) {         // 这一轮里一次就答对（补测不算）：过关，后面的轮次不再出现
-                passed.add(w.id);
-                if (round === 1) firstPass++;
-                else if (sunMode && round === 2) pass2++;
-            }
-        } else {
-            aiWrong++;                              // AI 判错一次；同一个词累计到 SKIP_AFTER 次就可以跳过
-            markMissed(w);                          // 进入本轮的错词列表；当前词不前进，等用户“再试一次”
-            if (sunMode && aiWrong >= SKIP_AFTER) weak.add(w.id);    // 周日：同一个词在某一轮连错两次 → 待巩固
-            if (!sunMode) post('/api/words/record_error', { session_id: sid, word_id: w.id, mode: w.mode, user_text: d.recognized_text || '' })
-                .catch(err => toast('错题记录失败：' + err.message));
-        }
-        dqSave(!!d.passed);                         // 答对 = 这个词已处理完，恢复时直接进下一个；答错 = 恢复后停在这个词重说
-        state = 'result'; render();
-        playSfx(d.passed);
-        if (!d.passed) speakAfterSfx(w);            // 答错：失败音效播完后直接朗读这个词的葡语
+        await applyJudged(w, d);
     } catch (err) {                                 // 没听清 / 识别或大模型故障：不算答错，留在当前题让用户重说
         toast(err.message); state = 'test'; render();
     }
@@ -877,12 +960,14 @@ function reveal() {                                 // 不会就直接看答案�
         .catch(err => toast('错题记录失败：' + err.message));
     dqSave(false);
     state = 'result'; render();
-    speak(w, 'word', $('#stage .spk'));                     // 公布答案：无论哪种方向，都直接朗读这个词的葡语
+    if (w.mode === 5) speak(w, 'sentence', $('#stage .s-spk'));   // 跟读：公布答案后读整句
+    else speak(w, 'word', $('#stage .spk'));                     // 公布答案：无论哪种方向，都直接朗读这个词的葡语
 }
 $('#reveal').onclick = reveal;
 $('#skip').onclick = skip;
 $('#act').onclick = () => {
     if (state === 'idle') start();
+    else if (state === 'test' && cur?.mode === 5) submitShadow();            // 跟读：提交文本框
     else if (state === 'reveal') { unlock(); state = 'test'; render(); }       // 周日：看完答案，盖住开始说
     else if (state === 'result') { if (lastRes?.passed || sunGaveUp()) next(); else retry(); }
     else if (state === 'preview') previewDone();   // 纯浏览：看完回到首页
@@ -1002,7 +1087,8 @@ holdBtn.addEventListener('pointerdown', async e => {
             releaseMic();                                                       // 下次按住会用新申请的流
             return toast('没录上，请再说一次');
         }
-        evaluate(blob, MIME.includes('mp4') ? 'm4a' : 'webm');
+        if (cur?.mode === 5) transcribeShadow(blob, MIME.includes('mp4') ? 'm4a' : 'webm');   // 跟读：只转文字，填进文本框
+        else evaluate(blob, MIME.includes('mp4') ? 'm4a' : 'webm');
     };
     try { rec.start(); }
     catch (err) { console.warn('rec.start 失败', err); releaseMic(); toast('录音启动失败，请再按一次'); micFail(); }   // 不兜底的话 preparing 永远是 true，按钮就彻底按不动

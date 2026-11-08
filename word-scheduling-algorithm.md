@@ -59,7 +59,7 @@ WordMemorizer(C# 管理端)                         陪练后端                
 | 参数 | 值 | 含义 |
 |---|---|---|
 | `WEEK_SIZE` | 30 | 每周新词数（仅参考，`word_week` 不再按它截断） |
-| `WORKLOAD` | 25 | 一天总量上限（复习 + 新词） |
+| `WORKLOAD` | 20 | 一天总量上限（复习 + 新词） |
 | `NEW_MIN` / `NEW_MAX` | 3 / 10 | 每天新词数下限 / 上限 |
 | `REVIEW_MAX` | 15 | 工作日复习上限 |
 | `WEEKEND_REVIEW_MAX` | 8 | 周末复习上限 |
@@ -77,6 +77,10 @@ WordMemorizer(C# 管理端)                         陪练后端                
 | `SENTENCE_ENABLED` / `SENTENCE_MAX` | True / 3 | 造句（mode 4）开关 / 一天最多几道 |
 | `SENTENCE_BOX_MIN` | 3 | 造句：复习词 box ≥ 3 才有资格 |
 | `SENTENCE_LOW_RATE` | 0.5 | box 3 的词有多大比例改成造句（其余留给填空） |
+| `SHADOW_ENABLED` | False | 跟读（mode 5）总开关；前端上线后才改 True |
+| `SHADOW_MAX` | 3 | 跟读：一天最多几道 |
+| `SHADOW_BOX_MIN` / `SHADOW_BOX_MAX` | 1 / 2 | 跟读：复习词 box 范围（含两端） |
+| `SHADOW_MIN_WORDS` / `SHADOW_MAX_WORDS` | 3 / 14 | 跟读：句子词数范围（`norm_pt` 后按空格数） |
 | `CHAT_FOCUS_NEW` | 2 | 聊天联动里「新词」名额 |
 
 ---
@@ -170,7 +174,7 @@ WordMemorizer(C# 管理端)                         陪练后端                
    候选 = 本周词表里、未掌握、`box < 4`、且今天没被选进复习的词。**mode 固定为 2**（看中文说葡语）。
 4. **新词（new）**
    `pending` = 本周词表里还没进 `word_progress` 的词。
-   每天配额 `calc_new_quota`（第 229 行）：`ceil(剩余新词 / 本周剩余工作日)` 为基准；昨日通过率 < 0.6 → −2，> 0.9 → +1；再受「`25 − 已有复习数`」限制；最后夹在 3~10。周末为 0。
+   每天配额 `calc_new_quota`（第 229 行）：`ceil(剩余新词 / 本周剩余工作日)` 为基准；昨日通过率 < 0.6 → −2，> 0.9 → +1；再受「`20 − 已有复习数`」限制；最后夹在 3~10。周末为 0。
    mode 由 `assign_new_modes`（第 184 行）决定。
 5. **预习（preview）**
    周日：本周全部 `pending`（只看不测）。工作日：把「明天大概要学」的几个（≤ 8）摆出来。
@@ -186,8 +190,8 @@ WordMemorizer(C# 管理端)                         陪练后端                
 
 - 从 `word_source.get_word` 取词文本；词库里找不到的词跳过并记 warning。
 - **mode 3**：
-  - 没有生成例句 → 用词库原例句 `make_cloze` 挖空；**挖不出空就把 mode 降为 2**（不回写计划表，每次读取重新判定）。
-  - 有生成例句 → 候选池 = 原例句(idx 0) + 启用的生成例句，读取时逐条 `make_cloze` 重新校验；`pick_example` 轮换（同一天稳定）；池为空才降级为 2。选中后写 `word_example_use`。
+    - 没有生成例句 → 用词库原例句 `make_cloze` 挖空；**挖不出空就把 mode 降为 2**（不回写计划表，每次读取重新判定）。
+    - 有生成例句 → 候选池 = 原例句(idx 0) + 启用的生成例句，读取时逐条 `make_cloze` 重新校验；`pick_example` 轮换（同一天稳定）；池为空才降级为 2。选中后写 `word_example_use`。
 - 例句表读取异常一律吞掉并退回只用原例句，绝不让 `/today` 失败。
 
 ### 步骤 ④ 答题与判分 —— `/words/evaluate`
@@ -236,9 +240,9 @@ outcome =
 
 - 接口：`word_routes.py` 第 205 行。服务端 `total` 取计划里的词数，**不信前端**；结算异常只记日志，不影响「完成」记录。
 - `settle`：`word_progress_manager.py` 第 254 行。
-  - 只认今天计划里的词（`allowed`），不信前端传的 id。
-  - 已掌握的词直接跳过。
-  - `INSERT OR IGNORE INTO word_outcomes`，**插入成功才更新进度**，所以同一词同一天只结算一次。重新学习再提交会被忽略。
+    - 只认今天计划里的词（`allowed`），不信前端传的 id。
+    - 已掌握的词直接跳过。
+    - `INSERT OR IGNORE INTO word_outcomes`，**插入成功才更新进度**，所以同一词同一天只结算一次。重新学习再提交会被忽略。
 - `apply_outcome`：`word_planner.py` 第 103 行，真正的升降规则：
 
 | outcome | box | lapses | hard_streak | streak | 下次到期 |
@@ -401,3 +405,19 @@ WHERE p.session_id = '你的智能体名' AND p.mastered = 1
 - **新增列照既有模式**：`word_progress_manager.init_db()` 用 `PRAGMA table_info` 检测缺列自动 `ALTER TABLE`，旧库不需要删。
 - **备份**：必须用 `tools/backup_db.py`（SQLite backup API），不要直接复制 `.db`（WAL 开启）。
 - **别顺手放宽的设计**：聊天联动封顶 box 3；`validate_example` 不要为了通过而放宽；`settle` 只认服务端计划里的词。
+
+---
+
+## 12. 跟读题（mode 5）
+
+听一遍整句 → 复述（录音只转文字，可改字）→ 提交后服务端用**自己取的原句**做词级比对（纯规则，不调 LLM；判分见 `memory/shadow_judge.py`）。
+
+- **出题条件**（`build_today_plan` 末尾的后处理，仅 `SHADOW_ENABLED=True` 时执行）：
+  `kind == "review"`、当前 mode 为 1 或 2（已被改成 3 / 4 的不碰）、未掌握、`SHADOW_BOX_MIN ≤ box ≤ SHADOW_BOX_MAX`（1~2）、`lapses < STUBBORN_LAPSES`、`last_outcome != "again"`。
+  新词、周五回顾（weekly）、周六加练（extra）这一版**不出**。
+- **每日上限**：`SHADOW_MAX = 3`。候选按 `_mix01(word_id, "shadow" + 日期)` 升序取前几个：同一天重复生成结果相同，换一天换不同的词。
+- **句子来源与降级**（`word_routes._load_words`）：候选池 = 词库原例句（idx 0）+ 启用的生成例句，只留词数在 3~14 之间的（**不要求能挖空**），用 `pick_example` 轮换（与填空共用 `word_example_use`）。池为空 → 该词降级为 mode 2（不带 `ex`，不回写计划表）。mode 5 的词不带 `cloze`。
+- **进度结算**：照常走 `settle` / `apply_outcome`；**mode 5 答对不会置位 `mode2_ok`**（`apply_outcome` 只对 mode 2 / 3 / 4 置位，故意不改）。答对按葡语题给积分。
+- **失败后的重测方向**：5 → 1（前端处理，见前端第 3 步）。
+- **回退**：`SHADOW_ENABLED = False` 后重启。当天已落库的计划不变；已落库的 mode 5 在后端仍能正常展开，但**前端若是旧版会过滤掉 mode 5**，所以关开关前不要回退前端。
+- **排查**：`SELECT plan_date, word_id, kind, mode FROM word_daily_plan WHERE session_id='…' AND mode=5;`
