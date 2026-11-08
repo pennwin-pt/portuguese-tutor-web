@@ -7,7 +7,7 @@
 - 前端代码: portuguese-tutor-web.zip
 - 数据库: sessions.db
 
-你帮我查一下，我这个前端代码部署在一个nginx上，然后我用android studio打包了一个只访问这个网站的apk.
+我这个前端代码部署在一个nginx上，然后我用android studio打包了一个只访问这个网站的apk.
 
 你不需要过分帮我测试，直接把写好的代码交给我来测试就行.
 
