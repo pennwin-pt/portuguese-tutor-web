@@ -413,9 +413,10 @@ WHERE p.session_id = '你的智能体名' AND p.mastered = 1
 听一遍整句 → 复述（录音只转文字，可改字）→ 提交后服务端用**自己取的原句**做词级比对（纯规则，不调 LLM；判分见 `memory/shadow_judge.py`）。
 
 - **出题条件**（`build_today_plan` 末尾的后处理，仅 `SHADOW_ENABLED=True` 时执行）：
-  `kind == "review"`、当前 mode 为 1 或 2（已被改成 3 / 4 的不碰）、未掌握、`SHADOW_BOX_MIN ≤ box ≤ SHADOW_BOX_MAX`（1~2）、`lapses < STUBBORN_LAPSES`、`last_outcome != "again"`。
+  `kind == "review"`、当前 mode 为 1 或 2（已被改成 3 / 4 的不碰）、未掌握、`SHADOW_BOX_MIN ≤ box ≤ SHADOW_BOX_MAX`（1~2）。
+  **顽固词（`lapses ≥ STUBBORN_LAPSES`）和上次 `again` 的词也有资格，并且优先抽中**（跟读比回忆容易，适合拿来巩固它们）；其余词按稳定随机顺序补满名额。
   新词、周五回顾（weekly）、周六加练（extra）这一版**不出**。
-- **每日上限**：`SHADOW_MAX = 3`。候选按 `_mix01(word_id, "shadow" + 日期)` 升序取前几个：同一天重复生成结果相同，换一天换不同的词。
+- **每日上限**：`SHADOW_MAX = 3`。候选先按「顽固 / 上次 again 优先」，再按 `_mix01(word_id, "shadow" + 日期)` 升序取前几个：同一天重复生成结果相同，换一天换不同的词。
 - **句子来源与降级**（`word_routes._load_words`）：候选池 = 词库原例句（idx 0）+ 启用的生成例句，只留词数在 3~14 之间的（**不要求能挖空**），用 `pick_example` 轮换（与填空共用 `word_example_use`）。池为空 → 该词降级为 mode 2（不带 `ex`，不回写计划表）。mode 5 的词不带 `cloze`。
 - **进度结算**：照常走 `settle` / `apply_outcome`；**mode 5 答对不会置位 `mode2_ok`**（`apply_outcome` 只对 mode 2 / 3 / 4 置位，故意不改）。答对按葡语题给积分。
 - **失败后的重测方向**：5 → 1（前端处理，见前端第 3 步）。

@@ -27,7 +27,7 @@ portuguese-tutor-server/   FastAPI 后端(Windows 本机跑,nginx 反代,start_s
             image_engine(Cloudflare FLUX / Pollinations)  image_caption(Pillow 给配图贴字)
   memory/   session_manager user_manager vocab_manager newword_manager chat_words pt_text
             word_source(词源,只读)  word_planner(调度纯函数)  word_progress_manager(进度/计划/结算)
-            word_task_manager(完成记录)  word_error_manager  word_example_manager(多例句)
+            word_task_manager(完成记录)  word_error_manager  word_example_manager(多例句)  shadow_judge(跟读判分,纯函数)
             word_image_manager(配图表+磁盘)  word_image_gen(配图流水线)
             word_pic_audio_uploader(同步到公网图库 word-pic-audio)  lychee_uploader(旧,已无生产调用,仅测试在用)
             wm_manager(WordMemorizer 6 张表的全部 SQL)  wm_calendar(周/周序号,等价 .NET)  scene_registry(场景模板注册+校验)
@@ -35,7 +35,7 @@ portuguese-tutor-server/   FastAPI 后端(Windows 本机跑,nginx 反代,start_s
   scenes/   *.json 场景模板(32 个,见 §14)
   tools/    gen_examples gen_images caption_images backup_db reset_week diag_week find_word_id adjective_enable_report
             merge_wordmemorizer sync_word_pic_audio regenerate_gallery_audio gen_customized_picture validate_scenes
-            test_*.py(各阶段/模块测试,不调真实 LLM/TTS/ASR)  scene_registry.py(⚠ 与 memory/ 里那份有 4 行差异的旧拷贝,以 memory/ 为准)
+            test_*.py(各阶段/模块测试,不调真实 LLM/TTS/ASR;跟读相关:test_shadow_judge / test_shadow_plan)  scene_registry.py(⚠ 与 memory/ 里那份有 4 行差异的旧拷贝,以 memory/ 为准)
   docs/word-scheduling-algorithm.md(调度算法文档,部分过时)  deploy.md  README.md(过时)  每周日操作清单.md(部分过时)
 portuguese-tutor-web/      纯静态前端(无构建、无框架)
   index.html css/index.css css/touch-protection.css js/index.js                    聊天页
@@ -113,16 +113,16 @@ Faster-Whisper 懒加载单例 + `asyncio.Lock` 双检锁;`startup` 预加载。
 - **预习里点"我已掌握"**(`POST /words/mark_mastered`)会调 `drop_from_future_plans`,把该词从**今天之后已落库**的计划里删掉(目前只有周五生成的周六计划)。今天及以前的计划不动。
 - 前端周五文案:"明天(周六)练的是:到期要复习的词,加上这周还没掌握牢固的词。"周五第一次完成时 `waitPreview`:`/complete` 返回后重新 `GET /today` 取预习。
 - 计划**当天第一次请求时生成并固定**(`word_daily_plan`,刷新/重新学习都不变),主键 `(session_id, plan_date, word_id)`,`kind` 含 `preview`。**空计划不落库**。
-- 单词配额 `calc_new_quota(review_count, yesterday_rate, remaining_new, days_left)`:进度基准 `ceil(remaining_new/days_left)`,再按昨天一次通过率(`RATE_LOW=0.6`/`RATE_HIGH=0.9`)与复习负担微调,夹在 `[NEW_MIN=3, NEW_MAX=10]`,且总量不超 `WORKLOAD=20`。今天少学的会通过明天的基准自动补回;周五学不完的顺延下周。**`PREVIEW_MAX` 已删除**(旧文档里还有),预习数量 = 对明天配额的估算(上限 `NEW_MAX`)。
+- 单词配额 `calc_new_quota(review_count, yesterday_rate, remaining_new, days_left)`:进度基准 `ceil(remaining_new/days_left)`,再按昨天一次通过率(`RATE_LOW=0.6`/`RATE_HIGH=0.9`)与复习负担微调,夹在 `[NEW_MIN=3, NEW_MAX=10]`,且总量不超 `WORKLOAD=25`。今天少学的会通过明天的基准自动补回;周五学不完的顺延下周。**`PREVIEW_MAX` 已删除**(旧文档里还有),预习数量 = 对明天配额的估算(上限 `NEW_MAX`)。
 - 前端 `KIND_LABEL`:🆕新词 / 🔁复习 / 📅本周回顾 / 💪周六加练 / 👀先看后测(preview)。
 
 ## 6. 调度算法(`memory/word_planner.py`,纯函数,不碰数据库)
 Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_date、streak、lapses、hard_streak、introduced_on、last_mode、last_outcome、mode2_ok、mastered、mastery_review_on)。
 
-**参数(集中在文件顶部,改参数只改这里)**:`WEEK_SIZE=30`(仅参考) `WORKLOAD=20` `NEW_MIN/MAX=3/10` `REVIEW_MAX=15` `WEEKEND_REVIEW_MAX=8` `INTERVALS={1:1,2:2,3:4,4:7,5:14}`(box→下次间隔,工作日) `MASTER_BOX=4` `MASTER_REVIEW_DAYS=30` `RATE_LOW/HIGH=0.6/0.9` `STUBBORN_LAPSES=3` `WEAK_LAPSES=2` `WEAK_HARD_STREAK=2` `LAPSE_DECAY_STREAK=2` `SATURDAY_MAX=10` `CLOZE_BLANK="____"` `CLOZE_MAX=6` `CLOZE_ENABLED=True` `SENTENCE_ENABLED=True` `SENTENCE_MAX=3` `SENTENCE_BOX_MIN=3` `SENTENCE_LOW_RATE=0.5` `CHAT_FOCUS_NEW=2`。
+**参数(集中在文件顶部,改参数只改这里)**:`WEEK_SIZE=30`(仅参考) `WORKLOAD=25` `NEW_MIN/MAX=3/10` `REVIEW_MAX=15` `WEEKEND_REVIEW_MAX=8` `INTERVALS={1:1,2:2,3:4,4:7,5:14}`(box→下次间隔,工作日) `MASTER_BOX=4` `MASTER_REVIEW_DAYS=30` `RATE_LOW/HIGH=0.6/0.9` `STUBBORN_LAPSES=3` `WEAK_LAPSES=2` `WEAK_HARD_STREAK=2` `LAPSE_DECAY_STREAK=2` `SATURDAY_MAX=10` `CLOZE_BLANK="____"` `CLOZE_MAX=6` `CLOZE_ENABLED=True` `SENTENCE_ENABLED=True` `SENTENCE_MAX=3` `SENTENCE_BOX_MIN=3` `SENTENCE_LOW_RATE=0.5` `CHAT_FOCUS_NEW=2`;跟读(§10):`SHADOW_ENABLED=False`(**开关在 word_planner 顶部,不在 config**)`SHADOW_MAX=3` `SHADOW_BOX_MIN/MAX=1/2` `SHADOW_MIN_WORDS/MAX_WORDS=3/14`。
 
 **outcome**:`good` 一次答对 | `hard` 答错后重试才对 | `again` 公布答案或被判错 ≥2 次 | `skipped` 跳过。`apply_outcome`:
-- good:box+1(≤5),streak+1,hard_streak 清零;每连续答对 `LAPSE_DECAY_STREAK` 次 lapses−1(最低 0);mode 2/3/4 答对置 `mode2_ok=1`。
+- good:box+1(≤5),streak+1,hard_streak 清零;每连续答对 `LAPSE_DECAY_STREAK` 次 lapses−1(最低 0);mode 2/3/4 答对置 `mode2_ok=1`(**mode 5 跟读不置位**,故意的)。
 - hard:box=max(1,box),streak 清零,hard_streak+1。
 - again:box=max(1,box−2),lapses+1,streak/hard_streak 清零;mode 2 的 again 令 `mode2_ok=0`;`due=下一个工作日`。
 - skipped:当天算通过但不升级(box=max(1,box),streak/hard_streak 不动)。
@@ -132,7 +132,7 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 
 **手动"我已掌握"**(`master_row`):box 拉满、`mode2_ok=1`、`mastered=1`、`hard_streak=0`;`MASTER_REVIEW_DAYS>0` 时写 `mastery_review_on = due_date = review_date(today, 30)`(自然日,落周末顺延到工作日)。到期回顾:`build_today_plan` 的到期复习里,`mastered` 且 `mastery_review_on<=today` 的词也进 `kind=review`(不出造句);回顾结算:仍掌握(good/skipped)→ 再隔 30 天,hard → 15 天,again 掉出掌握 → 清空 `mastery_review_on` 回到普通复习。**只有手动点"我已掌握"的词会回顾**,自然毕业(box≥4)的词 `mastery_review_on` 永远为空;功能上线前就手动掌握的旧词不会补排;`MASTER_REVIEW_DAYS=0` 回退旧行为。聊天联动/预习/周五回顾/周六加练仍排除 mastered 词。
 
-**mode 选择**(`choose_mode`):新词第一遍 `choose_new_mode`(短词偏 mode1、长词/短语偏 mode2,按 id 稳定抖动;≥4 个词全同向时隔一个翻转);`lapses≥3` 或上次 again → 1;`CLOZE_ENABLED` 且 `box==3 且 last_outcome=="good"` → 3;`box≥2` → `last_outcome=="good"` 则 2 否则 1;其余按新词规则。mode 4 造句由 `build_today_plan` 后处理改写(§10)。
+**mode 选择**(`choose_mode`):新词第一遍 `choose_new_mode`(短词偏 mode1、长词/短语偏 mode2,按 id 稳定抖动;≥4 个词全同向时隔一个翻转);`lapses≥3` 或上次 again → 1;`CLOZE_ENABLED` 且 `box==3 且 last_outcome=="good"` → 3;`box≥2` → `last_outcome=="good"` 则 2 否则 1;其余按新词规则。mode 4 造句、mode 5 跟读都不由本函数产生,由 `build_today_plan` 后处理改写(§10)。
 
 **排序**`priority = overdue天数 + 2*lapses + (5-box)`;到期复习里顽固词(lapses≥3)排最前。
 
@@ -148,7 +148,7 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 
 ## 9. 单词任务前端(words.*)
 - 纯前端状态机:`loading → idle → test ⇄ judging → result → …`,另有 `preview`(只看不评分)、`done`(今日已完成,可重新学习)。进度只在内存,中途退出弹确认且不保留;计划不变、可重新领取。
-- 题型 `mode`:1 看葡语说中文|2 看中文说葡语|3 句子填空(`viewCloze`,**不自动朗读、无喇叭**,否则泄露答案)|4 造句。**`fetchToday` 的 mode 白名单是 `[1,2,3,4]`**(前端 AGENTS.md 里写的 `[1,2,3]` 已过时)。重测方向翻转:`1→2, 2→1, 3→1, 4→2`。
+- 题型 `mode`:1 看葡语说中文|2 看中文说葡语|3 句子填空(`viewCloze`,**不自动朗读、无喇叭**,否则泄露答案)|4 造句|5 跟读(§10)。**`fetchToday` / `resumeDay` 的 mode 白名单是 `[1,2,3,4,5]`**(前端 AGENTS.md 里写的 `[1,2,3]` 已过时)。重测方向翻转:`1→2, 2→1, 3→1, 4→2, 5→1`。
 - 逐词练:答错/公布答案后停在同一词同一方向,按钮变"🔁 再试一次",答对才"下一个"。**只有一次就答对的词才进 `passed`**,出过错的进 `failedList`(每词每轮一次);本轮测完后 `failedList` 用 `{...w, mode}` 拷贝翻转成下一轮,**不要改 `today.words`**;`failedList` 为空才 `finish()`。
 - `outcomes` 只记第 1 轮:good/hard/again/skipped;`finish()` 时 `POST /words/complete`,服务器 `total` 以计划为准。公布答案 `#reveal`:纯前端,按答错处理(进 `failedList`)、调 `record_error`、不计 `attempts`、不播失败音效、自动朗读、记 `again`。跳过 `#skip`:同词本轮被 AI 判错 ≥ `SKIP_AFTER=2` 次才出现,记 `skipped`、从 `failedList` 移除、不计 `firstPass`。**没听清/ASR 空结果(422)和公布答案都不算 AI 判错**,不计入 `aiWrong`。
 - 用户在结果页点"✅ 我已掌握"(`POST /words/mark_mastered`):前端同时把该词从本轮 `outcomes`/`failedList` 移除;**周日以测代看不放此按钮**。
@@ -158,7 +158,7 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 - 单词页麦克风 `getMic()` 整个测试期间复用同一个 MediaStream(`begin()` 预热;`finish()`/切后台/`pagehide` 时 `releaseMic()`;`onstop` 里**不要 stop 轨道**;按下时流被系统静音要 `waitMicLive` 等 1.5s)。
 - 来源按钮:`GET /api/words/source-image/{n}` 读 WordMemorizer 来源图 `N.jpg`(`config.WORD_SOURCE_IMAGE_DIR`,编号只能映射为固定目录里的 `N.jpg`)。
 
-## 10. 句子填空(mode 3)与造句(mode 4)
+## 10. 句子填空(mode 3)、造句(mode 4)与跟读(mode 5)
 **填空**
 - 显示挖空例句(`____`)+ 中文翻译 + 提示,用户只说缺的词。仅 `kind=review`;`choose_mode` 在"顽固/上次 again → 1"之后、"box≥2"之前,`box==3 且 last_outcome=="good"` → 3;一天最多 `CLOZE_MAX`;非 review 的 mode 3 一律降为 2(`build_today_plan` 末尾后处理)。
 - 挖空 `make_cloze`:整词精确匹配、忽略大小写(重音敏感)、去掉 `pt_word` 括号备注、只换第一处;`_load_words` 里对 mode 3 构造 `cloze`,**找不到就把该词降为 mode 2 且不带 `cloze`**(不回写计划表)。
@@ -169,12 +169,21 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 - 看目标词说一整句。`_judge_sentence`:少于 2 个词直接判错(不调 LLM)→ 规则(整词匹配目标词)→ LLM(词义/用法/改正),返回 `corrected`(**只有 mode 4 的 evaluate 响应带**);`WORD_PT_USE_LLM=False` 或 LLM 出错退回规则,LLM 返回解析失败 502。
 - 出题(`build_today_plan` 后处理改写):只给 box ≥ `SENTENCE_BOX_MIN`(3)且未掌握的复习词和周六加练词;box 3 的词在填空/造句之间按 `SENTENCE_LOW_RATE` 稳定分流(词 id+日期);一天最多 `SENTENCE_MAX`;`SENTENCE_ENABLED` 总开关。
 
+**跟读(mode 5,`word_planner.SHADOW_ENABLED`,默认 False)**
+- **玩法**:进题自动播整句(`GET /words/{id}/audio?kind=sentence&ex=N`),喇叭可重听;用户按住说话(录音**只转文字**,填进可编辑文本框,不判分)或直接打字;点「提交」后服务端用**自己取的原句**与文本做词级比对。失败时**不显示答案**,只标出写错的词(缺词只显示 `＿`);通过 / 公布答案 / 连错 `SKIP_AFTER` 次才露出原句。
+- **出题**(`build_today_plan` 末尾后处理,仅开关打开时):`kind=review`、当前 mode 为 1/2、未掌握、box 1~2;**顽固词(lapses≥3)/ 上次 again 的词也有资格且优先抽中**(跟读比回忆容易,适合巩固它们),其余按 `_mix01(词id,'shadow'+日期)` 稳定顺序补满;一天 ≤ `SHADOW_MAX`=3。新词 / 周五回顾 / 周六加练这一版不出。计划在当天第一次 `/today` 生成并落库(周六计划在周五完成时生成),所以**改开关后当天已落库的计划不变**。
+- **句子**(`word_routes._load_words` 的 mode 5 分支):候选 = 原例句(idx 0)+ 启用的生成例句,只留 `SHADOW_MIN_WORDS`~`SHADOW_MAX_WORDS`(3~14)词的,**不要求能挖空**;`pick_example` 轮换并写 `word_example_use`(与 mode 3 共用);池空 → 降级 mode 2(不带 `ex`)。mode 5 的词**不带 `cloze`**,所以公布答案后的补测实际总是 mode 2。
+- **接口**:`POST /words/shadow/transcribe`(FormData `audio,word_id` → `{text}`;ASR 用 `ASR_PROMPT_PT`,**绝不放原句**)、`POST /words/shadow/evaluate`(FormData `word_id,ex,text≤300,session_id?,run_id?` → `{word_id,mode:5,passed,recognized_text,comment,tokens:[{w,s}],earned?,round_score?}`,`s`∈ok|wrong|extra|missing|accent)。判分 `memory/shadow_judge.judge_shadow`:纯规则(`pt_text.norm_pt` 归一 → difflib 词级对齐,不调 LLM);只差重音默认通过并标黄(`config.SHADOW_ACCENT_STRICT=False`);允许错词数 `config.SHADOW_MAX_WORD_ERRORS=0`。积分走模块级 `_award_if_passed`(与 `/words/evaluate` 共用)。`settle` / `OutcomeItem.mode` / `RecordErrorBody.mode` 已放开到 5;`apply_outcome` **不改**:mode 5 答对不置位 `mode2_ok`。
+- **前端(`words.js` / `words.css`)**:`viewShadow`(页面上**不渲染** pt_sentence / pt_word / cloze)、`transcribeShadow`、`submitShadow`、`applyJudged`(从 `evaluate` 抽出的共用结果处理);状态 `shadowText`(文本框值必须存模块变量:`render()` 每次重建 DOM,输入事件里不能 render)、`shadowZh`、`shadowBusy`;mode 5 测试态 `#act` 显示「✅ 提交」,`footer.sh` 微调三按钮排版;失败后不 `speakAfterSfx`(不泄露答案);失败重测方向 5→1;`canUseAssessmentScene` 对 mode 5 返回 false;`rec.onstop` 里 `cur.mode===5` 才分支到 `transcribeShadow`,录音逻辑本身不动。
+- **上线顺序**:先发前端(旧前端会过滤掉 mode 5 的词,服务器仍计入总数,任务完不成)→ 再发后端(开关仍 False)→ 最后把 `SHADOW_ENABLED` 改 True 并重启。回退只改回 False 重启,**不要先回退前端**。安卓 apk 的 WebView 缓存旧 `words.js` 时清缓存,或给脚本地址加 `?v=`;软键盘遮挡文本框要在 Activity 加 `android:windowSoftInputMode="adjustResize"`。
+- **排查**:`SELECT plan_date, word_id, kind, mode FROM word_daily_plan WHERE session_id='…' AND mode=5;`。
+
 ## 11. 多例句轮换(P4)
 - **为什么**:词库每词只有 1 条例句,约 22% 因变位/复数挖不出空;且总用同一句会背句子。P4 用 LLM 生成 pt-PT 例句缓存起来,mode 3 轮换,同时救回挖不出空的词。
 - **生成**:`录入本周` 后服务自动在后台跑(`_prep_examples`,等同 `python tools/gen_examples.py --week`,**跑两遍,第二遍补第一遍失败的批次**,每词 2 条、每批 10 词);也可手动 `gen_week_examples.bat`。`gen_examples.run(args, progress_callback)` 可在进程内调用。参数:`--week`(只处理当天所在周计划词)/`--active`(正在学未掌握的老词)/`--ids`/`--report`(只看覆盖率,统计的是**整个词库**,不是成功指标)/`--dry-run`/`--only-failing`/`--limit`/`--per-word`(默认 2,最大 3)/`--batch`/`--sleep`。`--ids/--week/--active` 取并集,都不给 = 全库(不推荐);计划为空时**不会退化成处理全库**。只读词库、只写 `word_examples`,可断点续跑。
 - **提示词与校验**:`WORD_EXAMPLES_PROMPT`——pt-PT、A1~A2、5~12 词、**必须原样含目标词**(不变位不变复数;`-se` 反身动词写成 `lembrar-se`)、简体中文翻译。`validate_example` 必须全过才入库:能 `make_cloze` 挖空、有汉字、词数 3~16、≤120 字符、`norm_sentence` 后不与已有例句重复。U+2010/2011/2012 连字符先归一;`parse_examples_json` 容错;解析失败原文落盘 `data/gen_examples_failed.txt`。**不要为通过校验而放宽 `validate_example`。**
 - **表**(`word_example_manager`):`word_examples(word_id, idx, pt_sentence, cn_sentence, enabled, source, created_on)`——idx≥1,**idx 0 = 词库原例句,不入表**;`enabled=0` 停用;新 idx 在已有最大 idx(含已停用)后顺延。`word_example_use(session_id, word_id, last_idx, last_used_on)` 用于轮换。无外键。
-- **选择**(只发生在 mode 3,`word_routes._load_words(entries, session_id=None)`):有 `session_id` 时批量取一次 `get_examples`/`get_uses`(无 N+1);候选池 = 原例句(idx 0)+ 启用的生成例句,**读取时重新 `make_cloze` 校验**、只留能挖空的;`pick_example(pool, last_idx, used_today)` 轮换(`last_idx` 之后的下一个,回绕;`last_used_on==今天` 且 `last_idx` 仍在池里则沿用,同一天刷新不变);池空才降级 mode 2。没有生成例句的词 / 没传 `session_id`(预习) / 例句表异常:退回只用原例句(不带 `ex`、不写 `word_example_use`);`get_examples/get_uses/record_use` 异常一律 `logger.exception` 吞掉,**绝不让 `/today` 失败**。
+- **选择**(主要发生在 mode 3,mode 5 跟读也用同一套轮换,见 §10;`word_routes._load_words(entries, session_id=None)`):有 `session_id` 时批量取一次 `get_examples`/`get_uses`(无 N+1);候选池 = 原例句(idx 0)+ 启用的生成例句,**读取时重新 `make_cloze` 校验**、只留能挖空的;`pick_example(pool, last_idx, used_today)` 轮换(`last_idx` 之后的下一个,回绕;`last_used_on==今天` 且 `last_idx` 仍在池里则沿用,同一天刷新不变);池空才降级 mode 2。没有生成例句的词 / 没传 `session_id`(预习) / 例句表异常:退回只用原例句(不带 `ex`、不写 `word_example_use`);`get_examples/get_uses/record_use` 异常一律 `logger.exception` 吞掉,**绝不让 `/today` 失败**。
 - **词对象**:选中例句时 `pt_sentence`/`cn_sentence` 换成该例句并带 `ex`(整数,原例句 0);没有 `ex` = 没走轮换。mode 1/2/4、预习条目不带 `ex`。mode≠3 但原例句能挖空时也可带 `cloze`(仅供"公布答案后隔一词补测")。
 - **朗读**:`GET /words/{id}/audio?kind=sentence&ex=N`;`ex` 缺省 0,`ex<0` 422,`ex>0` 取不到 404,`kind=word` 忽略 `ex`。前端 `speak` 只在 `kind==='sentence' && w.ex` 时带 `ex`。
 - **回退**:`UPDATE word_examples SET enabled = 0;`;单条:`... WHERE word_id=… AND idx=…;`。
@@ -187,9 +196,10 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 - **mode=3**:`_judge_pt_cloze`;**mode=4**:`_judge_sentence`(见 §10)。
 - 没听清/空结果 → 422(`bad_audio` 同)。通过且带 `run_id`、该词在今天计划里、账号在积分白名单 → 响应并入 `earned`/`round_score`。
 - 场景判分 `POST /words/scene/evaluate`:FormData `word_id,session_id,run_id,selected_word_id`(**四项必填**),`passed = selected_word_id == word_id`;词未启用场景 400;形容词四词形不全 400;只给答对的、在今天计划里的目标词发分;**不再接受 `audio`**。
-- `POST /words/record_error`(**JSON**:session_id,word_id,mode 1-4,user_text≤200)写 `word_errors`。
+- `POST /words/record_error`(**JSON**:session_id,word_id,mode 1-5,user_text≤200)写 `word_errors`。
 - `POST /words/complete`(**JSON**:session_id,run_id?,rounds,first_pass,attempts,outcomes[{word_id,outcome,mode}]):`settle` 结算 + `mark_done`(重新学习后再完成:成绩覆盖、`times+1`,进度不重复结算);**周五额外调 `_plan_saturday`**;今天没计划 422。
 - `POST /words/mark_mastered`(**JSON**)见 §6、§5。
+- 跟读(mode 5)不走 `/words/evaluate`(它仍只收 mode 1-4),走 `/words/shadow/transcribe` 与 `/words/shadow/evaluate`,见 §10。
 
 ## 13. 积分(陪练与管理端共用 `ScoreRecord`)
 - 单词页正式测验答对 +1 分,写入共用 `ScoreRecord`:管理端 `FormMain` 的"累计得分"就是 `/admin/points.correct_count`。
@@ -291,6 +301,7 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 | `GET /api/words/today?session_id=` | `{date,words:[WordItem+kind(+cloze,+ex,+image_url)],preview:[WordItem(+image_url)],meta:{new,review,weekly,extra,preview},completed}`;场景字段与形容词词形见 §9;`completed` 非空 = 今天已完成 `{rounds,total,first_pass,attempts,round_score,times,completed_at}`。**周五这里会补生成周六计划**(§5) |
 | `POST /api/words/run` | JSON `{session_id,restart?}` → `{run_id,batch_number,round_score}` |
 | `POST /api/words/evaluate` | FormData: audio,word_id,mode(1-4),session_id?,run_id? → `{word_id,mode,passed,recognized_text,comment[,corrected][,earned,round_score]}`;422 没听清 |
+| `POST /api/words/shadow/transcribe` · `/shadow/evaluate` | 跟读(mode 5):录音只转文字 `{text}` / 提交文本与服务端原句比对,返回 `tokens`;见 §10 |
 | `POST /api/words/scene/evaluate` | FormData: `word_id,session_id,run_id,selected_word_id`(必填)→ `{word_id,passed,recognized_text,comment,earned,round_score?}` |
 | `POST /api/words/complete` · `record_error` · `mark_mastered` | 均 **JSON** |
 | `GET /api/words/{id}/audio?kind=word\|sentence&tts_provider=&tts_voice=&ex=&form=` | 朗读(只按 word_id 取服务端文本,**不接受任意文本**,防当免费 TTS 代理);`tts_provider` ∈ piper/google/edge,默认 piper;`ex`(≥0)仅 sentence;`form`(可选,仅 word)= `adjective_*` 字段名(形容词词牌读音,该词形没填回退原形) |
@@ -388,6 +399,7 @@ Leitner 盒子 + **工作日**间隔。每词一行进度 `row`(box 0-5、due_da
 - 单词库(`/vocab`)没有浏览/删除/去重界面;单词页进度只在前端内存;前端没有 PIN 界面、没有鉴权 token;聊天页录音每次重新申请麦克风;`/ws/chat` 是骨架不落库。
 - 场景演练没有 2D 回退、没有录音跟读;填空只做精确匹配(模糊匹配是未做的后续项);`word_errors` 只记录不参与调度。
 - 形容词 12 个模板的 `noun_contexts` 与 `context_pick` 是服务端与前端/arena 序号对应的依据,别在前端假设它们可以改。
+- 跟读(mode 5):不出新词 / 周五回顾 / 周六加练;不带 `cloze`(补测总是 mode 2);不置位 `mode2_ok`;判分是纯规则,不做模糊匹配,只差重音算通过标黄。
 - 不要引入构建链/框架/第三方库(`three-bundle.js` 是唯一的第三方文件)。
 - `IMAGE_FALLBACK_POLLINATIONS=True` 意味着画面描述会发给第三方——开关由用户决定。
 - 没做的扩展:传送带/移动平台/空中岛、镜头自动回正、首次教程、触觉开关、`weekly` 之外的奖励主题、周计划文本导入的同名复用。
