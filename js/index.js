@@ -346,6 +346,110 @@ $('#wadd').onclick = async () => {
     finally { btn.disabled = false; }
 };
 
+/* ---------- 上传图片：识别下划线单词 ---------- */
+// 📷 选图 → 前端压缩 → POST /api/image/underlined（多模态模型找出被划线的词并拆解）→ 可编辑列表 → 勾选后走 POST /api/vocab 加入生词本。
+// 图片只用于这一次识别，服务器不保存、不进聊天记录。
+const camf = $('#camf'), ilist = $('#ilist'), istat = $('#istat'), ipre = $('#ipre');
+let idata = null;      // {blob, rows:[{on,word,surface,meaning,sentence,sentence_zh}], busy, url}
+const IMG_MAX_SIDE = 2000;                                     // 长边上限：够看清下划线，又不会让上传太大
+async function shrinkImage(file) {
+    const url = URL.createObjectURL(file);
+    try {
+        const img = await new Promise((ok, no) => {
+            const i = new Image(); i.onload = () => ok(i); i.onerror = () => no(new Error('无法读取这张图片（请选 JPG / PNG / WebP）')); i.src = url;
+        });
+        const w0 = img.naturalWidth, h0 = img.naturalHeight, sc = Math.min(1, IMG_MAX_SIDE / Math.max(w0, h0));
+        if (sc === 1 && file.size <= 1.5 * 1024 * 1024 && /^image\/(jpeg|png|webp)$/.test(file.type)) return file;   // 本来就够小，原图直传
+        const c = document.createElement('canvas'); c.width = Math.round(w0 * sc); c.height = Math.round(h0 * sc);
+        const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        return await new Promise((ok, no) => c.toBlob(b => b ? ok(b) : no(new Error('图片处理失败')), 'image/jpeg', 0.88));
+    } finally { URL.revokeObjectURL(url); }
+}
+function setImgBusy(b) {
+    idata.busy = b;
+    $('#iretry').disabled = b; $('#iadd').disabled = b || !idata.rows.length; $('#iaddrow').hidden = b;
+}
+function renderImageRows() {
+    ilist.innerHTML = '';
+    idata.rows.forEach((r, i) => {
+        const row = el('div', 'irow'), cb = el('input'); cb.type = 'checkbox'; cb.checked = r.on;
+        cb.onchange = () => { r.on = cb.checked; };
+        const fs = el('div', 'fs');
+        const mk = (key, ph, cls) => {
+            const inp = el('input', cls || ''); inp.type = 'text'; inp.value = r[key] || ''; inp.placeholder = ph;
+            inp.autocomplete = 'off'; inp.autocapitalize = 'off'; inp.spellcheck = false;
+            inp.oninput = () => { r[key] = inp.value; if (key === 'word') cb.checked = r.on = true; };
+            return inp;
+        };
+        fs.append(mk('word', '单词（词典原形）', 'w'), mk('meaning', '中文含义'));
+        if (r.surface && r.surface.toLowerCase() !== (r.word || '').toLowerCase()) fs.append(el('div', 'sf', '图中：' + r.surface));
+        fs.append(mk('sentence', '所在的句子'), mk('sentence_zh', '句子翻译'));
+        const rm = el('button', 'rm', '✕'); rm.type = 'button'; rm.setAttribute('aria-label', '删除这一行');
+        rm.onclick = () => { idata.rows.splice(i, 1); renderImageRows(); $('#iadd').disabled = idata.busy || !idata.rows.length; };
+        row.append(cb, fs, rm); ilist.append(row);
+    });
+}
+async function recognizeImage() {
+    if (!idata || idata.busy) return;
+    setImgBusy(true); ilist.innerHTML = ''; istat.textContent = '识别中…（通常 5–20 秒）';
+    const fd = new FormData(); fd.append('session_id', sid); fd.append('image', idata.blob, 'pic.jpg');
+    try {
+        const d = await post('/api/image/underlined', fd);
+        idata.rows = (d.words || []).map(w => ({ on: true, word: w.word || '', surface: w.surface || '', meaning: w.meaning || '', sentence: w.sentence || '', sentence_zh: w.sentence_zh || '' }));
+        istat.textContent = idata.rows.length ? `识别到 ${idata.rows.length} 个下划线单词。识别错的可以直接改，不要的取消勾选或点 ✕，缺的点下面「手动添加」。`
+            : '没有找到加了下划线的单词。可以重新识别，或手动添加。';
+    } catch (err) { idata.rows = []; istat.textContent = '识别失败：' + err.message; }
+    renderImageRows(); setImgBusy(false);
+}
+$('#cam').onclick = () => camf.click();
+camf.onchange = async () => {
+    const f = camf.files[0]; camf.value = '';
+    if (!f) return;
+    if (!/^image\//.test(f.type) && !/\.(jpe?g|png|webp)$/i.test(f.name)) return toast('请选择图片文件');
+    toast('正在处理图片…');
+    let blob;
+    try { blob = await shrinkImage(f); } catch (err) { return toast(err.message); }
+    if (idata?.url) URL.revokeObjectURL(idata.url);
+    idata = { blob, rows: [], busy: false, url: URL.createObjectURL(blob) };
+    ipre.src = idata.url; ipre.hidden = false;
+    $('#imask').hidden = false;
+    recognizeImage();                                          // 选完图就自动识别
+};
+$('#iretry').onclick = recognizeImage;
+$('#iaddrow').onclick = () => {
+    if (!idata) return;
+    idata.rows.push({ on: true, word: '', surface: '', meaning: '', sentence: '', sentence_zh: '' });
+    renderImageRows(); $('#iadd').disabled = false;
+    const last = ilist.querySelector('.irow:last-child input.w'); if (last) { last.focus(); last.scrollIntoView({ block: 'nearest' }); }
+};
+new MutationObserver(() => {                                   // 面板关闭时释放图片，避免占内存
+    if ($('#imask').hidden && idata && !idata.busy) { if (idata.url) URL.revokeObjectURL(idata.url); ipre.removeAttribute('src'); idata = null; }
+}).observe($('#imask'), { attributes: true, attributeFilter: ['hidden'] });
+$('#iadd').onclick = async () => {
+    if (!idata) return;
+    const picked = idata.rows.filter(r => r.on && (r.word || '').trim());
+    if (!picked.length) return toast('请至少勾选一个单词');
+    const items = picked.map(r => ({
+        language: 'pt-PT', word: r.word.trim(),
+        example_sentence: (r.sentence || '').trim(), chinese_meaning: (r.meaning || '').trim(),
+        example_chinese: (r.sentence_zh || '').trim(),
+    }));
+    const btn = $('#iadd'); btn.disabled = true;
+    try {
+        const d = await post('/api/vocab', { session_id: sid, items });       // 与聊天拆词同一个接口，直接写进生词本
+        const ex = d.existing_words || [];
+        if (d.added > 0) {
+            toast(ex.length ? `已加入 ${d.added} 个单词；已存在（未重复加入）：${ex.join('、')}` : `已加入 ${d.added} 个单词`, ex.length ? 4500 : 2200);
+            $('#imask').hidden = true;
+        } else if (ex.length) {
+            toast(`已存在，无需重复加入：${ex.join('、')}`, 4500);
+        } else {
+            toast('没有可加入的单词');
+        }
+    } catch (err) { toast('加入失败：' + err.message); }
+    finally { btn.disabled = !idata || !idata.rows.length; }
+};
+
 /* ---------- 发送 ---------- */
 async function send({ blob, ext, text }) {
     const fd = new FormData(); fd.append('session_id', sid); fd.append('mode', mode);

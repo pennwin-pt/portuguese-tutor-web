@@ -32,6 +32,8 @@
     <div id="chat"><div class="tip">按住下方按钮，用葡语和 Tuga 老师聊天。<br>不会说？右上角切换到中文求助。<br>长按老师的语音条：原文 / 翻译 / 语法解析 / 拆解单词。<br>点 👤 绑定智能体，还能给它设置专属音色，换设备也能找回聊天记录。</div></div>
     <footer>
         <button class="kb" id="kb" aria-label="切换输入方式">⌨️</button>
+        <button class="kb" id="cam" aria-label="上传图片，识别下划线单词">📷</button>
+        <input type="file" id="camf" accept="image/*" hidden>
         <button id="hold">按住 说话</button>
         <input id="txt" placeholder="输入葡语…" enterkeyhint="send" autocomplete="off" hidden>
         <button id="send" disabled hidden>发送</button>
@@ -104,6 +106,20 @@
     <div id="wlist"></div>
     <div class="acts">
         <button class="p" id="wadd">加入单词库</button>
+        <button class="c" data-close>关闭</button>
+    </div>
+</div></div>
+
+<!-- 上传图片：识别下划线单词 -->
+<div class="mask" id="imask" hidden><div class="panel">
+    <h2>图片里的下划线单词</h2>
+    <img id="ipre" alt="已选图片" hidden>
+    <p class="hint" id="istat"></p>
+    <div id="ilist"></div>
+    <button type="button" class="addrow" id="iaddrow" hidden>＋ 手动添加一行</button>
+    <div class="acts">
+        <button class="p" id="iadd" disabled>加入生词本</button>
+        <button id="iretry" disabled>🔄 重新识别</button>
         <button class="c" data-close>关闭</button>
     </div>
 </div></div>
