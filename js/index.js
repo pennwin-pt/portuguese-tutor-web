@@ -452,6 +452,7 @@ $('#iadd').onclick = async () => {
 
 /* ---------- 发送 ---------- */
 async function send({ blob, ext, text }) {
+    if (mode === 'ctx') return sendContext({ blob, ext, text });      // 背景模式：不进聊天，只保存成当前对话背景
     const fd = new FormData(); fd.append('session_id', sid); fd.append('mode', mode);
     fd.append('tts_provider', ttsProvider);
     const v = getTtsVoice(ttsProvider); if (v) fd.append('tts_voice', v);
@@ -487,7 +488,7 @@ const waitMicLive = s => new Promise(res => {    // iOS 的麦克风轨道刚拿
     const timer = setTimeout(done, MIC_WAIT_MS);
     t.addEventListener('unmute', done);
 });
-const holdIdle = () => { holdBtn.className = ''; holdBtn.textContent = '按住 说话'; $('#rec').hidden = true; $('#rec').classList.remove('cancel'); };
+const holdIdle = () => { holdBtn.className = ''; holdBtn.textContent = mode === 'ctx' ? '按住 说背景' : '按住 说话'; $('#rec').hidden = true; $('#rec').classList.remove('cancel'); };
 holdBtn.addEventListener('pointerdown', async e => {
     if (preparing || (mr && mr.state === 'recording')) return;          // 上一次还在准备 / 收尾
     e.preventDefault(); holding = true; startY = e.clientY; cancel = false; unlock();
@@ -551,12 +552,58 @@ txt.oninput = () => sendBtn.disabled = !txt.value.trim();
 const submit = () => { const v = txt.value.trim(); if (!v) return; txt.value = ''; sendBtn.disabled = true; unlock(); send({ text: v }); };
 sendBtn.onclick = submit;
 txt.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) submit(); };
-$('#mode').onclick = e => {
-    mode = mode === 'pt' ? 'zh' : 'pt';
-    e.target.className = mode === 'zh' ? 'zh' : ''; e.target.textContent = mode === 'zh' ? '🇨🇳 中文求助' : '🇵🇹 葡语';
-    $('#banner').hidden = mode === 'pt'; txt.placeholder = mode === 'zh' ? '输入中文，我来翻译成葡语…' : '输入葡语…';
-    toast(mode === 'zh' ? '已切换：中文将先翻译成葡语' : '已切换：葡语模式');
+// 三种输入模式：pt 葡语 | zh 中文求助（先译葡语再聊）| ctx 设置对话背景（说中文，只保存、不翻译、不进聊天记录）。
+// ctx 是一次性的：设置成功后自动回到进入前的模式；再点一次模式按钮 = 取消。
+const MODES = {
+    pt: { cls: '', label: '🇵🇹 葡语', banner: '', ph: '输入葡语…', hold: '按住 说话', toast: '已切换：葡语模式' },
+    zh: { cls: 'zh', label: '🇨🇳 中文求助', banner: '中文求助模式：说中文，我会先翻译成葡语，再由教练回复', ph: '输入中文，我来翻译成葡语…', hold: '按住 说话', toast: '已切换：中文将先翻译成葡语' },
+    ctx: { cls: 'ctx', label: '📍 设背景', banner: '背景模式：用中文说说现在是什么场景（如：在餐厅点餐），老师会记住。点右上角按钮取消', ph: '输入中文背景，如：在餐厅点餐…', hold: '按住 说背景', toast: '' },
 };
+let prevMode = 'pt';
+function setMode(m) {
+    mode = m; const u = MODES[m], b = $('#mode');
+    b.className = u.cls; b.textContent = u.label;
+    $('#banner').textContent = u.banner; $('#banner').hidden = !u.banner;
+    txt.placeholder = u.ph;
+    if (!holding && !preparing) holdBtn.textContent = u.hold;
+}
+$('#mode').onclick = () => {
+    if (mode === 'ctx') { setMode(prevMode); toast('已取消设置背景'); return; }
+    setMode(mode === 'pt' ? 'zh' : 'pt'); toast(MODES[mode].toast);
+};
+
+/* ---------- 对话背景：说一段中文告诉老师"现在在什么场景"，之后的回复 / 中文求助的翻译都会参考 ---------- */
+// 存在服务器的当前会话上（游客也有）；清空对话时一并清掉。和中文求助不同：这段中文不会被翻译成葡语发出去。
+let ctxText = '';
+function setCtx(t) {
+    ctxText = typeof t === 'string' ? t : '';
+    $('#ctxbar').hidden = !ctxText; $('#ctxtxt').textContent = ctxText;
+    $('#ctxCur').textContent = ctxText || '未设置';
+}
+async function loadCtx() {                                  // 启动 / 切换智能体时按当前 sid 取一次
+    const mine = sid;
+    try { const d = await get(`/api/context?session_id=${enc(sid)}`); if (mine === sid) setCtx(d.context); }
+    catch { if (mine === sid) setCtx(''); }
+}
+function enterCtx() { if (mode !== 'ctx') { prevMode = mode; setMode('ctx'); } }
+async function sendContext({ blob, ext, text }) {
+    const mine = sid, fd = new FormData(); fd.append('session_id', sid);
+    if (blob) fd.append('audio', blob, 'rec.' + ext); else fd.append('text', text);
+    toast(blob ? '正在识别背景…' : '正在保存背景…', 15000);
+    try {
+        const d = await post(blob ? '/api/context/audio' : '/api/context/text', fd);
+        if (mine !== sid) return;
+        setCtx(d.context);
+        if (mode === 'ctx') setMode(prevMode);
+        toast('已记住背景：' + d.context, 3500);
+    } catch (err) { toast(err.message); }                   // 失败留在背景模式，方便直接重说
+}
+async function clearCtx() {
+    try { await req(`/api/context?session_id=${enc(sid)}`, null, 'DELETE'); setCtx(''); toast('已清除对话背景'); }
+    catch (err) { toast('清除失败：' + err.message); }
+}
+$('#ctxmi').onclick = enterCtx;                              // 菜单项点击后的收起由下面 menu.onclick 负责
+$('#ctxbar').onclick = e => { if (e.target.closest('#ctxrm')) clearCtx(); else enterCtx(); };
 
 /* ---------- 顶部 ⋯ 下拉菜单（单词任务 / 绑定智能体 / 背景与主题） ---------- */
 const moreBtn = $('#more'), menu = $('#menu');
@@ -738,6 +785,7 @@ const fillScreen = () => requestAnimationFrame(() => {                   // 内�
 
 async function loadHistory() {                                           // 按当前 sid 重建聊天区（只取最近一页）
     const mine = sid;
+    loadCtx();                                                           // 对话背景跟着会话走，启动 / 绑定 / 退出都会经过这里
     player.pause(); playingPill = null; cur = null; resetHist();
     try {
         const j = await get(`/api/history?session_id=${enc(sid)}&limit=${HIST_PAGE}`);
@@ -817,6 +865,6 @@ syncUserUI();
 /* ---------- 清空对话（长按标题） ---------- */
 press($('h1'), async () => {
     if (!confirm(username ? `清空「${username}」的对话和所有语音记录？` : '清空本次对话和所有语音记录？')) return;
-    try { await fetch(API + '/api/session/' + enc(sid), { method: 'DELETE' }); resetHist(); chat.innerHTML = TIP; toast('已清空'); }
+    try { await fetch(API + '/api/session/' + enc(sid), { method: 'DELETE' }); resetHist(); chat.innerHTML = TIP; setCtx(''); toast('已清空'); }
     catch { toast('清空失败'); }
 });

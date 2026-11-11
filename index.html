@@ -25,11 +25,14 @@
         <div id="menu" role="menu" hidden>
             <button class="mi" id="words" role="menuitem" onclick="location.href='words.html'"><span class="ico">📚</span><span class="lb">单词任务</span></button>
             <button class="mi" id="user" role="menuitem"><span class="ico">👤</span><span class="lb">绑定智能体<small id="userCur">游客</small></span></button>
+            <button class="mi" id="ctxmi" role="menuitem"><span class="ico">📍</span><span class="lb">对话背景<small id="ctxCur">未设置</small></span></button>
             <button class="mi" id="theme" role="menuitem"><span class="ico">🎨</span><span class="lb">背景与主题</span></button>
         </div>
     </header>
     <div id="banner" hidden>中文求助模式：说中文，我会先翻译成葡语，再由教练回复</div>
-    <div id="chat"><div class="tip">按住下方按钮，用葡语和 Tuga 老师聊天。<br>不会说？右上角切换到中文求助。<br>长按老师的语音条：原文 / 翻译 / 语法解析 / 拆解单词。<br>点 👤 绑定智能体，还能给它设置专属音色，换设备也能找回聊天记录。</div></div>
+    <!-- 当前对话背景：点文字 = 重新设置，点 ✕ = 清除 -->
+    <div id="ctxbar" hidden><span class="ci">📍</span><span id="ctxtxt"></span><button type="button" id="ctxrm" aria-label="清除对话背景">✕</button></div>
+    <div id="chat"><div class="tip">按住下方按钮，用葡语和 Tuga 老师聊天。<br>不会说？右上角切换到中文求助。<br>长按老师的语音条：原文 / 翻译 / 语法解析 / 拆解单词。<br>想让老师知道现在的场景？点右上角 ⋯ → 📍 对话背景，说一句中文就行（如“在餐厅点餐”）。<br>点 👤 绑定智能体，还能给它设置专属音色，换设备也能找回聊天记录。</div></div>
     <footer>
         <button class="kb" id="kb" aria-label="切换输入方式">⌨️</button>
         <button class="kb" id="cam" aria-label="上传图片，识别下划线单词">📷</button>
