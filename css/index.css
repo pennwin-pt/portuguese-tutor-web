@@ -164,3 +164,22 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(max(env(s
 .irow .sf{font-size:12px;color:#9aa5b1}
 .irow .rm{flex:none;width:30px;height:30px;margin-top:3px;border:0;border-radius:50%;background:var(--bg);color:var(--sub);font-size:15px;line-height:1}
 .panel .addrow{width:100%;height:40px;margin-top:6px;border:1.5px dashed #d1d5db;border-radius:12px;background:#fff;color:var(--sub);font-size:14px}
+/* 聊天里的「拍照识别」记录卡片 */
+.row.photo{margin:14px 0}
+.pcard{width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid #bfe3c8;border-left:5px solid #34a853;border-radius:14px;background:#f3fbf5;user-select:text;-webkit-user-select:text}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;color:#1e7e34}
+.pdel{flex:none;width:30px;height:30px;border:0;border-radius:50%;background:transparent;font-size:15px;line-height:1;opacity:.65;touch-action:manipulation}
+.pimg{display:block;width:100%;height:160px;margin:6px 0 8px;border-radius:10px;border:1px solid #d5e8da;background:#e8f1ea;object-fit:contain}
+.psum{margin-bottom:6px;font-size:13px;color:var(--sub)}
+.pw{margin-top:8px;padding:8px 10px;border-radius:10px;background:#fff}
+.pwh{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.pwh b{font-size:17px}
+.ptag{padding:1px 8px;border-radius:9px;background:#eef0f3;color:var(--sub);font-size:11px}
+.ptag.new{background:#d8f1df;color:#1e7e34}
+.pm{margin-top:2px;font-size:15px}
+.ps{margin-top:4px;font-size:15px;color:#374151}
+.ps mark{background:#fff3b0;color:inherit;border-radius:3px;padding:0 1px}
+.pz{font-size:13px;color:var(--sub)}
+.irow .sf.ai:empty,.irow .sf:empty{display:none}
+.lb{position:fixed;inset:0;z-index:15;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88)}
+.lb img{max-width:100%;max-height:100%;object-fit:contain}

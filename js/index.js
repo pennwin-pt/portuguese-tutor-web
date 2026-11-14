@@ -264,14 +264,14 @@ $('#sheet').onclick = async e => {
 $('#mask').onclick = e => { if (e.target.id === 'mask') e.target.hidden = true; };
 
 /* ---------- 删除一轮对话：删任意一句，配对的另一句一起删（后端同步清掉 LLM 记忆和语音文件） ---------- */
-async function delTurn(m) {
+async function delTurn(m, okMsg = '已删除，可以重新说了') {
     if (!m.rowId) return toast('这条消息没有 id，无法删除');
     try {
         const d = await req(`/api/message/${m.rowId}?session_id=${enc(sid)}`, null, 'DELETE');
         (d.deleted || [m.rowId]).forEach(id => chat.querySelector(`.row[data-rid="${id}"]`)?.remove());
         if (playingPill && !playingPill.isConnected) { player.pause(); playingPill = null; }
         if (!chat.querySelector('.row')) { if (hasMore) loadMore(); else { resetHist(); chat.innerHTML = TIP; } }
-        cur = null; toast('已删除，可以重新说了');
+        cur = null; toast(okMsg);
     } catch (err) { toast('删除失败：' + err.message); }
 }
 
@@ -347,11 +347,14 @@ $('#wadd').onclick = async () => {
 };
 
 /* ---------- 上传图片：识别下划线单词 ---------- */
-// 📷 选图 → 前端压缩 → POST /api/image/underlined（多模态模型找出被划线的词并拆解）→ 可编辑列表 → 勾选后走 POST /api/vocab 加入生词本。
-// 图片只用于这一次识别，服务器不保存、不进聊天记录。
+// 📷 选图 → 前端压缩 → POST /api/image/underlined（多模态模型找出被划线的词并拆解）→ 可编辑列表。
+// 手动添加的词只需填葡语：填完（失焦 / 回车）自动 POST /api/image/fill-words 让 AI 补含义、例句和翻译，可再修改。
+// 点「加入生词本」→ POST /api/image/photo_card（图片 + 单词一起传）：服务器写进生词本、留存图片，
+// 并在聊天记录里落一张「拍照识别」卡片（图 + 这一组单词），刷新 / 换设备后还在。
 const camf = $('#camf'), ilist = $('#ilist'), istat = $('#istat'), ipre = $('#ipre');
-let idata = null;      // {blob, rows:[{on,word,surface,meaning,sentence,sentence_zh}], busy, url}
+let idata = null;      // {blob, rows:[{on,word,surface,meaning,sentence,sentence_zh,auto,fillFor,fill,st,...}], busy, url}
 const IMG_MAX_SIDE = 2000;                                     // 长边上限：够看清下划线，又不会让上传太大
+const MANUAL_HINT = '只需填葡语单词，含义和例句 AI 会自动生成';
 async function shrinkImage(file) {
     const url = URL.createObjectURL(file);
     try {
@@ -369,21 +372,48 @@ function setImgBusy(b) {
     idata.busy = b;
     $('#iretry').disabled = b; $('#iadd').disabled = b || !idata.rows.length; $('#iaddrow').hidden = b;
 }
+const newImgRow = o => ({ on: true, word: '', surface: '', meaning: '', sentence: '', sentence_zh: '', auto: {}, fillFor: '', fill: null, st: '', ...o });
+function setRowStatus(r, t) { r.st = t; if (r.stEl) r.stEl.textContent = t; }
+// 让 AI 补全这一行缺的含义 / 例句 / 翻译。同一个词只补一次；词改了就把"上次 AI 填的"换掉，用户自己写的不动。
+function fillRow(r) {
+    const word = (r.word || '').trim();
+    if (!word || r.fillFor === word) return r.fill;
+    const blank = k => !(r[k] || '').trim() || r.auto[k];             // 空的，或者上次是 AI 填的
+    if (!['meaning', 'sentence', 'sentence_zh'].some(blank)) return r.fill;
+    r.fillFor = word;
+    setRowStatus(r, '⏳ AI 生成中…');
+    return r.fill = post('/api/image/fill-words', { items: [{ word, sentence: blank('sentence') ? '' : r.sentence.trim() }] }).then(d => {
+        const f = d.items?.[0];
+        if (!f || r.fillFor !== word) return;                         // 期间这个词又改了：丢弃过期结果
+        ['meaning', 'sentence', 'sentence_zh'].forEach(k => {
+            if (f[k] && blank(k)) { r[k] = f[k]; r.auto[k] = true; if (r.inputs?.[k]) r.inputs[k].value = f[k]; }
+        });
+        setRowStatus(r, '✨ 含义和例句由 AI 生成，可直接修改');
+    }).catch(err => {
+        if (r.fillFor === word) { r.fillFor = ''; setRowStatus(r, '⚠ AI 生成失败：' + err.message + '。可手动填写，或点「加入生词本」时再试'); }
+    });
+}
 function renderImageRows() {
     ilist.innerHTML = '';
     idata.rows.forEach((r, i) => {
         const row = el('div', 'irow'), cb = el('input'); cb.type = 'checkbox'; cb.checked = r.on;
         cb.onchange = () => { r.on = cb.checked; };
-        const fs = el('div', 'fs');
+        const fs = el('div', 'fs'); r.inputs = {};
         const mk = (key, ph, cls) => {
             const inp = el('input', cls || ''); inp.type = 'text'; inp.value = r[key] || ''; inp.placeholder = ph;
             inp.autocomplete = 'off'; inp.autocapitalize = 'off'; inp.spellcheck = false;
-            inp.oninput = () => { r[key] = inp.value; if (key === 'word') cb.checked = r.on = true; };
+            inp.oninput = () => { r[key] = inp.value; r.auto[key] = false; if (key === 'word') cb.checked = r.on = true; };
+            if (key === 'word') {
+                inp.onchange = () => fillRow(r);                       // 失焦 / 回车提交后触发
+                inp.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inp.blur(); } };
+            }
+            r.inputs[key] = inp;
             return inp;
         };
-        fs.append(mk('word', '单词（词典原形）', 'w'), mk('meaning', '中文含义'));
+        fs.append(mk('word', '葡语单词（词典原形）', 'w'));
         if (r.surface && r.surface.toLowerCase() !== (r.word || '').toLowerCase()) fs.append(el('div', 'sf', '图中：' + r.surface));
-        fs.append(mk('sentence', '所在的句子'), mk('sentence_zh', '句子翻译'));
+        r.stEl = el('div', 'sf', r.st || ''); fs.append(r.stEl);
+        fs.append(mk('meaning', '中文含义（留空由 AI 生成）'), mk('sentence', '例句（留空由 AI 生成）'), mk('sentence_zh', '例句翻译（留空由 AI 生成）'));
         const rm = el('button', 'rm', '✕'); rm.type = 'button'; rm.setAttribute('aria-label', '删除这一行');
         rm.onclick = () => { idata.rows.splice(i, 1); renderImageRows(); $('#iadd').disabled = idata.busy || !idata.rows.length; };
         row.append(cb, fs, rm); ilist.append(row);
@@ -395,9 +425,9 @@ async function recognizeImage() {
     const fd = new FormData(); fd.append('session_id', sid); fd.append('image', idata.blob, 'pic.jpg');
     try {
         const d = await post('/api/image/underlined', fd);
-        idata.rows = (d.words || []).map(w => ({ on: true, word: w.word || '', surface: w.surface || '', meaning: w.meaning || '', sentence: w.sentence || '', sentence_zh: w.sentence_zh || '' }));
-        istat.textContent = idata.rows.length ? `识别到 ${idata.rows.length} 个下划线单词。识别错的可以直接改，不要的取消勾选或点 ✕，缺的点下面「手动添加」。`
-            : '没有找到加了下划线的单词。可以重新识别，或手动添加。';
+        idata.rows = (d.words || []).map(w => newImgRow({ word: w.word || '', surface: w.surface || '', meaning: w.meaning || '', sentence: w.sentence || '', sentence_zh: w.sentence_zh || '' }));
+        istat.textContent = idata.rows.length ? `识别到 ${idata.rows.length} 个下划线单词。识别错的可以直接改，不要的取消勾选或点 ✕。缺的点下面「手动添加」——${MANUAL_HINT}。`
+            : `没有找到加了下划线的单词。可以重新识别，或点下面「手动添加」——${MANUAL_HINT}。`;
     } catch (err) { idata.rows = []; istat.textContent = '识别失败：' + err.message; }
     renderImageRows(); setImgBusy(false);
 }
@@ -418,37 +448,73 @@ camf.onchange = async () => {
 $('#iretry').onclick = recognizeImage;
 $('#iaddrow').onclick = () => {
     if (!idata) return;
-    idata.rows.push({ on: true, word: '', surface: '', meaning: '', sentence: '', sentence_zh: '' });
+    idata.rows.push(newImgRow({ st: MANUAL_HINT }));
     renderImageRows(); $('#iadd').disabled = false;
     const last = ilist.querySelector('.irow:last-child input.w'); if (last) { last.focus(); last.scrollIntoView({ block: 'nearest' }); }
 };
-new MutationObserver(() => {                                   // 面板关闭时释放图片，避免占内存
-    if ($('#imask').hidden && idata && !idata.busy) { if (idata.url) URL.revokeObjectURL(idata.url); ipre.removeAttribute('src'); idata = null; }
-}).observe($('#imask'), { attributes: true, attributeFilter: ['hidden'] });
+const releaseImage = () => { if (idata && !idata.busy) { if (idata.url) URL.revokeObjectURL(idata.url); ipre.removeAttribute('src'); idata = null; } };
+new MutationObserver(() => { if ($('#imask').hidden) releaseImage(); }).observe($('#imask'), { attributes: true, attributeFilter: ['hidden'] });   // 面板关闭时释放图片，避免占内存
 $('#iadd').onclick = async () => {
-    if (!idata) return;
-    const picked = idata.rows.filter(r => r.on && (r.word || '').trim());
+    if (!idata || idata.busy) return;
+    const data = idata, picked = data.rows.filter(r => r.on && (r.word || '').trim());
     if (!picked.length) return toast('请至少勾选一个单词');
-    const items = picked.map(r => ({
-        language: 'pt-PT', word: r.word.trim(),
-        example_sentence: (r.sentence || '').trim(), chinese_meaning: (r.meaning || '').trim(),
-        example_chinese: (r.sentence_zh || '').trim(),
-    }));
-    const btn = $('#iadd'); btn.disabled = true;
+    const btn = $('#iadd'); setImgBusy(true); btn.textContent = '加入中…';
     try {
-        const d = await post('/api/vocab', { session_id: sid, items });       // 与聊天拆词同一个接口，直接写进生词本
+        await Promise.all(picked.map(r => r.fill).filter(Boolean));       // 手动添加的词 AI 还在生成：等它先出结果
+        const items = picked.map(r => ({ word: r.word.trim(), surface: (r.surface || '').trim(), meaning: (r.meaning || '').trim(), sentence: (r.sentence || '').trim(), sentence_zh: (r.sentence_zh || '').trim() }));
+        const fd = new FormData(); fd.append('session_id', sid); fd.append('image', data.blob, 'pic.jpg'); fd.append('items', JSON.stringify(items));
+        const d = await post('/api/image/photo_card', fd);                 // 缺的含义 / 例句服务器会再兜底补一遍
         const ex = d.existing_words || [];
-        if (d.added > 0) {
-            toast(ex.length ? `已加入 ${d.added} 个单词；已存在（未重复加入）：${ex.join('、')}` : `已加入 ${d.added} 个单词`, ex.length ? 4500 : 2200);
-            $('#imask').hidden = true;
-        } else if (ex.length) {
-            toast(`已存在，无需重复加入：${ex.join('、')}`, 4500);
-        } else {
-            toast('没有可加入的单词');
-        }
-    } catch (err) { toast('加入失败：' + err.message); }
-    finally { btn.disabled = !idata || !idata.rows.length; }
+        toast(d.added > 0 ? (ex.length ? `已加入 ${d.added} 个单词；已存在（未重复加入）：${ex.join('、')}` : `已加入 ${d.added} 个单词`)
+            : `这些单词生词本里都已经有了：${ex.join('、')}`, ex.length ? 4500 : 2200);
+        $('#imask').hidden = true;
+        addPhotoCard(d.card);
+    } catch (err) { toast('加入失败：' + err.message, 4500); }
+    finally {
+        btn.textContent = '加入生词本';
+        if (idata === data) { setImgBusy(false); if ($('#imask').hidden) releaseImage(); }
+        else if (data.url) URL.revokeObjectURL(data.url);
+    }
 };
+
+/* ---------- 聊天里的「拍照识别」记录卡片：图片 + 这张图加入生词本的一组单词 ---------- */
+// 数据来自 POST /api/image/photo_card 的 card，或 /api/history 里 role='photo' 的行：{row_id, image_url, words:[{word,surface,meaning,sentence,sentence_zh,added}]}
+function markIn(node, text, keys) {                   // 例句里把这个词高亮出来（找不到就原样显示）
+    const low = text.toLowerCase();
+    for (const k of keys) {
+        const i = k ? low.indexOf(k.toLowerCase()) : -1;
+        if (i >= 0) { node.append(text.slice(0, i), el('mark', '', text.slice(i, i + k.length)), text.slice(i + k.length)); return; }
+    }
+    node.textContent = text;
+}
+function openLightbox(src) {
+    const m = el('div', 'lb'), i = el('img'); i.src = src; m.append(i); m.onclick = () => m.remove(); document.body.append(m);
+}
+function addPhotoCard(c) {
+    const words = c.words || [], nNew = words.filter(w => w.added).length;
+    const row = el('div', 'row photo'), card = el('div', 'pcard');
+    if (c.row_id) row.dataset.rid = c.row_id;
+    const head = el('div', 'phead'), del = el('button', 'pdel', '🗑');
+    del.type = 'button'; del.setAttribute('aria-label', '删除这条拍照记录');
+    del.onclick = () => { if (confirm('只删除聊天里的这条记录和图片，不会从生词本里删除单词。确定删除？')) delTurn({ rowId: c.row_id }, '已删除这条记录'); };
+    head.append(el('b', '', '📷 拍照识别 · 生词本'), del); card.append(head);
+    if (c.image_url) {
+        const img = el('img', 'pimg'); img.alt = '拍照识别的图片'; img.loading = 'lazy'; img.src = API + c.image_url;
+        img.onerror = () => img.remove(); img.onclick = () => openLightbox(img.src);
+        card.append(img);
+    }
+    card.append(el('div', 'psum', `这张图里的 ${words.length} 个单词` + (nNew === words.length ? '，已全部加入生词本' : `：新加入 ${nNew} 个，${words.length - nNew} 个生词本里已有`)));
+    words.forEach(w => {
+        const it = el('div', 'pw'), h = el('div', 'pwh');
+        h.append(el('b', '', w.word), el('span', w.added ? 'ptag new' : 'ptag', w.added ? '新加入' : '已在生词本'));
+        it.append(h);
+        if (w.meaning) it.append(el('div', 'pm', w.meaning));
+        if (w.sentence) { const s = el('div', 'ps'); markIn(s, w.sentence, [w.surface, w.word]); it.append(s); }
+        if (w.sentence_zh) it.append(el('div', 'pz', w.sentence_zh));
+        card.append(it);
+    });
+    row.append(card); chat.append(row); scroll();
+}
 
 /* ---------- 发送 ---------- */
 async function send({ blob, ext, text }) {
@@ -773,7 +839,7 @@ $('#user').onclick = openUser;
 const HIST_PAGE = 30;                                                    // 每页条数（用户 + 教练各算一条，30 条 ≈ 15 轮）
 let oldestId = null, hasMore = false, loadingMore = false;
 const moreEl = el('div', 'more', '↑ 上滑查看更早的消息');
-const renderMsg = x => x.role === 'user' ? fillMe(addMe(''), x) : addAI(x, false);
+const renderMsg = x => x.role === 'photo' ? addPhotoCard(x) : x.role === 'user' ? fillMe(addMe(''), x) : addAI(x, false);
 const syncMore = () => {                                                 // 还有更早的就保留顶部提示条，没有了就移除
     if (hasMore) { moreEl.textContent = '↑ 上滑查看更早的消息'; if (!moreEl.isConnected) chat.prepend(moreEl); }
     else moreEl.remove();
