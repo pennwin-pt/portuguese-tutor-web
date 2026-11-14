@@ -646,7 +646,7 @@ function render() {
     $('#skip').hidden = !canSkip();
     hold.textContent = state === 'judging' ? '评判中…' : '按住 说话';
     act.hidden = (testing && !shadowing) || state === 'loading' || state === 'scene';
-    if (shadowing) act.disabled = state === 'judging' || !shadowText.trim();      // 文本框为空 / 识别或评判中：提交置灰（输入事件里直接切换，不 render）
+    act.disabled = shadowing ? (state === 'judging' || !shadowText.trim()) : false;      // 跟读测试态：文本框为空 / 识别或评判中提交置灰（输入事件里直接切换，不 render）；其余状态一律恢复可点——否则评判中置灰的状态会残留到结果页，「下一个」点不动
     const sunIdle = state === 'idle' && previewOnly();
     $('#act2').hidden = !(state === 'done' || sunIdle);                              // 完成页：[返回聊天] [重新学习]；周日首页：[只看列表]
     $('#act2').textContent = sunIdle ? '👀 只看列表' : '返回聊天';
