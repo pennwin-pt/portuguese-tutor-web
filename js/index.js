@@ -501,7 +501,7 @@ function markIn(node, text, keys) {                   // 例句里把这个词�
     node.textContent = text;
 }
 function openLightbox(src) {
-    const m = el('div', 'lb'), i = el('img'); i.src = src; m.append(i); m.onclick = () => m.remove(); document.body.append(m);
+    const m = el('div', 'lightbox'), i = el('img'); i.src = src; m.append(i); m.onclick = () => m.remove(); document.body.append(m);
 }
 function addPhotoCard(c) {
     const words = c.words || [], nNew = words.filter(w => w.added).length;
