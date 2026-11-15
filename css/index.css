@@ -183,3 +183,7 @@ footer{display:flex;align-items:center;gap:10px;padding:10px 12px calc(max(env(s
 .irow .sf.ai:empty,.irow .sf:empty{display:none}
 .lb{position:fixed;inset:0;z-index:15;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88)}
 .lb img{max-width:100%;max-height:100%;object-fit:contain}
+.irow .wl{display:flex;gap:6px}
+.irow .wl input{flex:1;min-width:0}
+.irow .qry{flex:none;height:36px;padding:0 12px;border:0;border-radius:9px;background:var(--blue);color:#fff;font-size:14px;touch-action:manipulation}
+.irow .qry:disabled{opacity:.65}

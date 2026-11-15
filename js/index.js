@@ -348,13 +348,14 @@ $('#wadd').onclick = async () => {
 
 /* ---------- 上传图片：识别下划线单词 ---------- */
 // 📷 选图 → 前端压缩 → POST /api/image/underlined（多模态模型找出被划线的词并拆解）→ 可编辑列表。
-// 手动添加的词只需填葡语：填完（失焦 / 回车）自动 POST /api/image/fill-words 让 AI 补含义、例句和翻译，可再修改。
+// 手动添加的词只需填葡语：点这一行的「🔍 查询」（或在单词框里按回车）→ POST /api/image/fill-words 让 AI 补含义、例句和翻译，可再修改；
+// 同一个词查过就不再重复查，没查过就直接点「加入生词本」时服务器会补。
 // 点「加入生词本」→ POST /api/image/photo_card（图片 + 单词一起传）：服务器写进生词本、留存图片，
 // 并在聊天记录里落一张「拍照识别」卡片（图 + 这一组单词），刷新 / 换设备后还在。
 const camf = $('#camf'), ilist = $('#ilist'), istat = $('#istat'), ipre = $('#ipre');
 let idata = null;      // {blob, rows:[{on,word,surface,meaning,sentence,sentence_zh,auto,fillFor,fill,st,...}], busy, url}
 const IMG_MAX_SIDE = 2000;                                     // 长边上限：够看清下划线，又不会让上传太大
-const MANUAL_HINT = '只需填葡语单词，含义和例句 AI 会自动生成';
+const MANUAL_HINT = '填好葡语单词后点「查询」，AI 会生成含义和例句；不查直接加入也会自动补';
 async function shrinkImage(file) {
     const url = URL.createObjectURL(file);
     try {
@@ -374,13 +375,18 @@ function setImgBusy(b) {
 }
 const newImgRow = o => ({ on: true, word: '', surface: '', meaning: '', sentence: '', sentence_zh: '', auto: {}, fillFor: '', fill: null, st: '', ...o });
 function setRowStatus(r, t) { r.st = t; if (r.stEl) r.stEl.textContent = t; }
+function syncQryBtn(r) {
+    if (!r.btn) return;
+    r.btn.disabled = !!r.loading;
+    r.btn.textContent = r.loading ? '查询中…' : r.queried ? '✓ 已查询' : '🔍 查询';
+}
 // 让 AI 补全这一行缺的含义 / 例句 / 翻译。同一个词只补一次；词改了就把"上次 AI 填的"换掉，用户自己写的不动。
 function fillRow(r) {
     const word = (r.word || '').trim();
     if (!word || r.fillFor === word) return r.fill;
     const blank = k => !(r[k] || '').trim() || r.auto[k];             // 空的，或者上次是 AI 填的
-    if (!['meaning', 'sentence', 'sentence_zh'].some(blank)) return r.fill;
-    r.fillFor = word;
+    if (!['meaning', 'sentence', 'sentence_zh'].some(blank)) { r.queried = true; syncQryBtn(r); setRowStatus(r, '含义和例句都已经有了，无需查询'); return r.fill; }
+    r.fillFor = word; r.queried = false; r.loading = true; syncQryBtn(r);
     setRowStatus(r, '⏳ AI 生成中…');
     return r.fill = post('/api/image/fill-words', { items: [{ word, sentence: blank('sentence') ? '' : r.sentence.trim() }] }).then(d => {
         const f = d.items?.[0];
@@ -388,10 +394,15 @@ function fillRow(r) {
         ['meaning', 'sentence', 'sentence_zh'].forEach(k => {
             if (f[k] && blank(k)) { r[k] = f[k]; r.auto[k] = true; if (r.inputs?.[k]) r.inputs[k].value = f[k]; }
         });
-        setRowStatus(r, '✨ 含义和例句由 AI 生成，可直接修改');
+        r.queried = true; setRowStatus(r, '✨ 含义和例句由 AI 生成，可直接修改');
     }).catch(err => {
-        if (r.fillFor === word) { r.fillFor = ''; setRowStatus(r, '⚠ AI 生成失败：' + err.message + '。可手动填写，或点「加入生词本」时再试'); }
-    });
+        if (r.fillFor === word) { r.fillFor = ''; setRowStatus(r, '⚠ 查询失败：' + err.message + '。可再点「查询」，或手动填写，或直接加入时再试'); }
+    }).finally(() => { if (r.fillFor === word || !r.fillFor) { r.loading = false; syncQryBtn(r); } });
+}
+function queryRow(r) {                                   // 「查询」按钮 / 单词框回车
+    if (!(r.word || '').trim()) return toast('请先填葡语单词');
+    if (r.loading) return;
+    fillRow(r);
 }
 function renderImageRows() {
     ilist.innerHTML = '';
@@ -402,15 +413,17 @@ function renderImageRows() {
         const mk = (key, ph, cls) => {
             const inp = el('input', cls || ''); inp.type = 'text'; inp.value = r[key] || ''; inp.placeholder = ph;
             inp.autocomplete = 'off'; inp.autocapitalize = 'off'; inp.spellcheck = false;
-            inp.oninput = () => { r[key] = inp.value; r.auto[key] = false; if (key === 'word') cb.checked = r.on = true; };
-            if (key === 'word') {
-                inp.onchange = () => fillRow(r);                       // 失焦 / 回车提交后触发
-                inp.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); inp.blur(); } };
-            }
+            inp.oninput = () => {
+                r[key] = inp.value; r.auto[key] = false;
+                if (key === 'word') { cb.checked = r.on = true; if (r.queried && inp.value.trim() !== r.fillFor) { r.queried = false; syncQryBtn(r); } }   // 改了词 = 需要重新查
+            };
+            if (key === 'word') inp.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); queryRow(r); } };
             r.inputs[key] = inp;
             return inp;
         };
-        fs.append(mk('word', '葡语单词（词典原形）', 'w'));
+        const wl = el('div', 'wl'), qb = el('button', 'qry'); qb.type = 'button'; r.btn = qb; syncQryBtn(r);
+        qb.onclick = () => queryRow(r);
+        wl.append(mk('word', '葡语单词（词典原形）', 'w'), qb); fs.append(wl);
         if (r.surface && r.surface.toLowerCase() !== (r.word || '').toLowerCase()) fs.append(el('div', 'sf', '图中：' + r.surface));
         r.stEl = el('div', 'sf', r.st || ''); fs.append(r.stEl);
         fs.append(mk('meaning', '中文含义（留空由 AI 生成）'), mk('sentence', '例句（留空由 AI 生成）'), mk('sentence_zh', '例句翻译（留空由 AI 生成）'));
